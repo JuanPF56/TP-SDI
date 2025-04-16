@@ -11,9 +11,9 @@ def load_config():
 def main():
     config = load_config()
     logger.info("Sentiment Analyzer node is online")
-    for section in config.sections():
-        for key, value in config.items(section):
-            logger.info(f"{section}.{key} = {value}")
+    logger.info("Configuration loaded successfully")
+    for key, value in config["DEFAULT"].items():
+        logger.info(f"{key}: {value}")
 
 if __name__ == "__main__":
     main()

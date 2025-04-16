@@ -11,7 +11,9 @@ def load_config():
 def main():
     config = load_config()
     logger.info("Gateway node is online")
-    logger.info(f"Config: {config["DEFAULT"]}")
+    logger.info("Configuration loaded successfully")
+    for key, value in config["DEFAULT"].items():
+        logger.info(f"{key}: {value}")
 
 if __name__ == "__main__":
     main()
