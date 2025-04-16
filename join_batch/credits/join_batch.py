@@ -7,7 +7,9 @@ logger = get_logger("JoinBatch-Credits")
 class JoinBatchCredits(JoinBatchBase):
     def process(self):
         logger.info("Node is online")
-        logger.info(f"Config: {self.config["DEFAULT"]}")
+        logger.info("Configuration loaded successfully")
+        for key, value in self.config["DEFAULT"].items():
+            logger.info(f"{key}: {value}")
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()
