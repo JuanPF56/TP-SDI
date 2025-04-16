@@ -5,6 +5,6 @@ WORKDIR /app
 COPY ../common/ ./common/
 
 # Copy specific code
-COPY filter.py .
+COPY q1.py .
 
 CMD ["python3", "q1.py"]
