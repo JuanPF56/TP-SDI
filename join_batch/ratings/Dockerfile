@@ -8,4 +8,7 @@ COPY join_batch/common/ ./common/
 # Copy specific code
 COPY join_batch/ratings/ .
 
+# Install dependencies
+RUN pip install pika
+
 CMD ["python3", "join_batch.py"]
