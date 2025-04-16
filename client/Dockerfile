@@ -2,9 +2,9 @@ FROM python:3.13-slim
 WORKDIR /app
 
 # Copy common code
-COPY ../common/ ./common/
+COPY common/ ./common/
 
 # Copy specific code
-COPY client.py .
+COPY client/ .
 
 CMD ["python3", "client.py"]

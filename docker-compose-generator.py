@@ -19,25 +19,22 @@ def generate_compose(filename):
     services["gateway"] = {
         "build": "./gateway",
         "container_name": "gateway",
-        "entrypoint": "python3 /gateway.py",
+        "entrypoint": "python3 /app/gateway.py",
         "volumes": [
-            "./gateway/config.ini:/config.ini"
+            "./gateway/config.ini:/app/config.ini"
         ],
         "depends_on": ["rabbitmq"],
         "networks": ["testing_net"]
     }
 
-    # Filter nodes (reuse base image)
+    # Filter nodes
     for subtype in ["cleanup", "year", "production"]:
         services[f"filter_{subtype}"] = {
-            "build": {
-                "context": f"./filter/{subtype}",
-                "dockerfile": "Dockerfile"
-            },
+            "build": f"./filter/{subtype}",
             "container_name": f"filter_{subtype}",
-            "entrypoint": "python3 /filter.py",
+            "entrypoint": "python3 /app/filter.py",
             "volumes": [
-                f"./filter/{subtype}/config.ini:/config.ini"
+                f"./filter/{subtype}/config.ini:/app/config.ini"
             ],
             "depends_on": ["gateway"],
             "networks": ["testing_net"]
@@ -47,9 +44,9 @@ def generate_compose(filename):
     services["sentiment_analyzer"] = {
         "build": "./sentiment_analyzer",
         "container_name": "sentiment_analyzer",
-        "entrypoint": "python3 /sentiment_analyzer.py",
+        "entrypoint": "python3 /app/sentiment_analyzer.py",
         "volumes": [
-            "./sentiment_analyzer/config.ini:/config.ini"
+            "./sentiment_analyzer/config.ini:/app/config.ini"
         ],
         "depends_on": ["gateway"],
         "networks": ["testing_net"]
@@ -59,9 +56,9 @@ def generate_compose(filename):
     services["join_table"] = {
         "build": "./join_table",
         "container_name": "join_table",
-        "entrypoint": "python3 /join_table.py",
+        "entrypoint": "python3 /app/join_table.py",
         "volumes": [
-            "./join_table/config.ini:/config.ini"
+            "./join_table/config.ini:/app/config.ini"
         ],
         "depends_on": ["gateway"],
         "networks": ["testing_net"]
@@ -70,14 +67,11 @@ def generate_compose(filename):
     # Join batch nodes
     for subtype in ["credits", "ratings"]:
         services[f"join_batch_{subtype}"] = {
-            "build": {
-                "context": f"./join_batch/{subtype}",
-                "dockerfile": "Dockerfile"
-            },
+            "build": f"./join_batch/{subtype}",
             "container_name": f"join_batch_{subtype}",
-            "entrypoint": "python3 /join_batch.py",
+            "entrypoint": "python3 /app/join_batch.py",
             "volumes": [
-                f"./join_batch/{subtype}/config.ini:/config.ini"
+                f"./join_batch/{subtype}/config.ini:/app/config.ini"
             ],
             "depends_on": ["gateway"],
             "networks": ["testing_net"]
@@ -87,26 +81,27 @@ def generate_compose(filename):
     for i in range(1, 6):
         qname = f"q{i}"
         services[qname] = {
-            "build": f"./queries/{qname}",
+            "build": f"./query/{qname}",
             "container_name": qname,
-            "entrypoint": f"python3 /{qname}.py",
+            "entrypoint": f"python3 /app/{qname}.py",
             "volumes": [
-                f"./queries/{qname}/config.ini:/config.ini"
+                f"./query/{qname}/config.ini:/app/config.ini"
             ],
             "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
 
-    services[f"client"] = {
-            "build": "./client",
-            "container_name": f"client",
-            "entrypoint": "python3 /client.py",
-            "volumes": [
-                "./client/config.ini:/config.ini",
-            ],
-            "depends_on": ["gateway"],
-            "networks": ["testing_net"]
-        }
+    # Client node
+    services["client"] = {
+        "build": "./client",
+        "container_name": "client",
+        "entrypoint": "python3 /app/client.py",
+        "volumes": [
+            "./client/config.ini:/app/config.ini"
+        ],
+        "depends_on": ["gateway"],
+        "networks": ["testing_net"]
+    }
 
     # Compose root
     compose = {
@@ -123,7 +118,7 @@ def generate_compose(filename):
     }
 
     with open(filename, "w") as f:
-        yaml.dump(compose, f)
+        yaml.dump(compose, f, sort_keys=False)
 
 def main():
     if len(sys.argv) != 2:

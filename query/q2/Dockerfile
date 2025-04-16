@@ -2,9 +2,9 @@ FROM python:3.13-slim
 WORKDIR /app
 
 # Copy common code
-COPY ../common/ ./common/
+COPY common/ ./common/
 
 # Copy specific code
-COPY q3.py .
+COPY queries/q2/ .
 
-CMD ["python3", "q3.py"]
+CMD ["python3", "q2.py"]

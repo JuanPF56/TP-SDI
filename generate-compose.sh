@@ -11,5 +11,5 @@ filename=$1
 echo "Generando archivo docker compose..."
 echo "Nombre del archivo de salida: $filename"
 
-python3 generador-compose.py $filename
+python3 docker-compose-generator.py $filename
 echo "Archivo generado con éxito."
