@@ -1,3 +1,5 @@
+import pika
+import json # Just to test RabbitMQ
 import configparser
 from common.logger import get_logger
 
@@ -40,7 +42,18 @@ def load_config():
 def main():
     config = load_config()
     logger.info("Join Table node is online")
-    
+
+    connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+    channel = connection.channel()
+
+    # Declare a fanout exchange
+    channel.exchange_declare(exchange='broadcast', exchange_type='fanout')
+    # Publish a message to the exchange
+    # TODO: Serialize with our own protocol
+    channel.basic_publish(exchange='broadcast', routing_key='', body=json.dumps(movies))
+
+    print(" [x] Sent broadcast")
+    connection.close()
 
 if __name__ == "__main__":
     main()
