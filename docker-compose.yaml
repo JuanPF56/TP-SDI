@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   rabbitmq:
     image: rabbitmq:3-management
@@ -11,8 +10,8 @@ services:
     networks:
     - testing_net
   gateway:
-    build: ./gateway
     container_name: gateway
+    image: gateway:latest
     entrypoint: python3 /app/gateway.py
     volumes:
     - ./gateway/config.ini:/app/config.ini
@@ -21,8 +20,8 @@ services:
     networks:
     - testing_net
   filter_cleanup:
-    build: ./filter/cleanup
     container_name: filter_cleanup
+    image: filter_cleanup:latest
     entrypoint: python3 /app/filter.py
     volumes:
     - ./filter/cleanup/config.ini:/app/config.ini
@@ -31,8 +30,8 @@ services:
     networks:
     - testing_net
   filter_year:
-    build: ./filter/year
     container_name: filter_year
+    image: filter_year:latest
     entrypoint: python3 /app/filter.py
     volumes:
     - ./filter/year/config.ini:/app/config.ini
@@ -41,8 +40,8 @@ services:
     networks:
     - testing_net
   filter_production:
-    build: ./filter/production
     container_name: filter_production
+    image: filter_production:latest
     entrypoint: python3 /app/filter.py
     volumes:
     - ./filter/production/config.ini:/app/config.ini
@@ -51,8 +50,8 @@ services:
     networks:
     - testing_net
   sentiment_analyzer:
-    build: ./sentiment_analyzer
     container_name: sentiment_analyzer
+    image: sentiment_analyzer:latest
     entrypoint: python3 /app/sentiment_analyzer.py
     volumes:
     - ./sentiment_analyzer/config.ini:/app/config.ini
@@ -61,8 +60,8 @@ services:
     networks:
     - testing_net
   join_table:
-    build: ./join_table
     container_name: join_table
+    image: join_table:latest
     entrypoint: python3 /app/join_table.py
     volumes:
     - ./join_table/config.ini:/app/config.ini
@@ -71,8 +70,8 @@ services:
     networks:
     - testing_net
   join_batch_credits:
-    build: ./join_batch/credits
     container_name: join_batch_credits
+    image: join_batch_credits:latest
     entrypoint: python3 /app/join_batch.py
     volumes:
     - ./join_batch/credits/config.ini:/app/config.ini
@@ -81,8 +80,8 @@ services:
     networks:
     - testing_net
   join_batch_ratings:
-    build: ./join_batch/ratings
     container_name: join_batch_ratings
+    image: join_batch_ratings:latest
     entrypoint: python3 /app/join_batch.py
     volumes:
     - ./join_batch/ratings/config.ini:/app/config.ini
@@ -91,8 +90,8 @@ services:
     networks:
     - testing_net
   q1:
-    build: ./query/q1
     container_name: q1
+    image: query_q1:latest
     entrypoint: python3 /app/q1.py
     volumes:
     - ./query/q1/config.ini:/app/config.ini
@@ -101,8 +100,8 @@ services:
     networks:
     - testing_net
   q2:
-    build: ./query/q2
     container_name: q2
+    image: query_q2:latest
     entrypoint: python3 /app/q2.py
     volumes:
     - ./query/q2/config.ini:/app/config.ini
@@ -111,8 +110,8 @@ services:
     networks:
     - testing_net
   q3:
-    build: ./query/q3
     container_name: q3
+    image: query_q3:latest
     entrypoint: python3 /app/q3.py
     volumes:
     - ./query/q3/config.ini:/app/config.ini
@@ -121,8 +120,8 @@ services:
     networks:
     - testing_net
   q4:
-    build: ./query/q4
     container_name: q4
+    image: query_q4:latest
     entrypoint: python3 /app/q4.py
     volumes:
     - ./query/q4/config.ini:/app/config.ini
@@ -131,8 +130,8 @@ services:
     networks:
     - testing_net
   q5:
-    build: ./query/q5
     container_name: q5
+    image: query_q5:latest
     entrypoint: python3 /app/q5.py
     volumes:
     - ./query/q5/config.ini:/app/config.ini
@@ -141,8 +140,8 @@ services:
     networks:
     - testing_net
   client:
-    build: ./client
     container_name: client
+    image: client:latest
     entrypoint: python3 /app/client.py
     volumes:
     - ./client/config.ini:/app/config.ini

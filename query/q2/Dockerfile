@@ -5,6 +5,6 @@ WORKDIR /app
 COPY common/ ./common/
 
 # Copy specific code
-COPY queries/q2/ .
+COPY query/q2/ .
 
 CMD ["python3", "q2.py"]
