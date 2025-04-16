@@ -11,9 +11,7 @@ def load_config():
 def main():
     config = load_config()
     logger.info("Query Q3 node is online")
-    for section in config.sections():
-        for key, value in config.items(section):
-            logger.info(f"{section}.{key} = {value}")
+    logger.info(f"Config: {config["DEFAULT"]}")
 
 if __name__ == "__main__":
     main()
