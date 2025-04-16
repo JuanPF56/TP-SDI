@@ -2,6 +2,16 @@
 
 Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
+## Comandos
+
+```bash
+make docker-compose-up
+
+make docker-compose-logs
+
+make docker-compose-down
+```
+
 ## Construido con 🛠️
 
 * [Python](https://www.python.org/)

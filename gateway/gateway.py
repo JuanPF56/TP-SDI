@@ -1,12 +1,70 @@
-import configparser
+import socket
+import signal
+
+from configparser import ConfigParser
 from common.logger import get_logger
 
 logger = get_logger("Gateway")
 
 def load_config():
-    config = configparser.ConfigParser()
+    config = ConfigParser()
     config.read("config.ini")
     return config
+
+class Gateway():
+    def __init__(self, port, listen_backlog):
+        self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._gateway_socket.bind(('', port))
+        self._gateway_socket.listen(listen_backlog)
+        self._was_closed = False
+        self._clients_conected = []
+        logger.info(f"Gateway listening on port {port}")
+
+        signal.signal(signal.SIGTERM, self._stop_server)
+        signal.signal(signal.SIGINT, self._stop_server)
+
+    def run(self):
+        while not self._was_closed:
+            try:
+                client_sock = self.__accept_new_connection()
+                self.__handle_client_connection(client_sock)
+            except OSError as e:
+                if self._was_closed:
+                    break
+                logger.error(f"Error accepting new connection: {e}")
+
+    def __accept_new_connection(self):
+        logger.info("Waiting for new connections...")
+        c, addr = self._gateway_socket.accept()
+        self._clients_conected.append(c)
+        logger.info(f"New connection from {addr}")
+        return c
+
+    def __handle_client_connection(self, client_sock):
+        try:
+            data = client_sock.recv(1024)
+            if not data:
+                logger.info("Client disconnected")
+                self._clients_conected.remove(client_sock)
+                client_sock.close()
+                return
+            logger.info(f"Received data: {data.decode()}")
+            client_sock.sendall(data)
+        except Exception as e:
+            logger.error(f"Error handling client connection: {e}")
+            client_sock.close()
+            self._clients_conected.remove(client_sock)
+
+    def _stop_server(self, signum, frame):
+        logger.info("Stopping server...")
+        self._was_closed = True
+        for client in self._clients_conected:
+            client.close()
+        self._gateway_socket.close()
+        logger.info("Server stopped.")
+        logger.info("All client connections closed.")
+        logger.info("Gateway socket closed.")
+        logger.info("Exiting gracefully.")
 
 def main():
     config = load_config()
@@ -14,6 +72,11 @@ def main():
     logger.info("Configuration loaded successfully")
     for key, value in config["DEFAULT"].items():
         logger.info(f"{key}: {value}")
+
+    gateway = Gateway(int(config["DEFAULT"]["GATEWAY_PORT"]), int(config["DEFAULT"]["LISTEN_BACKLOG"]))
+    logger.info("Gateway started successfully")
+
+    gateway.run()
 
 if __name__ == "__main__":
     main()
