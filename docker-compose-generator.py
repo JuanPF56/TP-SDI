@@ -73,7 +73,7 @@ def generate_compose(filename):
             "volumes": [
                 f"./join_batch/{subtype}/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway"],
+            "depends_on": ["gateway", "join_table"],
             "networks": ["testing_net"]
         }
 
