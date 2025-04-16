@@ -17,8 +17,8 @@ def generate_compose(filename):
 
     # Gateway node
     services["gateway"] = {
-        "build": "./gateway",
         "container_name": "gateway",
+        "image": "gateway:latest",
         "entrypoint": "python3 /app/gateway.py",
         "volumes": [
             "./gateway/config.ini:/app/config.ini"
@@ -30,8 +30,8 @@ def generate_compose(filename):
     # Filter nodes
     for subtype in ["cleanup", "year", "production"]:
         services[f"filter_{subtype}"] = {
-            "build": f"./filter/{subtype}",
             "container_name": f"filter_{subtype}",
+            "image": f"filter_{subtype}:latest",
             "entrypoint": "python3 /app/filter.py",
             "volumes": [
                 f"./filter/{subtype}/config.ini:/app/config.ini"
@@ -42,8 +42,8 @@ def generate_compose(filename):
 
     # Sentiment analyzer node
     services["sentiment_analyzer"] = {
-        "build": "./sentiment_analyzer",
         "container_name": "sentiment_analyzer",
+        "image": "sentiment_analyzer:latest",
         "entrypoint": "python3 /app/sentiment_analyzer.py",
         "volumes": [
             "./sentiment_analyzer/config.ini:/app/config.ini"
@@ -54,8 +54,8 @@ def generate_compose(filename):
 
     # Join table node
     services["join_table"] = {
-        "build": "./join_table",
         "container_name": "join_table",
+        "image": "join_table:latest",
         "entrypoint": "python3 /app/join_table.py",
         "volumes": [
             "./join_table/config.ini:/app/config.ini"
@@ -67,8 +67,8 @@ def generate_compose(filename):
     # Join batch nodes
     for subtype in ["credits", "ratings"]:
         services[f"join_batch_{subtype}"] = {
-            "build": f"./join_batch/{subtype}",
             "container_name": f"join_batch_{subtype}",
+            "image": f"join_batch_{subtype}:latest",
             "entrypoint": "python3 /app/join_batch.py",
             "volumes": [
                 f"./join_batch/{subtype}/config.ini:/app/config.ini"
@@ -81,8 +81,8 @@ def generate_compose(filename):
     for i in range(1, 6):
         qname = f"q{i}"
         services[qname] = {
-            "build": f"./query/{qname}",
             "container_name": qname,
+            "image": f"query_{qname}:latest",
             "entrypoint": f"python3 /app/{qname}.py",
             "volumes": [
                 f"./query/{qname}/config.ini:/app/config.ini"
@@ -93,8 +93,8 @@ def generate_compose(filename):
 
     # Client node
     services["client"] = {
-        "build": "./client",
         "container_name": "client",
+        "image": "client:latest",
         "entrypoint": "python3 /app/client.py",
         "volumes": [
             "./client/config.ini:/app/config.ini"
@@ -105,7 +105,6 @@ def generate_compose(filename):
 
     # Compose root
     compose = {
-        "version": "3.8",
         "services": services,
         "networks": {
             "testing_net": {
