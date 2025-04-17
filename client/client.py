@@ -1,7 +1,3 @@
-import ast
-import kagglehub
-import os
-import csv
 import socket
 import signal
 
@@ -9,10 +5,7 @@ from common.logger import get_logger
 logger = get_logger("Client")
 
 from protocol_client_gateway import ProtocolClient
-from utils import read_first_3_movies, log_movies, send_movies
-
-ACK = 0
-ERROR = 1
+from utils import download_dataset, read_first_3_movies, log_movies, send_datasets_to_server
 
 class Client:
     def __init__(self, host, port):
@@ -33,16 +26,6 @@ class Client:
         except Exception as e:
             logger.error(f"Failed to connect to server: {e}")
 
-    def _download_dataset(self):
-        try:
-            logger.info("Downloading dataset with kagglehub...")
-            path = kagglehub.dataset_download("rounakbanik/the-movies-dataset")
-            logger.info(f"Dataset downloaded at: {path}")
-            return path
-        except Exception as e:
-            logger.error(f"Failed to download dataset: {e}")
-            return None
-
     def _stop_client(self):
         try:
             if self._socket:
@@ -54,13 +37,13 @@ class Client:
             logger.error(f"Failed to close connection properly: {e}")
 
     def run(self):
-        dataset_path = self._download_dataset()
-        if not dataset_path:
+        datasets_path = download_dataset()
+        if not datasets_path:
             logger.error("Dataset download failed.")
             return
 
         # TODO: Es solo para probar el cliente, borrar cuando se haga el cliente real
-        movies = read_first_3_movies(dataset_path)
+        movies = read_first_3_movies(datasets_path)
         log_movies(movies)
 
         self._connect()
@@ -70,23 +53,12 @@ class Client:
         
         while not self._was_closed:
             try:
-                # Send movies to server
-                send_movies(dataset_path, self._protocol)
-                logger.info("All movies were sent.")
-
-                ack = self._protocol.receive_confirmation()
-
-                if ack == ERROR:
-                    logger.error("Server returned an error.")
-                    break
-
-                elif ack == ACK:
-                    logger.info("Server acknowledged receipt of movies.")
-                    return
+                logger.info("Sending datasets to server...")
+                send_datasets_to_server(datasets_path, self._protocol)
             
             except OSError as e:
                 if self._was_closed:
-                    logger.info("Socket was closed.")
+                    logger.info("Socket client was closed.")
                     break
 
             except Exception as e:
