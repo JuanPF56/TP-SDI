@@ -1,15 +1,9 @@
 import socket
 import signal
 
-from configparser import ConfigParser
 from common.logger import get_logger
 
 logger = get_logger("Gateway")
-
-def load_config():
-    config = ConfigParser()
-    config.read("config.ini")
-    return config
 
 class Gateway():
     def __init__(self, port, listen_backlog):
@@ -40,7 +34,7 @@ class Gateway():
         logger.info(f"New connection from {addr}")
         return c
 
-    def __handle_client_connection(self, client_sock):
+    def __handle_client_connection(self, client_sock: socket.socket):
         try:
             data = client_sock.recv(1024)
             if not data:
@@ -49,7 +43,10 @@ class Gateway():
                 client_sock.close()
                 return
             logger.info(f"Received data: {data.decode()}")
-            client_sock.sendall(data)
+
+            message = "Hello, Client!"
+            logger.info(f"Sending message: {message}")
+            client_sock.sendall(message.encode())
         except Exception as e:
             logger.error(f"Error handling client connection: {e}")
             client_sock.close()
@@ -59,24 +56,11 @@ class Gateway():
         logger.info("Stopping server...")
         self._was_closed = True
         for client in self._clients_conected:
-            client.close()
+            try:
+                client.close()
+            except Exception as e:
+                logger.error(f"Error closing client socket: {e}")
+        self._clients_conected.clear()
+        self._gateway_socket.shutdown(socket.SHUT_RDWR)
         self._gateway_socket.close()
         logger.info("Server stopped.")
-        logger.info("All client connections closed.")
-        logger.info("Gateway socket closed.")
-        logger.info("Exiting gracefully.")
-
-def main():
-    config = load_config()
-    logger.info("Gateway node is online")
-    logger.info("Configuration loaded successfully")
-    for key, value in config["DEFAULT"].items():
-        logger.info(f"{key}: {value}")
-
-    gateway = Gateway(int(config["DEFAULT"]["GATEWAY_PORT"]), int(config["DEFAULT"]["LISTEN_BACKLOG"]))
-    logger.info("Gateway started successfully")
-
-    gateway.run()
-
-if __name__ == "__main__":
-    main()

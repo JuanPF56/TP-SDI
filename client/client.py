@@ -1,13 +1,7 @@
 import socket
-import configparser
 from common.logger import get_logger
 
 logger = get_logger("Client")
-
-def load_config():
-    config = configparser.ConfigParser()
-    config.read("config.ini")
-    return config
 
 class Client:
     def __init__(self, host, port):
@@ -21,7 +15,6 @@ class Client:
             logger.info(f"Connected to server at {self.host}:{self.port}")
         except Exception as e:
             logger.error(f"Failed to connect to server: {e}")
-
 
     def send(self, message):
         try:
@@ -49,24 +42,12 @@ class Client:
         except Exception as e:
             logger.error(f"Failed to close connection: {e}")
 
-def main():
-    config = load_config()
-    logger.info("Client node is online")
-    logger.info("Configuration loaded successfully")
-    for key, value in config["DEFAULT"].items():
-        logger.info(f"{key}: {value}")
-
-    client = Client(config["DEFAULT"]["GATEWAY_HOST"], int(config["DEFAULT"]["GATEWAY_PORT"]))
-    client.connect()
-    while True:
-        message = "Hello, Gateway!"
-        client.send(message)
-        response = client.receive()
-        if response is None:
-            break
-        print(f"Server response: {response}")
-    client.close()
-
-if __name__ == "__main__":
-    main()
-
+    def run(self):
+        self.connect()
+        while True:
+            message = "Hello, Gateway!"
+            self.send(message)
+            response = self.receive()
+            if response is None:
+                break
+        self.close()

@@ -7,4 +7,4 @@ COPY common/ ./common/
 # Copy specific code
 COPY client/ .
 
-CMD ["python3", "client.py"]
+CMD ["python3", "main.py"]
