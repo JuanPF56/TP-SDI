@@ -1,44 +1,36 @@
+import ast
 import kagglehub
 import os
 import csv
 import socket
-from common.logger import get_logger
+import signal
 
+from common.logger import get_logger
 logger = get_logger("Client")
+
+from protocol_client_gateway import ProtocolClient
+from utils import read_first_3_movies, log_movies, send_movies
 
 class Client:
     def __init__(self, host, port):
-        self.host = host
-        self.port = port
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._host = host
+        self._port = port
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._protocol = None
+        self._was_closed = False
 
-    def connect(self):
+        signal.signal(signal.SIGTERM, self._stop_client)
+        signal.signal(signal.SIGINT, self._stop_client)
+
+    def _connect(self):
         try:
-            self.socket.connect((self.host, self.port))
-            logger.info(f"Connected to server at {self.host}:{self.port}")
+            self._socket.connect((self._host, self._port))
+            logger.info(f"Connected to server at {self._host}:{self._port}")
+            self._protocol = ProtocolClient(self._socket)
         except Exception as e:
             logger.error(f"Failed to connect to server: {e}")
 
-    def send(self, message):
-        try:
-            self.socket.sendall(message.encode())
-            logger.info(f"Sent message: {message}")
-        except Exception as e:
-            logger.error(f"Failed to send message: {e}")
-
-    def receive(self):
-        try:
-            data = self.socket.recv(1024)
-            if not data:
-                logger.info("Server closed the connection")
-                return None
-            logger.info(f"Received message: {data.decode()}")
-            return data.decode()
-        except Exception as e:
-            logger.error(f"Failed to receive message: {e}")
-            return None
-
-    def download_dataset(self):
+    def _download_dataset(self):
         try:
             logger.info("Downloading dataset with kagglehub...")
             path = kagglehub.dataset_download("rounakbanik/the-movies-dataset")
@@ -48,49 +40,47 @@ class Client:
             logger.error(f"Failed to download dataset: {e}")
             return None
 
-    # TODO: Es solo para probar el cliente, borrar cuando se haga el cliente real
-    def read_first_3_movies(self, path):
+    def _stop_client(self):
         try:
-            csv_path = os.path.join(path, "movies_metadata.csv")
-            with open(csv_path, mode="r", encoding="utf-8") as csvfile:
-                reader = csv.DictReader(csvfile)
-                movies = []
-                for i, row in enumerate(reader):
-                    if i >= 3:
-                        break
-                    movies.append(f"Movie {i+1}: {row.get('title')} ({row.get('release_date')})")
-                return movies
-        except Exception as e:
-            logger.error(f"Failed to read CSV: {e}")
-            return []
-        
-    def log_movies(self, movies):
-        for movie in movies:
-            logger.info(movie)
-
-    def close(self):
-        try:
-            self.socket.close()
+            self._was_closed = True
+            self._socket.close()
             logger.info("Connection closed")
         except Exception as e:
             logger.error(f"Failed to close connection: {e}")
 
     def run(self):
-        dataset_path = self.download_dataset()
+        dataset_path = self._download_dataset()
         if not dataset_path:
+            logger.error("Dataset download failed.")
             return
 
-        movies = self.read_first_3_movies(dataset_path)
-        if not movies:
+        # TODO: Es solo para probar el cliente, borrar cuando se haga el cliente real
+        movies = read_first_3_movies(dataset_path)
+        log_movies(movies)
+
+        self._connect()
+        if not self._socket:
+            logger.error("Socket connection failed.")
             return
+        
+        while not self._was_closed:
+            try:
+                # Send movies to server
+                send_movies(dataset_path, self._protocol)
+                logger.info("Sent movies to server.")
+                
+                # Receive response from server
+                response = self._protocol.receive()
+                logger.info(f"Received response from server: {response}")
+                self._was_closed = True  # For testing purposes, close after one message
+            
+            except OSError as e:
+                if self._was_closed:
+                    logger.info("Socket was closed.")
+                    break
 
-        self.log_movies(movies)
-
-        self.connect()
-        while True:
-            message = "Hello, Gateway!"
-            self.send(message)
-            response = self.receive()
-            if response is None:
+            except Exception as e:
+                logger.error(f"An error occurred: {e}")
                 break
-        self.close()
+
+        self._stop_client()
