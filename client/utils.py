@@ -7,9 +7,7 @@ from common.logger import get_logger
 logger = get_logger("Client")
 
 from protocol_client_gateway import ProtocolClient
-
-ACK = 0
-ERROR = 1
+from common.protocol import ACK, ERROR
 
 def download_dataset():
     try:

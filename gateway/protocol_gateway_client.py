@@ -1,13 +1,14 @@
 import socket
+import struct
 
 import common.receiver as receiver
 import common.sender as sender
 
 from common.logger import get_logger
-logger = get_logger("Gateway")
+logger = get_logger("Gateway Protocol")
 
-SIZE_OF_UINT8 = 1
-SIZE_OF_UINT32 = 4
+from common.protocol import SIZE_OF_HEADER, SIZE_OF_UINT8, TIPO_MENSAJE
+TIPO_MENSAJE_INVERSO = {v: k for k, v in TIPO_MENSAJE.items()}
 
 class ProtocolGateway:
     def __init__(self, client_socket: socket.socket):
@@ -19,48 +20,51 @@ class ProtocolGateway:
         """
         return self._client_socket is not None
     
-    def receive_message_code(self) -> int:
-        """
-        Receive the message code from the client
-        """
-        message_code = receiver.receive_data(self._client_socket, SIZE_OF_UINT8)
-        deserialize_message_code = int.from_bytes(message_code, byteorder="big")
-        if deserialize_message_code == "":
-            logger.error("Message code is empty")
-            return None
-        return deserialize_message_code
-    
-    def receive_amount_of_lines(self) -> int:
-        """
-        Receive the amount of lines from the client
-        """
-        amount_of_lines = receiver.receive_data(self._client_socket, SIZE_OF_UINT32)
-        deserialize_amount_of_lines = int.from_bytes(amount_of_lines, byteorder="big")
-        if deserialize_amount_of_lines == "":
-            logger.error("Amount of lines is empty")
-            return None
-        return deserialize_amount_of_lines
+    def receive_header(self) -> tuple | None:
+        try:
+            header = receiver.receive_data(self._client_socket, SIZE_OF_HEADER)
+            if not header or len(header) != SIZE_OF_HEADER:
+                logger.error("Invalid or incomplete header received")
+                return None
 
-    def receive_movie_data_len(self) -> str:
-        """
-        Receive the length of the movie data from the client
-        """
-        movie_data_len = receiver.receive_data(self._client_socket, SIZE_OF_UINT32)
-        deserialize_movie_data_len = int.from_bytes(movie_data_len, byteorder="big")
-        if deserialize_movie_data_len == "":
-            logger.error("Data length is empty")
+            tipo_byte, total_batches, current_batch, payload_len = struct.unpack(">BHHI", header)
+            message_code = TIPO_MENSAJE_INVERSO.get(tipo_byte)
+
+            if message_code is None:
+                logger.error(f"Unknown message code: {tipo_byte}")
+                return None
+
+            return message_code, total_batches, current_batch, payload_len
+
+        except Exception as e:
+            logger.error(f"Error receiving header: {e}")
             return None
-        return deserialize_movie_data_len
+            
+    def receive_payload(self, payload_len: int) -> bytes:
+        """
+        Receive the payload from the client
+        """
+        if payload_len > 0:
+            data = receiver.receive_data(self._client_socket, payload_len)
+            if not data or len(data) != payload_len:
+                logger.error("Invalid or incomplete data received")
+                return None
+            return data
+        else:
+            logger.error("Payload length is zero")
+            return None
     
-    def receive_movie_data(self, data_len: int) -> bytes:
+    def process_payload(self, payload: bytes) -> None:
         """
-        Receive the movie data from the client
+        Process the payload
         """
-        movie_data = receiver.receive_data(self._client_socket, data_len)
-        if movie_data == "":
-            logger.error("Movie data is empty")
-            return None
-        return movie_data
+        decoded_payload = payload.decode("utf-8")
+        lines = decoded_payload.split("\n")
+        
+        for i, line in enumerate(lines[:3]):
+            logger.debug(f"  Line {i + 1}: {line.replace(chr(0), ' | ')}")
+        if len(lines) > 3:
+            logger.debug(f"  ... ({len(lines) - 3} more lines)")
     
     def send_confirmation(self, message_code: int) -> None:
         """

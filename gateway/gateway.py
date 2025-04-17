@@ -5,9 +5,7 @@ from common.logger import get_logger
 logger = get_logger("Gateway")
 
 from protocol_gateway_client import ProtocolGateway
-
-SUCCESS = 0
-ERROR = 1
+from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR
 
 class Gateway():
     def __init__(self, port, listen_backlog):
@@ -43,30 +41,31 @@ class Gateway():
             protocol_gateway = ProtocolGateway(client_sock)
 
             while protocol_gateway._client_is_connected():
-                # message_code = protocol_gateway.receive_message_code()
+                logger.info("Waiting for message...")
 
-                amount_of_lines = protocol_gateway.receive_amount_of_lines()
-                if amount_of_lines is None:
-                    logger.error("Amount of lines is None")
+                header = protocol_gateway.receive_header()
+                if header is None:
+                    logger.error("Header is None")
+                    break
+                message_code, total_batches, current_batch, payload_len = header
+
+                logger.info(f"Message code: {message_code}")
+                if message_code not in TIPO_MENSAJE:
+                    logger.error(f"Invalid message code: {message_code}")
+                    protocol_gateway.send_confirmation(ERROR)
                     break
 
-                logger.info(f"Amount of lines to receive: {amount_of_lines}")
-                for _ in range(amount_of_lines):
-                    movie_data_size = protocol_gateway.receive_movie_data_len()
-                    if movie_data_size is None:
-                        logger.error("Data size is None")
+                else:
+                    logger.info(f"Receiving batch {current_batch}/{total_batches} of size {payload_len}")
+                    payload = protocol_gateway.receive_payload(payload_len)
+                    if not payload or len(payload) != payload_len:
+                        logger.error("Failed to receive full payload")
                         break
 
-                    movie_data = protocol_gateway.receive_movie_data(movie_data_size)
-                    if movie_data_size is None:
-                        logger.error("Movie data is None")
+                    protocol_gateway.process_payload(payload)
+                    if current_batch == total_batches:
+                        protocol_gateway.send_confirmation(SUCCESS)
                         break
-                    else:
-                        logger.debug(str(movie_data))
-                logger.info("All movies received")
-
-                protocol_gateway.send_confirmation(SUCCESS)
-                break
 
         except OSError as e:
             if protocol_gateway._client_is_connected() is False:

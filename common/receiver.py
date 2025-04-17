@@ -1,8 +1,6 @@
 import socket
 import logging
 
-SIZE_OF_UINT8 = 1
-
 def receive_data(socket_sender: socket.socket, num_bytes: int) -> bytes:
     """
     Receives exactly num_bytes bytes from the sender.

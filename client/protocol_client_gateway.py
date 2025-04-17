@@ -6,19 +6,11 @@ import os
 import csv
 
 import struct
-TIPO_BATCH = {
-    "BATCH_MOVIES": 1,
-    "BATCH_ACTORS": 2,
-    "BATCH_RATINGS": 3,
-}
-
-HEADER_SIZE = 1 + 2 + 2 + 4  # tipo_de_mensaje (1 byte) + total_de_batches (2 bytes) + nro_batch_actual (2 bytes) + payload_len (4 bytes)
 
 from common.logger import get_logger
 logger = get_logger("Protocol Client")
 
-SIZE_OF_UINT8 = 1
-SIZE_OF_UINT32 = 4
+from common.protocol import TIPO_MENSAJE, SIZE_OF_HEADER, SIZE_OF_UINT8
 
 class ProtocolClient:
     def __init__(self, socket: socket.socket, max_batch_size):
@@ -39,7 +31,7 @@ class ProtocolClient:
     def send_dataset(self, dataset_path, dataset_name, message_type_str):
         logger.info(f"Sending dataset {dataset_name} as {message_type_str}...")
 
-        tipo_de_mensaje = TIPO_BATCH[message_type_str]
+        tipo_de_mensaje = TIPO_MENSAJE[message_type_str]
         csv_path = os.path.join(dataset_path, f"{dataset_name}.csv")
         if not os.path.exists(csv_path):
             logger.error(f"Dataset {dataset_name} not found at {csv_path}")
@@ -49,7 +41,7 @@ class ProtocolClient:
             with open(csv_path, newline='', encoding="utf-8") as csvfile:
                 reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
                 headers = next(reader)
-                max_payload_size = self._max_batch_size - HEADER_SIZE
+                max_payload_size = self._max_batch_size - SIZE_OF_HEADER
 
                 batches = []
                 current_batch = []
@@ -80,26 +72,27 @@ class ProtocolClient:
 
                     # Build header: tipo_de_mensaje (1 byte) + total_de_batches (2 bytes) + nro_batch_actual (2 bytes) + payload_len (4 bytes)
                     header = struct.pack(">BHHI", tipo_de_mensaje, total_batches, idx + 1, payload_len)
-                    message = header + payload
+                    if len(header) != SIZE_OF_HEADER:
+                        raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
 
                     logger.info(f"Sending batch {idx + 1}/{total_batches} of size {payload_len} bytes")
-                    self.send_batch(message)
+                    self.send_batch(header, payload)
 
         except Exception as e:
             logger.error(f"Error reading/sending CSV: {e}")
     
 
-    def send_batch(self, batch_data: bytes):
+    def send_batch(self, header: bytes, payload: bytes):
         try:
-            length = len(batch_data)
+            batch_size = len(header) + len(payload)
+            batch_data = header + payload
+            if len(batch_data) > self._max_batch_size:
+                raise ValueError(f"Batch size {len(batch_data)} exceeds max allowed {self._max_batch_size}")
 
-            if length > self._max_batch_size:
-                raise ValueError(f"Batch size {length} exceeds max allowed {self._max_batch_size}")
+            sender.send(self._socket, header)
+            sender.send(self._socket, payload)
 
-            sender.send(self._socket, length.to_bytes(SIZE_OF_UINT32, byteorder="big"))
-            sender.send(self._socket, batch_data)
-
-            logger.debug(f"Sent block of {length} bytes")
+            logger.debug(f"Sent block of {batch_size} bytes")
 
             # Logging solo los primeros N registros para debug legible
             N = 3
