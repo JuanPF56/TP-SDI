@@ -42,11 +42,13 @@ class Client:
 
     def _stop_client(self):
         try:
-            self._was_closed = True
-            self._socket.close()
-            logger.info("Connection closed")
+            if self._socket:
+                self._was_closed = True
+                self._socket.shutdown(socket.SHUT_RDWR)
+                self._socket.close()
+                logger.info("Connection closed")
         except Exception as e:
-            logger.error(f"Failed to close connection: {e}")
+            logger.error(f"Failed to close connection properly: {e}")
 
     def run(self):
         dataset_path = self._download_dataset()
