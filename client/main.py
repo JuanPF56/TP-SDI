@@ -17,7 +17,8 @@ def main():
     for key, value in config["DEFAULT"].items():
         logger.info(f"{key}: {value}")
 
-    client = Client(config["DEFAULT"]["GATEWAY_HOST"], int(config["DEFAULT"]["GATEWAY_PORT"]))
+    client = Client(config["DEFAULT"]["GATEWAY_HOST"], int(config["DEFAULT"]["GATEWAY_PORT"]),
+                    int(config["DEFAULT"]["MAX_BATCH_SIZE"]))
     client.run()
 
 if __name__ == "__main__":

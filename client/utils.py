@@ -66,16 +66,14 @@ def log_movies(movies):
             logger.warning(f"Failed to log movie {i}: {e}")  
 
 def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
-        logger.info("Sending datasets to server...")
-
-        send_dataset(datasets_path, protocol, "movies_metadata")
+        protocol.send_dataset(datasets_path, "movies_metadata", "BATCH_MOVIES")
         receive_confirmation = protocol.receive_confirmation()
         if receive_confirmation != ACK:
             logger.error("Server returned an error after sending movies.")
             raise Exception("Server returned an error after sending movies.")
         logger.info("Movies were sent successfully.")
 
-        send_dataset(datasets_path, protocol, "credits")
+        protocol.send_dataset(datasets_path, "credits", "BATCH_ACTORS")
         receive_confirmation = protocol.receive_confirmation()
         if receive_confirmation != ACK:
             logger.error("Server returned an error after sending actors.")
@@ -83,7 +81,7 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
         logger.info("Actors were sent successfully.")
 
 
-        send_dataset(datasets_path, protocol, "ratings")
+        protocol.send_dataset(datasets_path, "ratings", "BATCH_RATINGS")
         receive_confirmation = protocol.receive_confirmation()
         if receive_confirmation != ACK:
             logger.error("Server returned an error after sending ratings.")
@@ -91,21 +89,3 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
         logger.info("Ratings were sent successfully.")
 
         logger.info("All datasets were sent.")
-
-def send_dataset(dataset_path, protocol: ProtocolClient, dataset_name):
-    csv_path = os.path.join(dataset_path, f"{dataset_name}.csv")
-    try:
-        with open(csv_path, newline='', encoding="utf-8") as csvfile:
-            reader = list(csv.reader(csvfile))
-            headers = reader[0]  # skip header
-            rows = reader[1:]
-
-            total_lines = len(rows)
-            protocol.send_amount_of_lines(total_lines)
-            logger.info(f"Sending {total_lines} rows from {dataset_name}...")
-
-            for row in rows:
-                line = ",".join(row)
-                protocol.send_csv_line(line)
-    except Exception as e:
-        logger.error(f"Error reading/sending CSV: {e}")
