@@ -18,7 +18,7 @@ def read_first_3_movies(dataset_path):
     return movies
     
 def log_movies(movies):
-    logger.info("== First 3 movies from dataset ==")
+    logger.debug("== First 3 movies from dataset ==")
     for i, movie in enumerate(movies, start=1):
         try:
             budget = movie.get("budget", "N/A")
@@ -37,15 +37,15 @@ def log_movies(movies):
             release_date = movie.get("release_date", "N/A")
             revenue = movie.get("revenue", "N/A")
 
-            logger.info(f"--- Movie {i} ---")
-            logger.info(f"ID: {movie_id}")
-            logger.info(f"Title: {title}")
-            logger.info(f"Genres: {', '.join(genres)}")
-            logger.info(f"Budget: ${budget}")
-            logger.info(f"Revenue: ${revenue}")
-            logger.info(f"Release Date: {release_date}")
-            logger.info(f"Production Countries: {', '.join(countries)}")
-            logger.info(f"Overview: {overview_short}")
+            logger.debug(f"--- Movie {i} ---")
+            logger.debug(f"ID: {movie_id}")
+            logger.debug(f"Title: {title}")
+            logger.debug(f"Genres: {', '.join(genres)}")
+            logger.debug(f"Budget: ${budget}")
+            logger.debug(f"Revenue: ${revenue}")
+            logger.debug(f"Release Date: {release_date}")
+            logger.debug(f"Production Countries: {', '.join(countries)}")
+            logger.debug(f"Overview: {overview_short}")
         except Exception as e:
             logger.warning(f"Failed to log movie {i}: {e}")
 
@@ -53,9 +53,15 @@ def send_movies(dataset_path, protocol):
     csv_path = os.path.join(dataset_path, "movies_metadata.csv")
     try:
         with open(csv_path, newline='', encoding="utf-8") as csvfile:
-            reader = csv.reader(csvfile)
-            headers = next(reader)  # skip header
-            for row in reader:
+            reader = list(csv.reader(csvfile))
+            headers = reader[0]  # skip header
+            rows = reader[1:]
+
+            total_lines = len(rows)
+            protocol.send_amount_of_lines(total_lines)
+            logger.info(f"Sending {total_lines} movie rows...")
+
+            for row in rows:
                 line = ",".join(row)
                 protocol.send_csv_line(line)
     except Exception as e:

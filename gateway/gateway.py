@@ -2,8 +2,12 @@ import socket
 import signal
 
 from common.logger import get_logger
-
 logger = get_logger("Gateway")
+
+from protocol_gateway_client import ProtocolGateway
+
+SUCCESS = 0
+ERROR = 1
 
 class Gateway():
     def __init__(self, port, listen_backlog):
@@ -36,21 +40,43 @@ class Gateway():
 
     def __handle_client_connection(self, client_sock: socket.socket):
         try:
-            data = client_sock.recv(1024)
-            if not data:
-                logger.info("Client disconnected")
-                self._clients_conected.remove(client_sock)
-                client_sock.close()
-                return
-            logger.info(f"Received data: {data.decode()}")
+            protocol_gateway = ProtocolGateway(client_sock)
 
-            message = "Hello, Client!"
-            logger.info(f"Sending message: {message}")
-            client_sock.sendall(message.encode())
+            while protocol_gateway._client_is_connected():
+                # message_code = protocol_gateway.receive_message_code()
+
+                amount_of_lines = protocol_gateway.receive_amount_of_lines()
+                if amount_of_lines is None:
+                    logger.error("Amount of lines is None")
+                    break
+
+                logger.info(f"Amount of lines to receive: {amount_of_lines}")
+                for _ in range(amount_of_lines):
+                    movie_data_size = protocol_gateway.receive_movie_data_len()
+                    if movie_data_size is None:
+                        logger.error("Data size is None")
+                        break
+
+                    movie_data = protocol_gateway.receive_movie_data(movie_data_size)
+                    if movie_data_size is None:
+                        logger.error("Movie data is None")
+                        break
+                    else:
+                        logger.debug(str(movie_data))
+                logger.info("All movies received")
+
+                protocol_gateway.send_confirmation(SUCCESS)
+                break
+
+        except OSError as e:
+            if protocol_gateway._client_is_connected() is False:
+                logger.error(f"Client disconnected: {e}")
+                return
+
         except Exception as e:
             logger.error(f"Error handling client connection: {e}")
-            client_sock.close()
-            self._clients_conected.remove(client_sock)
+            logger.error("Client socket is not connected")
+            return
 
     def _stop_server(self, signum, frame):
         logger.info("Stopping server...")

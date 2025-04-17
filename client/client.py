@@ -11,6 +11,9 @@ logger = get_logger("Client")
 from protocol_client_gateway import ProtocolClient
 from utils import read_first_3_movies, log_movies, send_movies
 
+ACK = 0
+ERROR = 1
+
 class Client:
     def __init__(self, host, port):
         self._host = host
@@ -69,12 +72,17 @@ class Client:
             try:
                 # Send movies to server
                 send_movies(dataset_path, self._protocol)
-                logger.info("Sent movies to server.")
-                
-                # Receive response from server
-                response = self._protocol.receive()
-                logger.info(f"Received response from server: {response}")
-                self._was_closed = True  # For testing purposes, close after one message
+                logger.info("All movies were sent.")
+
+                ack = self._protocol.receive_confirmation()
+
+                if ack == ERROR:
+                    logger.error("Server returned an error.")
+                    break
+
+                elif ack == ACK:
+                    logger.info("Server acknowledged receipt of movies.")
+                    return
             
             except OSError as e:
                 if self._was_closed:
