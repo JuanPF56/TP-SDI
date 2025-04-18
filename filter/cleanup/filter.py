@@ -52,10 +52,66 @@ class CleanupFilter(FilterBase):
             logger.error(f"Unexpected error during RabbitMQ connection: {e}")
             return False
 
+    def clean_movie(self, data):
+        if not data.get("title") or data.get("budget") is None:
+            logger.debug(f"Skipping invalid movie data: {data}")
+            return None
+        return {
+            "title": data["title"],
+            "release_date": data.get("release_date"),
+            "budget": data.get("budget"),
+            "revenue": data.get("revenue"),
+            "production_countries": data.get("production_countries"),
+            "genres": data.get("genres")
+        }
+
+    def clean_rating(self, data):
+        if not data.get("userId") or not data.get("movieId") or data.get("rating") is None:
+            logger.debug(f"Skipping invalid rating data: {data}")
+            return None
+        return {
+            "userId": data["userId"],
+            "movieId": data["movieId"],
+            "rating": data["rating"]
+        }
+
+    def clean_credit(self, data):
+        if not data.get("movieId") or not data.get("cast"):
+            logger.debug(f"Skipping invalid credit data: {data}")
+            return None
+        return {
+            "movieId": data["movieId"],
+            "cast": data["cast"],
+            "crew": data.get("crew", [])
+        }
 
     def callback(self, ch, method, properties, body, queue_name):
-        #tengo que comletar}
-        pass
+        try:
+            logger.info(f"Received message from {queue_name}, length: {len(body)}")
+            data = json.loads(body)
+            cleaned = None
+
+            if queue_name == self.source_queues[0]:
+                cleaned = self.clean_movie(data)
+            elif queue_name == self.source_queues[1]:
+                cleaned = self.clean_rating(data)
+            elif queue_name == self.source_queues[2]:
+                cleaned = self.clean_credit(data)
+
+            if cleaned:
+                logger.info(f"Publishing cleaned data to {self.target_queues[queue_name]}")
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.target_queues[queue_name],
+                    body=json.dumps(cleaned)
+                )
+            else:
+                logger.info(f"Skipped invalid data from {queue_name}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in message from {queue_name}: {e}")
+            logger.error(f"Raw message: {body[:100]}...")  # Log first 100 chars
+        except Exception as e:
+            logger.error(f"Error processing message from {queue_name}: {e}")
 
     def process(self):
         logger.info("CleanupFilter is starting up")
