@@ -27,104 +27,105 @@ class ProtocolClient:
             return True
         except socket.error:
             return False
-        
+
     def send_dataset(self, dataset_path, dataset_name, message_type_str):
         logger.info(f"Sending dataset {dataset_name} as {message_type_str}...")
 
-        tipo_de_mensaje = TIPO_MENSAJE[message_type_str]
         csv_path = os.path.join(dataset_path, f"{dataset_name}.csv")
-
         if not os.path.exists(csv_path):
             logger.error(f"Dataset {dataset_name} not found at {csv_path}")
             return
 
         try:
-            batches = self._build_batches(csv_path, dataset_name)
-            total_batches = len(batches)
-            logger.info(f"Total batches for {dataset_name}: {total_batches}")
+            max_payload_size = self._max_batch_size - SIZE_OF_HEADER
+            batch_number = 0
 
-            for idx, batch in enumerate(batches):
-                payload = "\n".join(batch).encode("utf-8")
-                payload_len = len(payload)
+            with open(csv_path, newline='', encoding="utf-8") as csvfile:
+                if dataset_name == "credits":
+                    lines = csvfile.readlines()[1:]  # Skip header
+                    current_payload = bytearray()
 
-                header = struct.pack(">BHHI", tipo_de_mensaje, total_batches, idx + 1, payload_len)
-                if len(header) != SIZE_OF_HEADER:
-                    raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
+                    for line in lines:
+                        line_bytes = line.encode("utf-8")
 
-                logger.debug(f"{dataset_name} - Sending batch {idx + 1}/{total_batches} of size {payload_len} bytes")
-                self.send_batch(header, payload)
+                        if len(line_bytes) > max_payload_size:
+                            logger.debug(f"Fragmenting oversized line (size={len(line_bytes)})")
+                            start = 0
+                            while start < len(line_bytes):
+                                safe_end = self._find_utf8_safe_split_point(line_bytes[start:], max_payload_size)
+                                chunk = line_bytes[start:start + safe_end]
+
+                                if current_payload and len(current_payload) + 1 + len(chunk) > max_payload_size:
+                                    self._send_single_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                    batch_number += 1
+                                    current_payload = bytearray()
+
+                                if current_payload:
+                                    current_payload += b"\n"
+                                current_payload += chunk
+                                start += safe_end
+
+                        else:
+                            extra_bytes = b"\n" if current_payload else b""
+                            if len(current_payload) + len(extra_bytes) + len(line_bytes) > max_payload_size:
+                                self._send_single_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                batch_number += 1
+                                current_payload = bytearray()
+
+                            if current_payload:
+                                current_payload += b"\n"
+                            current_payload += line_bytes
+
+                    if current_payload:
+                        self._send_single_batch(message_type_str, batch_number, current_payload, is_last=True)
+                else:
+                    reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
+                    next(reader)  # Skip header
+                    current_payload = bytearray()
+
+                    for row in reader:
+                        line = "\0".join(row)
+                        encoded_line = (line + "\n").encode("utf-8")
+
+                        if len(current_payload) + len(encoded_line) > max_payload_size:
+                            self._send_single_batch(message_type_str, batch_number, current_payload, is_last=False)
+                            batch_number += 1
+                            current_payload = bytearray()
+
+                        current_payload += encoded_line
+
+                    if current_payload:
+                        self._send_single_batch(message_type_str, batch_number, current_payload, is_last=True)
 
         except Exception as e:
             logger.error(f"Error reading/sending CSV: {e}")
 
-    def _build_batches(self, csv_path, dataset_name):
-        batches = []
-        max_payload_size = self._max_batch_size - SIZE_OF_HEADER
+    def _find_utf8_safe_split_point(self, data: bytes, max_len: int) -> int:
+        """
+        Find the largest index ≤ max_len where the data is a valid UTF-8 prefix.
+        """
+        if max_len >= len(data):
+            return len(data)
 
-        with open(csv_path, newline='', encoding="utf-8") as csvfile:
-            if dataset_name == "credits":
-                lines = csvfile.readlines()
-                lines = lines[1:] # Skip header
-                current_batch, current_payload = [], bytearray()
+        end = max_len
+        while end > 0:
+            try:
+                data[:end].decode('utf-8')
+                return end
+            except UnicodeDecodeError:
+                end -= 1
+        return max_len  # fallback (shouldn't reach)
 
-                for line in lines:
-                    line_bytes = line.encode("utf-8")
+    def _send_single_batch(self, message_type_str, batch_number, payload: bytes, is_last: bool):
+        tipo_de_mensaje = TIPO_MENSAJE[message_type_str]
+        is_last_batch = 1 if is_last else 0
+        header = struct.pack(">BI B I", tipo_de_mensaje, batch_number, is_last_batch, len(payload))
 
-                    if len(line_bytes) > max_payload_size:
-                        logger.debug(f"Fragmenting oversized line (size={len(line_bytes)})")
+        if len(header) != SIZE_OF_HEADER:
+            raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
 
-                        start = 0
-                        while start < len(line_bytes):
-                            end = min(start + max_payload_size, len(line_bytes))
-                            chunk = line_bytes[start:end]
-                            chunk_str = chunk.decode("utf-8", errors="replace")
-
-                            if current_payload and len(current_payload) + 1 + len(chunk) > max_payload_size:
-                                batches.append(current_batch)
-                                current_batch, current_payload = [], bytearray()
-
-                            if current_payload:
-                                current_payload += b"\n"
-                            current_payload += chunk
-                            current_batch.append(chunk_str)
-                            start = end
-
-                    else:
-                        extra_bytes = b"\n" if current_payload else b""
-                        projected_payload = current_payload + extra_bytes + line_bytes
-
-                        if len(projected_payload) > max_payload_size:
-                            batches.append(current_batch)
-                            current_batch, current_payload = [], bytearray()
-
-                        if current_payload:
-                            current_payload += b"\n"
-                        current_payload += line_bytes
-                        current_batch.append(line.rstrip("\n"))
-
-                if current_batch:
-                    batches.append(current_batch)
-
-            else:
-                reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
-                headers = next(reader)
-                current_batch, current_payload = [], bytearray()
-
-                for row in reader:
-                    line = "\0".join(row)
-                    encoded_line = (line + "\n").encode("utf-8")
-
-                    if len(current_payload) + len(encoded_line) > max_payload_size:
-                        batches.append(current_batch)
-                        current_batch, current_payload = [], bytearray()
-
-                    current_batch.append(line)
-                    current_payload += encoded_line
-
-                if current_batch:
-                    batches.append(current_batch)
-
-        return batches
+        logger.info(f"{message_type_str} - Sending batch {batch_number}")
+        self.send_batch(header, payload)
 
     def send_batch(self, header: bytes, payload: bytes):
         try:
@@ -132,27 +133,10 @@ class ProtocolClient:
             batch_data = header + payload
             if len(batch_data) > self._max_batch_size:
                 raise ValueError(f"Batch size {len(batch_data)} exceeds max allowed {self._max_batch_size}")
-
+            
             sender.send(self._socket, header)
             sender.send(self._socket, payload)
 
-            logger.debug(f"Sent block of {batch_size} bytes")
-
-            # Logging solo los primeros N registros para debug legible
-            N = 3
-            try:
-                decoded = batch_data.decode("utf-8")
-                lines = decoded.split("\n")
-                logger.debug(f"Preview of first {N} lines in batch:")
-                for i, line in enumerate(lines[:N]):
-                    readable = line.replace("\0", " | ")
-                    logger.debug(f"  Line {i + 1}: {readable}")
-                if len(lines) > N:
-                    logger.debug(f"  ... ({len(lines) - N} more lines not shown)")
-            except Exception as decode_err:
-                pass
-
-            logger.debug(f"{'-'*50}")
         except Exception as e:
             logger.error(f"Error sending CSV batch: {e}")
 

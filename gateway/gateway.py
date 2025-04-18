@@ -5,7 +5,7 @@ from common.logger import get_logger
 logger = get_logger("Gateway")
 
 from protocol_gateway_client import ProtocolGateway
-from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR
+from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
 
 class Gateway():
     def __init__(self, port, listen_backlog, datasets_expected):
@@ -49,7 +49,7 @@ class Gateway():
                 if header is None:
                     logger.error("Header is None")
                     break
-                message_code, total_batches, current_batch, payload_len = header
+                message_code, current_batch, is_last_batch, payload_len = header
 
                 logger.debug(f"Message code: {message_code}")
                 if message_code not in TIPO_MENSAJE:
@@ -58,14 +58,14 @@ class Gateway():
                     break
 
                 else:
-                    logger.debug(f"{message_code} - Receiving batch {current_batch}/{total_batches} of size {payload_len}")
+                    logger.info(f"{message_code} - Receiving batch {current_batch}")
                     payload = protocol_gateway.receive_payload(payload_len)
                     if not payload or len(payload) != payload_len:
                         logger.error("Failed to receive full payload")
                         break
 
                     protocol_gateway.process_payload(payload)
-                    if current_batch == total_batches:
+                    if is_last_batch == IS_LAST_BATCH_FLAG:
                         protocol_gateway.send_confirmation(SUCCESS)
                         logger.info(f"Received all batches for {message_code}")
                         self._datasets_received += 1

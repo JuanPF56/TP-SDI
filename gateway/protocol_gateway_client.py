@@ -27,14 +27,14 @@ class ProtocolGateway:
                 logger.error("Invalid or incomplete header received")
                 return None
 
-            tipo_byte, total_batches, current_batch, payload_len = struct.unpack(">BHHI", header)
-            message_code = TIPO_MENSAJE_INVERSO.get(tipo_byte)
+            type_of_batch, current_batch, is_last_batch, payload_len = struct.unpack(">BI B I", header)
+            message_code = TIPO_MENSAJE_INVERSO.get(type_of_batch)
 
             if message_code is None:
-                logger.error(f"Unknown message code: {tipo_byte}")
+                logger.error(f"Unknown message code: {type_of_batch}")
                 return None
 
-            return message_code, total_batches, current_batch, payload_len
+            return message_code, current_batch, is_last_batch, payload_len
 
         except Exception as e:
             logger.error(f"Error receiving header: {e}")
