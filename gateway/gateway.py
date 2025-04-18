@@ -8,12 +8,14 @@ from protocol_gateway_client import ProtocolGateway
 from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR
 
 class Gateway():
-    def __init__(self, port, listen_backlog):
+    def __init__(self, port, listen_backlog, datasets_expected):
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._gateway_socket.bind(('', port))
         self._gateway_socket.listen(listen_backlog)
         self._was_closed = False
         self._clients_conected = []
+        self._datasets_expected = datasets_expected
+        self._datasets_received = 0
         logger.info(f"Gateway listening on port {port}")
 
         signal.signal(signal.SIGTERM, self._stop_server)
@@ -41,7 +43,7 @@ class Gateway():
             protocol_gateway = ProtocolGateway(client_sock)
 
             while protocol_gateway._client_is_connected():
-                logger.info("Waiting for message...")
+                logger.debug("Waiting for message...")
 
                 header = protocol_gateway.receive_header()
                 if header is None:
@@ -49,14 +51,14 @@ class Gateway():
                     break
                 message_code, total_batches, current_batch, payload_len = header
 
-                logger.info(f"Message code: {message_code}")
+                logger.debug(f"Message code: {message_code}")
                 if message_code not in TIPO_MENSAJE:
                     logger.error(f"Invalid message code: {message_code}")
                     protocol_gateway.send_confirmation(ERROR)
                     break
 
                 else:
-                    logger.info(f"Receiving batch {current_batch}/{total_batches} of size {payload_len}")
+                    logger.debug(f"{message_code} - Receiving batch {current_batch}/{total_batches} of size {payload_len}")
                     payload = protocol_gateway.receive_payload(payload_len)
                     if not payload or len(payload) != payload_len:
                         logger.error("Failed to receive full payload")
@@ -65,6 +67,12 @@ class Gateway():
                     protocol_gateway.process_payload(payload)
                     if current_batch == total_batches:
                         protocol_gateway.send_confirmation(SUCCESS)
+                        logger.info(f"Received all batches for {message_code}")
+                        self._datasets_received += 1
+
+                    if self._datasets_received == self._datasets_expected:
+                        logger.info("All datasets received, processing queries.")
+                        # TODO: PROCESAR LAS QUERIES Y MANDAR RESPUESTAS
                         break
 
         except OSError as e:

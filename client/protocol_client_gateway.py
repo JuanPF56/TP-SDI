@@ -33,54 +33,98 @@ class ProtocolClient:
 
         tipo_de_mensaje = TIPO_MENSAJE[message_type_str]
         csv_path = os.path.join(dataset_path, f"{dataset_name}.csv")
+
         if not os.path.exists(csv_path):
             logger.error(f"Dataset {dataset_name} not found at {csv_path}")
             return
 
         try:
-            with open(csv_path, newline='', encoding="utf-8") as csvfile:
-                reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
-                headers = next(reader)
-                max_payload_size = self._max_batch_size - SIZE_OF_HEADER
+            batches = self._build_batches(csv_path, dataset_name)
+            total_batches = len(batches)
+            logger.info(f"Total batches for {dataset_name}: {total_batches}")
 
-                batches = []
-                current_batch = []
-                current_size = 0
+            for idx, batch in enumerate(batches):
+                payload = "\n".join(batch).encode("utf-8")
+                payload_len = len(payload)
 
-                for row in reader:
-                    line = "\0".join(row)
-                    encoded_line = (line + "\n").encode("utf-8")
-                    line_size = len(encoded_line)
+                header = struct.pack(">BHHI", tipo_de_mensaje, total_batches, idx + 1, payload_len)
+                if len(header) != SIZE_OF_HEADER:
+                    raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
 
-                    if current_size + line_size > max_payload_size:
-                        batches.append(current_batch)
-                        current_batch = []
-                        current_size = 0
+                logger.debug(f"{dataset_name} - Sending batch {idx + 1}/{total_batches} of size {payload_len} bytes")
+                self.send_batch(header, payload)
 
-                    current_batch.append(line)
-                    current_size += line_size
+        except Exception as e:
+            logger.error(f"Error reading/sending CSV: {e}")
+
+    def _build_batches(self, csv_path, dataset_name):
+        batches = []
+        max_payload_size = self._max_batch_size - SIZE_OF_HEADER
+
+        with open(csv_path, newline='', encoding="utf-8") as csvfile:
+            if dataset_name == "credits":
+                lines = csvfile.readlines()
+                lines = lines[1:] # Skip header
+                current_batch, current_payload = [], bytearray()
+
+                for line in lines:
+                    line_bytes = line.encode("utf-8")
+
+                    if len(line_bytes) > max_payload_size:
+                        logger.debug(f"Fragmenting oversized line (size={len(line_bytes)})")
+
+                        start = 0
+                        while start < len(line_bytes):
+                            end = min(start + max_payload_size, len(line_bytes))
+                            chunk = line_bytes[start:end]
+                            chunk_str = chunk.decode("utf-8", errors="replace")
+
+                            if current_payload and len(current_payload) + 1 + len(chunk) > max_payload_size:
+                                batches.append(current_batch)
+                                current_batch, current_payload = [], bytearray()
+
+                            if current_payload:
+                                current_payload += b"\n"
+                            current_payload += chunk
+                            current_batch.append(chunk_str)
+                            start = end
+
+                    else:
+                        extra_bytes = b"\n" if current_payload else b""
+                        projected_payload = current_payload + extra_bytes + line_bytes
+
+                        if len(projected_payload) > max_payload_size:
+                            batches.append(current_batch)
+                            current_batch, current_payload = [], bytearray()
+
+                        if current_payload:
+                            current_payload += b"\n"
+                        current_payload += line_bytes
+                        current_batch.append(line.rstrip("\n"))
 
                 if current_batch:
                     batches.append(current_batch)
 
-                total_batches = len(batches)
-                logger.info(f"Total batches for {dataset_name}: {total_batches}")
+            else:
+                reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
+                headers = next(reader)
+                current_batch, current_payload = [], bytearray()
 
-                for idx, batch in enumerate(batches):
-                    payload = "\n".join(batch).encode("utf-8")
-                    payload_len = len(payload)
+                for row in reader:
+                    line = "\0".join(row)
+                    encoded_line = (line + "\n").encode("utf-8")
 
-                    # Build header: tipo_de_mensaje (1 byte) + total_de_batches (2 bytes) + nro_batch_actual (2 bytes) + payload_len (4 bytes)
-                    header = struct.pack(">BHHI", tipo_de_mensaje, total_batches, idx + 1, payload_len)
-                    if len(header) != SIZE_OF_HEADER:
-                        raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
+                    if len(current_payload) + len(encoded_line) > max_payload_size:
+                        batches.append(current_batch)
+                        current_batch, current_payload = [], bytearray()
 
-                    logger.info(f"Sending batch {idx + 1}/{total_batches} of size {payload_len} bytes")
-                    self.send_batch(header, payload)
+                    current_batch.append(line)
+                    current_payload += encoded_line
 
-        except Exception as e:
-            logger.error(f"Error reading/sending CSV: {e}")
-    
+                if current_batch:
+                    batches.append(current_batch)
+
+        return batches
 
     def send_batch(self, header: bytes, payload: bytes):
         try:

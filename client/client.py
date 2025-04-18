@@ -57,6 +57,7 @@ class Client:
                 logger.info("Sending datasets to server...")
                 send_datasets_to_server(datasets_path, self._protocol)
                 logger.info("Datasets sent successfully.")
+                break
             
             except OSError as e:
                 if self._was_closed:
