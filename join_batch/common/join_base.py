@@ -4,8 +4,6 @@ import pika
 import multiprocessing
 import signal
 
-from common import logger
-
 class JoinBatchBase:
     def __init__(self, config):
         self.config = config
@@ -19,7 +17,6 @@ class JoinBatchBase:
 
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
-        logger.info("Node is online")
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
@@ -56,17 +53,12 @@ class JoinBatchBase:
             movies_table = body.decode('utf-8')
             movies_table = json.loads(movies_table)
 
-            logger.info(f"Received movies table: {movies_table}")
-
-
             # Update the shared movies table with the new data
             with self.movies_table_condition:
                 # Add the new movies to the shared movies table
-                self.movies_table.extend(movies_table["movies"])                              
-                logger.info("Movies table updated")
+                self.movies_table.extend(movies_table["movies"])     
             
             if movies_table["last"]:
-                logger.info("Last movies table received.")
                 self.channel.stop_consuming()
                 self.movies_table_condition.notify_all()
                 

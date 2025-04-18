@@ -7,7 +7,7 @@ logger = get_logger("Join-Table")
 
 # Test batches
 
-movies = {
+movies = [
     {
         "id": 1,
         "original_title": "El Secreto de Sus Ojos",
@@ -32,7 +32,7 @@ movies = {
         "id": 6,
         "original_title": "Mi obra maestra",
     },        
-}
+]
 
 def load_config():
     config = configparser.ConfigParser()
@@ -46,13 +46,15 @@ def main():
     connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
     channel = connection.channel()
 
-    
-
     # Declare a fanout exchange
     channel.exchange_declare(exchange='broadcast', exchange_type='fanout')
     # Publish a message to the exchange
     # TODO: Serialize with our own protocol
-    channel.basic_publish(exchange='broadcast', routing_key='', body=json.dumps(movies))
+    data = {
+        "movies": movies,
+        "last": True,
+    }
+    channel.basic_publish(exchange='broadcast', routing_key='', body=json.dumps(data).encode('utf-8'))
 
     print(" [x] Sent broadcast")
     connection.close()

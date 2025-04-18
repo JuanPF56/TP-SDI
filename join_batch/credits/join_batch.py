@@ -4,7 +4,7 @@ from common.join_base import JoinBatchBase
 
 logger = get_logger("JoinBatch-Credits")
 
-cast = {
+cast = [
     {
         "movie_id": 1,
         "cast": [ "Ricardo Darín", "Soledad Villamil", "Guillermo Francella" ],
@@ -45,7 +45,7 @@ cast = {
         "movie_id": 10,
         "cast": [ "Brad Pitt", "Angelina Jolie", "James McAvoy" ],
     },
-}   
+]
 
 class JoinBatchCredits(JoinBatchBase):
     def receive_batch(self):

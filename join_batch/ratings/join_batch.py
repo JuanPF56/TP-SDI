@@ -4,7 +4,7 @@ from common.join_base import JoinBatchBase
 
 logger = get_logger("JoinBatch-Ratings")
 
-ratings = {
+ratings = [
     {
         "movie_id": 1,
         "rating": 5,
@@ -53,7 +53,7 @@ ratings = {
         "movie_id": 6,
         "rating": 1,
     },
-}
+]
 
 class JoinBatchRatings(JoinBatchBase):
     def receive_batch(self):
