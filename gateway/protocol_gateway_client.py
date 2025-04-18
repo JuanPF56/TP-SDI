@@ -5,7 +5,7 @@ import common.receiver as receiver
 import common.sender as sender
 
 from common.logger import get_logger
-logger = get_logger("Gateway Protocol")
+logger = get_logger("Protocol Gateway")
 
 from common.protocol import SIZE_OF_HEADER, SIZE_OF_UINT8, TIPO_MENSAJE
 TIPO_MENSAJE_INVERSO = {v: k for k, v in TIPO_MENSAJE.items()}
@@ -15,6 +15,7 @@ from common.decoder import Decoder
 class ProtocolGateway:
     def __init__(self, client_socket: socket.socket):
         self._client_socket = client_socket
+        self._decoder = Decoder()
 
     def _client_is_connected(self) -> bool:
         """
@@ -62,19 +63,21 @@ class ProtocolGateway:
         """
         decoded_payload = payload.decode("utf-8")
         if message_code == "BATCH_MOVIES":
-            movies_from_batch = Decoder.decode_movies(decoded_payload)
+            movies_from_batch = self._decoder.decode_movies(decoded_payload)
             if not movies_from_batch:
                 logger.error("No movies received or invalid format")
                 return None
+            
             for movie in movies_from_batch:
-                logger.info(f"Received movie from batch: {movie}")
+                movie.log_movie_info()
+                # TODO: NO SE SI ACA SE LAS PASAMOS DIRECTO A LA QUEUE
 
-        elif message_code == "BATCH_ACTORS":
-            actors_from_batch = Decoder.decode_actors(decoded_payload)
-            logger.info(f"Received actors from batch {actors_from_batch}")
+        elif message_code == "BATCH_CREDITS":
+            credits_from_batch = self._decoder.decode_credits(decoded_payload)
+            logger.info(f"Received credits from batch {credits_from_batch}")
 
         elif message_code == "BATCH_RATINGS":
-            ratings_from_batch = Decoder.decode_ratings(decoded_payload)
+            ratings_from_batch = self._decoder.decode_ratings(decoded_payload)
             logger.info(f"Received ratings from batch {ratings_from_batch}")
 
         else:

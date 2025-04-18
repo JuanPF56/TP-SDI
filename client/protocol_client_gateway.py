@@ -78,6 +78,7 @@ class ProtocolClient:
 
                     if current_payload:
                         self._send_single_batch(message_type_str, batch_number, current_payload, is_last=True)
+                
                 else:
                     reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
                     next(reader)  # Skip header

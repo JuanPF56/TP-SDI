@@ -5,7 +5,7 @@ from common.logger import get_logger
 logger = get_logger("Client")
 
 from protocol_client_gateway import ProtocolClient
-from utils import download_dataset, read_first_3_movies, log_movies, send_datasets_to_server
+from utils import download_dataset, send_datasets_to_server
 
 class Client:
     def __init__(self, host, port, max_batch_size):
@@ -38,14 +38,13 @@ class Client:
             logger.error(f"Failed to close connection properly: {e}")
 
     def run(self):
+        
         datasets_path = download_dataset()
         if not datasets_path:
             logger.error("Dataset download failed.")
             return
-
-        # TODO: Es solo para probar el cliente, borrar cuando se haga el cliente real
-        movies = read_first_3_movies(datasets_path)
-        log_movies(movies)
+        
+        # datasets_path = "/datasets"
 
         self._connect()
         if not self._socket:

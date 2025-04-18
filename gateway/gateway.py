@@ -63,12 +63,22 @@ class Gateway():
                     if not payload or len(payload) != payload_len:
                         logger.error("Failed to receive full payload")
                         break
-
+                    
                     protocol_gateway.process_payload(message_code, payload)
                     
                     if is_last_batch == IS_LAST_BATCH_FLAG:
                         protocol_gateway.send_confirmation(SUCCESS)
-                        logger.info(f"Received all batches for {message_code}")
+                        if message_code == "BATCH_MOVIES":
+                            total_lines = protocol_gateway._decoder.get_decoded_movies()
+                            dataset_name = "movies"
+                        elif message_code == "BATCH_CREDITS":
+                            total_lines = protocol_gateway._decoder.get_decoded_credits()
+                            dataset_name = "credits"
+                        elif message_code == "BATCH_RATINGS":
+                            total_lines = protocol_gateway._decoder.get_decoded_ratings()
+                            dataset_name = "ratings"
+
+                        logger.info(f"Received {total_lines} lines from {dataset_name}")
                         self._datasets_received += 1
 
                     if self._datasets_received == self._datasets_expected:

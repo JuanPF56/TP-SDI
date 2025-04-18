@@ -15,7 +15,7 @@ SIZE_OF_UINT32 = 4
 
 TIPO_MENSAJE = {
     "BATCH_MOVIES": 1,
-    "BATCH_ACTORS": 2,
+    "BATCH_CREDITS": 2,
     "BATCH_RATINGS": 3,
 }
 
