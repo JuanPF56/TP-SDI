@@ -10,6 +10,8 @@ logger = get_logger("Gateway Protocol")
 from common.protocol import SIZE_OF_HEADER, SIZE_OF_UINT8, TIPO_MENSAJE
 TIPO_MENSAJE_INVERSO = {v: k for k, v in TIPO_MENSAJE.items()}
 
+from common.decoder import Decoder
+
 class ProtocolGateway:
     def __init__(self, client_socket: socket.socket):
         self._client_socket = client_socket
@@ -54,17 +56,30 @@ class ProtocolGateway:
             logger.error("Payload length is zero")
             return None
     
-    def process_payload(self, payload: bytes) -> None:
+    def process_payload(self, message_code: str, payload: bytes) -> None:
         """
         Process the payload
         """
         decoded_payload = payload.decode("utf-8")
-        lines = decoded_payload.split("\n")
-        
-        for i, line in enumerate(lines[:3]):
-            logger.debug(f"  Line {i + 1}: {line.replace(chr(0), ' | ')}")
-        if len(lines) > 3:
-            logger.debug(f"  ... ({len(lines) - 3} more lines)")
+        if message_code == "BATCH_MOVIES":
+            movies_from_batch = Decoder.decode_movies(decoded_payload)
+            if not movies_from_batch:
+                logger.error("No movies received or invalid format")
+                return None
+            for movie in movies_from_batch:
+                logger.info(f"Received movie from batch: {movie}")
+
+        elif message_code == "BATCH_ACTORS":
+            actors_from_batch = Decoder.decode_actors(decoded_payload)
+            logger.info(f"Received actors from batch {actors_from_batch}")
+
+        elif message_code == "BATCH_RATINGS":
+            ratings_from_batch = Decoder.decode_ratings(decoded_payload)
+            logger.info(f"Received ratings from batch {ratings_from_batch}")
+
+        else:
+            logger.error(f"Unknown message code: {message_code}")
+            return None
     
     def send_confirmation(self, message_code: int) -> None:
         """

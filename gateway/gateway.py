@@ -64,7 +64,8 @@ class Gateway():
                         logger.error("Failed to receive full payload")
                         break
 
-                    protocol_gateway.process_payload(payload)
+                    protocol_gateway.process_payload(message_code, payload)
+                    
                     if is_last_batch == IS_LAST_BATCH_FLAG:
                         protocol_gateway.send_confirmation(SUCCESS)
                         logger.info(f"Received all batches for {message_code}")
@@ -88,12 +89,20 @@ class Gateway():
     def _stop_server(self, signum, frame):
         logger.info("Stopping server...")
         self._was_closed = True
+        self._close_connected_clients()
+        try:
+            self._gateway_socket.shutdown(socket.SHUT_RDWR)
+        except OSError as e:
+            logger.error(f"Error shutting down server socket: {e}")
+        finally:
+            self._gateway_socket.close()
+            logger.info("Server stopped.")
+
+    def _close_connected_clients(self):
         for client in self._clients_conected:
             try:
+                client.shutdown(socket.SHUT_RDWR)
                 client.close()
             except Exception as e:
                 logger.error(f"Error closing client socket: {e}")
         self._clients_conected.clear()
-        self._gateway_socket.shutdown(socket.SHUT_RDWR)
-        self._gateway_socket.close()
-        logger.info("Server stopped.")

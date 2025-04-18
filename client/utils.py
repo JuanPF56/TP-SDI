@@ -84,5 +84,5 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
             logger.error("Server returned an error after sending ratings.")
             raise Exception("Server returned an error after sending ratings.")
         logger.info("Ratings were sent successfully.")
-
+        
         logger.info("All datasets were sent.")
