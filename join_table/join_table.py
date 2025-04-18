@@ -46,6 +46,8 @@ def main():
     connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
     channel = connection.channel()
 
+    
+
     # Declare a fanout exchange
     channel.exchange_declare(exchange='broadcast', exchange_type='fanout')
     # Publish a message to the exchange

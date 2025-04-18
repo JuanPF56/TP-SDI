@@ -19,6 +19,7 @@ class JoinBatchBase:
 
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
+        logger.info("Node is online")
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
