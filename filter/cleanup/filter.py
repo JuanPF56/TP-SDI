@@ -10,6 +10,18 @@ logger = get_logger("Filter-Cleanup")
 
 class CleanupFilter(FilterBase):
     def __init__(self, config):
+        """
+        Initialize the CleanupFilter with the provided configuration.
+        Args:
+            config (ConfigParser): Configuration object containing RabbitMQ settings.
+        
+        Variables:
+            source_queues (list): List of source queues to consume from (raw data).
+            target_queues (dict): Dictionary mapping source queues to target queues (cleaned data).
+            rabbitmq_host (str): Hostname of the RabbitMQ server.
+            connection (pika.BlockingConnection): Connection object for RabbitMQ.
+            channel (pika.channel.Channel): Channel object for RabbitMQ.
+        """
         super().__init__(config)
 
         self.source_queues = [
@@ -29,8 +41,13 @@ class CleanupFilter(FilterBase):
         self.channel = None
         
     def connect_to_rabbitmq(self):
+        """
+        Establish a connection to RabbitMQ and declare the necessary queues.
+        """
         try:
             logger.info(f"Attempting to connect to RabbitMQ at {self.rabbitmq_host}")
+
+            # Retry connection logic. Heartbeat and timeout settings are set to avoid connection issues
             self.connection = pika.BlockingConnection(pika.ConnectionParameters(
                 host=self.rabbitmq_host,
                 heartbeat=600,
@@ -39,7 +56,7 @@ class CleanupFilter(FilterBase):
             self.channel = self.connection.channel()
 
             logger.info("Connected to RabbitMQ")
-        
+
             for queue in self.source_queues + list(self.target_queues.values()):
                 self.channel = self.connection.channel()
                 self.channel.queue_declare(queue=queue)
@@ -53,6 +70,9 @@ class CleanupFilter(FilterBase):
             return False
 
     def clean_movie(self, data):
+        """
+        Callback function to process movie data to clean it.
+        """
         if not data.get("title") or data.get("budget") is None:
             logger.debug(f"Skipping invalid movie data: {data}")
             return None
@@ -66,6 +86,9 @@ class CleanupFilter(FilterBase):
         }
 
     def clean_rating(self, data):
+        """
+        Callback function to process rating data to clean it.
+        """
         if not data.get("userId") or not data.get("movieId") or data.get("rating") is None:
             logger.debug(f"Skipping invalid rating data: {data}")
             return None
@@ -76,6 +99,9 @@ class CleanupFilter(FilterBase):
         }
 
     def clean_credit(self, data):
+        """
+        Callback function to process credit data to clean it.
+        """
         if not data.get("movieId") or not data.get("cast"):
             logger.debug(f"Skipping invalid credit data: {data}")
             return None
@@ -86,6 +112,15 @@ class CleanupFilter(FilterBase):
         }
 
     def callback(self, ch, method, properties, body, queue_name):
+        """
+        Callback function to handle incoming messages from RabbitMQ.
+        Args:
+            ch (pika.channel.Channel): The channel object.
+            method (pika.spec.Basic.Deliver): Delivery method.
+            properties (pika.spec.BasicProperties): Message properties.
+            body (bytes): The message body.
+            queue_name (str): The name of the source queue.
+        """
         try:
             logger.info(f"Received message from {queue_name}, length: {len(body)}")
             data = json.loads(body)
@@ -109,11 +144,16 @@ class CleanupFilter(FilterBase):
                 logger.info(f"Skipped invalid data from {queue_name}")
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in message from {queue_name}: {e}")
-            logger.error(f"Raw message: {body[:100]}...")  # Log first 100 chars
+            logger.error(f"Raw message: {body[:100]}...") 
         except Exception as e:
             logger.error(f"Error processing message from {queue_name}: {e}")
 
     def process(self):
+        """
+        Main processing loop for the CleanupFilter. 
+        This function sets up the RabbitMQ connection and starts consuming messages.
+        It handles the connection, message consumption, and cleanup on shutdown.
+        """
         logger.info("CleanupFilter is starting up")
         
         for key, value in self.config["DEFAULT"].items():
