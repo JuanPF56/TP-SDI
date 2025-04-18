@@ -6,5 +6,6 @@ COPY common/ ./common/
 
 # Copy specific code
 COPY gateway/ .
+RUN pip install pika
 
 CMD ["python3", "gateway.py"]
