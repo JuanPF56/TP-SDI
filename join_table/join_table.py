@@ -1,3 +1,4 @@
+import time
 import pika
 import json # Just to test RabbitMQ
 import configparser
@@ -43,8 +44,17 @@ def main():
     config = load_config()
     logger.info("Join Table node is online")
 
-    connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
-    channel = connection.channel()
+    connection = None
+    channel = None
+
+    while True:
+        try:
+            connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+            channel = connection.channel()
+            print("Connected to RabbitMQ")
+            break
+        except pika.exceptions.AMQPConnectionError:
+            time.sleep(5)
 
     # Declare a fanout exchange
     channel.exchange_declare(exchange='broadcast', exchange_type='fanout')

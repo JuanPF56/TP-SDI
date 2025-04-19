@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import pika
 import multiprocessing
 import signal
@@ -7,11 +8,20 @@ import signal
 class JoinBatchBase:
     def __init__(self, config):
         self.config = config
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
-        self.channel = self.connection.channel()
+        self.connection = None
+        self.channel = None
+        while True:
+            try:
+                self.connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+                self.channel = self.connection.channel()
+                print("Connected to RabbitMQ")
+                break
+            except pika.exceptions.AMQPConnectionError:
+                print("RabbitMQ connection error. Retrying in 5 seconds...")
+                time.sleep(5)
         self.manager = multiprocessing.Manager()
         self.movies_table = self.manager.list()
-        self.movies_table_condition = self.manager.Condition()
+        self.movies_table_ready = self.manager.Event()
 
         self.table_receiver = multiprocessing.Process(target=self.receive_movies_table)
 
@@ -54,13 +64,13 @@ class JoinBatchBase:
             movies_table = json.loads(movies_table)
 
             # Update the shared movies table with the new data
-            with self.movies_table_condition:
-                # Add the new movies to the shared movies table
-                self.movies_table.extend(movies_table["movies"])     
+            self.movies_table.extend(movies_table["movies"])
+            print(f"Received movies table: {self.movies_table}")
+            # Notify that the movies table is ready  
+            self.movies_table_ready.set()
             
             if movies_table["last"]:
                 self.channel.stop_consuming()
-                self.movies_table_condition.notify_all()
                 
                 
         # Start consuming messages from the queue

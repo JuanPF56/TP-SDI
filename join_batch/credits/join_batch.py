@@ -52,8 +52,7 @@ class JoinBatchCredits(JoinBatchBase):
         # TODO: Read credits batch from RabbitMQ
 
         # Wait for the movies table to be received
-        with self.movies_table_condition:
-            self.movies_table_condition.wait()
+        self.movies_table_ready.wait()
         logger.info("Movies table received")
         logger.info("Movies table: %s", self.movies_table)
 

@@ -60,8 +60,7 @@ class JoinBatchRatings(JoinBatchBase):
         # TODO: Read ratings batch from RabbitMQ
 
         # Wait for the movies table to be received
-        with self.movies_table_condition:
-            self.movies_table_condition.wait()
+        self.movies_table_ready.wait()
         logger.info("Movies table received")
         logger.info("Movies table: %s", self.movies_table)
 
@@ -78,12 +77,12 @@ class JoinBatchRatings(JoinBatchBase):
         # TODO: Send the joined data to the next node in the pipeline
         
         # Q3 logic (average rating)
-        ratings = {}
+        ratings_by_movie = {}
         for movie in joined_data:
             if movie["movie_id"] not in ratings:
-                ratings[movie["movie_id"]] = []
-            ratings[movie["movie_id"]].append(movie["rating"])
-        for movie_id, ratings_list in ratings.items():
+                ratings_by_movie[movie["movie_id"]] = []
+            ratings_by_movie[movie["movie_id"]].append(movie["rating"])
+        for movie_id, ratings_list in ratings_by_movie.items():
             avg_rating = sum(ratings_list) / len(ratings_list)
             logger.info(f"Movie ID: {movie_id}, Average Rating: {avg_rating}")
 
