@@ -45,7 +45,7 @@ class Decoder:
         for line in lines:
             fields = line.split("\0")
             if len(fields) < MOVIE_LINE_FIELDS:
-                logger.warning(f"Ignoring line with insufficient fields")
+#                logger.warning(f"Ignoring line with insufficient fields")
                 continue
 
             try:
@@ -236,7 +236,7 @@ class Decoder:
         for line in lines:
             fields = line.split("\0")
             if len(fields) != RATING_LINE_FIELDS:
-                logger.warning(f"Ignoring line with insufficient fields")
+#                logger.warning(f"Ignoring line with insufficient fields")
                 continue
 
             user_id, movie_id, rating, timestamp = fields

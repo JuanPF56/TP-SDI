@@ -96,12 +96,21 @@ class Gateway():
                             queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
 
                         if queue_key:
-                            for item in processed_data:
-                                self.rabbitmq_channel.basic_publish(
-                                    exchange='',
-                                    routing_key=queue_key,
-                                    body=json.dumps(asdict(item))
-                                )
+                                for item in processed_data:
+                                    self.rabbitmq_channel.basic_publish(
+                                        exchange='',
+                                        routing_key=queue_key,
+                                        body=json.dumps(asdict(item)),
+                                        properties=pika.BasicProperties(type=message_code)
+                                    )
+                                if is_last_batch == IS_LAST_BATCH_FLAG:
+                                    logger.info(f"End of stream for {message_code}")
+                                    self.rabbitmq_channel.basic_publish(
+                                        exchange='',
+                                        routing_key=queue_key,
+                                        body=b'',
+                                        properties=pika.BasicProperties(type=str(TIPO_MENSAJE["EOS_MOVIES"]))
+                                    )
                     except (TypeError, ValueError) as e:
                         logger.error(f"Error serializing data to JSON: {e}")
                         protocol_gateway.send_confirmation(ERROR)
@@ -112,6 +121,7 @@ class Gateway():
                         if message_code == "BATCH_MOVIES":
                             total_lines = protocol_gateway._decoder.get_decoded_movies()
                             dataset_name = "movies"
+
                         elif message_code == "BATCH_CREDITS":
                             total_lines = protocol_gateway._decoder.get_decoded_credits()
                             dataset_name = "credits"
