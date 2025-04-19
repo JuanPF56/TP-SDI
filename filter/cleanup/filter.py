@@ -42,6 +42,8 @@ class CleanupFilter(FilterBase):
         self.rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
         self.connection = None
         self.channel = None
+        self._eos_flags = {q: False for q in self.source_queues}
+
         
     def connect_to_rabbitmq(self):
         """
@@ -118,19 +120,57 @@ class CleanupFilter(FilterBase):
             "crew": data.get("crew", [])
         }
 
+    def _mark_eos_received(self, queue_name, msg_type):
+        """
+        Mark the end-of-stream (EOS) flag for the specified queue.
+        If all source queues have received EOS, forward the EOS to the target queues.
+        Args:
+            queue_name (str): The name of the source queue that received EOS.
+            msg_type (str): The type of message received (should be "EOS").
+        """
+        self._eos_flags[queue_name] = True
+        logger.info(f"EOS marked for source queue: {queue_name}")
+
+        if all(self._eos_flags.values()):
+            logger.info("All EOS received — forwarding EOS to target queues for each source queue.")
+
+            targets = self.target_queues.get(queue_name)
+            if targets:
+                if isinstance(targets, list):
+                    for target in targets:
+                        self.channel.basic_publish(
+                            exchange='',
+                            routing_key=target,
+                            body=b'',
+                            properties=pika.BasicProperties(type=msg_type)
+                        )
+                        logger.info(f"EOS sent to target queue: {target}")
+                else:
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=targets,
+                        body=b'',
+                        properties=pika.BasicProperties(type=msg_type)
+                    )
+                    logger.info(f"EOS sent to target queue: {targets}")
+
+            self._process_after_cleaning()
+
 
     def callback(self, ch, method, properties, body, queue_name):
         """
         Callback function to handle incoming messages from RabbitMQ.
-        Args:
-            ch (pika.channel.Channel): The channel object.
-            method (pika.spec.Basic.Deliver): Delivery method.
-            properties (pika.spec.BasicProperties): Message properties.
-            body (bytes): The message body.
-            queue_name (str): The name of the source queue.
         """
         try:
-            logger.info(f"Received message from {queue_name}, length: {len(body)}")
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+            logger.info(f"Received message from {queue_name}, type: {msg_type}")
+            
+            # Check for EOS marker
+            if msg_type == "EOS":
+                logger.info(f"Received EOS from {queue_name}")
+                self._mark_eos_received(queue_name, msg_type)
+                return
+
             data = json.loads(body)
             cleaned = None
 
@@ -144,14 +184,12 @@ class CleanupFilter(FilterBase):
             if cleaned:
                 if isinstance(self.target_queues[queue_name], list):  # Multiple target queues
                     for target_queue in self.target_queues[queue_name]:
-                        logger.info(f"Publishing cleaned data to {target_queue}")
                         self.channel.basic_publish(
                             exchange='',
                             routing_key=target_queue,
                             body=json.dumps(cleaned)
                         )
                 else:  # Single target queue
-                    logger.info(f"Publishing cleaned data to {self.target_queues[queue_name]}")
                     self.channel.basic_publish(
                         exchange='',
                         routing_key=self.target_queues[queue_name],

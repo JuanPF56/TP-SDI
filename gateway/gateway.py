@@ -104,12 +104,11 @@ class Gateway():
                                         properties=pika.BasicProperties(type=message_code)
                                     )
                                 if is_last_batch == IS_LAST_BATCH_FLAG:
-                                    logger.info(f"End of stream for {message_code}")
                                     self.rabbitmq_channel.basic_publish(
                                         exchange='',
                                         routing_key=queue_key,
                                         body=b'',
-                                        properties=pika.BasicProperties(type=str(TIPO_MENSAJE["EOS_MOVIES"]))
+                                        properties=pika.BasicProperties(type="EOS")
                                     )
                     except (TypeError, ValueError) as e:
                         logger.error(f"Error serializing data to JSON: {e}")
