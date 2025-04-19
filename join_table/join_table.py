@@ -69,7 +69,7 @@ def main():
         routing_key='',
         body=json.dumps(data).encode('utf-8'),
         properties=pika.BasicProperties(
-            delivery_mode=2  # make message persistent
+            delivery_mode=2  # Make message persistent
         )
     )
 

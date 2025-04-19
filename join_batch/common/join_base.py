@@ -44,6 +44,8 @@ class JoinBatchBase:
         # Start the loop to receive the batches
         self.receive_batch()
 
+        self.table_receiver.join()
+
 
     def receive_movies_table(self):
         # Declare a fanout exchange
