@@ -70,11 +70,18 @@ class ProtocolGateway:
             
             for movie in movies_from_batch:
                 movie.log_movie_info()
-                # TODO: NO SE SI ACA SE LAS PASAMOS DIRECTO A LA QUEUE
+                # TODO: PASARLE A LA QUEUE
 
         elif message_code == "BATCH_CREDITS":
             credits_from_batch = self._decoder.decode_credits(decoded_payload)
-            logger.info(f"Received credits from batch {credits_from_batch}")
+            if not credits_from_batch:
+                logger.error("No credits received or incomplete data")
+                return None
+            else:
+                logger.info(f"Amount of received credits {len(credits_from_batch)}")
+                for credit in credits_from_batch:
+                    credit.log_credit_info()
+                    # TODO: PASARLE A LA QUEUE
 
         elif message_code == "BATCH_RATINGS":
             ratings_from_batch = self._decoder.decode_ratings(decoded_payload)

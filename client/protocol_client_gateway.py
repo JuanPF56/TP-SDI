@@ -47,7 +47,6 @@ class ProtocolClient:
 
                     for line in lines:
                         line_bytes = line.encode("utf-8")
-
                         if len(line_bytes) > max_payload_size:
                             logger.debug(f"Fragmenting oversized line (size={len(line_bytes)})")
                             start = 0
@@ -60,8 +59,6 @@ class ProtocolClient:
                                     batch_number += 1
                                     current_payload = bytearray()
 
-                                if current_payload:
-                                    current_payload += b"\n"
                                 current_payload += chunk
                                 start += safe_end
 
@@ -72,8 +69,6 @@ class ProtocolClient:
                                 batch_number += 1
                                 current_payload = bytearray()
 
-                            if current_payload:
-                                current_payload += b"\n"
                             current_payload += line_bytes
 
                     if current_payload:
@@ -136,7 +131,9 @@ class ProtocolClient:
                 raise ValueError(f"Batch size {len(batch_data)} exceeds max allowed {self._max_batch_size}")
             
             sender.send(self._socket, header)
+            # logger.info(f"Header sent: {header}")
             sender.send(self._socket, payload)
+            # logger.info(f"Payload sent: {payload}\n(size={len(payload)})")
 
         except Exception as e:
             logger.error(f"Error sending CSV batch: {e}")

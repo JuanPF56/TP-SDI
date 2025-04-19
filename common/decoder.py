@@ -1,8 +1,9 @@
 from typing import List
 import ast
+import re
 
 from common.classes.movie import Movie, BelongsToCollection, Genre, ProductionCompany, ProductionCountry, SpokenLanguage, MOVIE_LINE_FIELDS
-from common.classes.credit import Credit, CastMember, CrewMember, CAST_MEMBER_FIELDS, CREW_MEMBER_FIELDS
+from common.classes.credit import Credit, parse_raw_cast_data, parse_raw_crew_data
 
 from common.logger import get_logger
 logger = get_logger("Decoder")
@@ -17,8 +18,6 @@ class Decoder:
         self._decoded_ratings = 0
 
         self._partial_data = ""
-        self._cast_buffer = []
-        self._crew_buffer = []
 
     def get_decoded_movies(self) -> int:
         """
@@ -145,64 +144,70 @@ class Decoder:
         return movies
     
     def decode_credits(self, decoded_payload: str) -> List[Credit]:
+        logger.debug(f"Decoding credits from payload: {decoded_payload}")
+        logger.debug("Decoding credits")
         completed_credits = []
 
-        data = self._partial_data + decoded_payload
-        lines = data.split('\n')
+        logger.debug(f"PARTIAL DATA INICIO: {self._partial_data}")
 
-        # Buffer temporal: la última línea puede estar incompleta
-        if data and not data.endswith('\n'):
-            self._partial_data = lines.pop()  # guardar la línea incompleta
-        else:
-            self._partial_data = ""
+        data_acumulated = self._partial_data + decoded_payload
 
+        # Check if there is a \n in data_acumulated, else skip processing
+        if '\n' not in data_acumulated:
+            logger.debug("No complete lines to process, waiting for more data")
+            self._partial_data = data_acumulated  # Save the incomplete data
+            return completed_credits
+
+        # Split the data into lines (at least one line is complete)
+        lines = data_acumulated.split('\n')
+        logger.debug(f"Data split into {len(lines)} lines")
         for line in lines:
-            fields = line.strip().split('"')
-            if not fields or fields == ['']:
-                continue  # línea vacía, saltear
+            logger.debug(f"Line: {line}")
 
-            if len(fields) == CAST_MEMBER_FIELDS:
-                cast_member = CastMember(
-                    cast_id=int(fields[0]),
-                    character=fields[1],
-                    credit_id=fields[2],
-                    gender=int(fields[3]) if fields[3] else None,
-                    id=int(fields[4]),
-                    name=fields[5],
-                    order=int(fields[6]),
-                    profile_path=fields[7] if fields[7] else None
+        # Last line may be incomplete, save it in _partial_data
+        self._partial_data = lines[-1]
+        logger.debug(f"PPARTIAL DATA SAVED: {self._partial_data}")
+        complete_lines = lines[:-1]  # all lines except the last one
+
+        for line in complete_lines:
+            line = line.strip()
+            if not line:
+                logger.debug("Empty line, skipping")
+                continue  # saltar líneas vacías
+
+            try:
+                logger.debug("SPLITTING LINE")
+                regex = r'^"(?P<cast_data>.*?)","(?P<crew_data>.*?)",(?P<id>\d+)$'
+                match = re.match(regex, line)
+
+                if not match:
+                    raise ValueError("Line format does not match expected structure.")
+
+                raw_cast_data = match.group("cast_data")
+                logger.debug(f"Raw cast data: {raw_cast_data}")
+                cast_members = parse_raw_cast_data(raw_cast_data)
+                for cast_member in cast_members:
+                    cast_member.log_cast_member_info()
+
+                raw_crew_data = match.group("crew_data")
+                logger.debug(f"Raw crew data: {raw_crew_data}")
+                crew_members = parse_raw_crew_data(raw_crew_data)
+                for crew_member in crew_members:
+                    crew_member.log_crew_member_info()
+
+                credit_id = match.group("id")
+                logger.debug(f"Credit ID: {credit_id}")
+
+                credit = Credit(
+                    cast=cast_members,
+                    crew=crew_members,
+                    id=credit_id
                 )
-                self._cast_buffer.append(cast_member)
+                completed_credits.append(credit)
+                self._decoded_credits += 1
 
-            elif len(fields) == CREW_MEMBER_FIELDS:
-                crew_member = CrewMember(
-                    credit_id=fields[0],
-                    department=fields[1],
-                    gender=int(fields[2]) if fields[2] else None,
-                    id=int(fields[3]),
-                    job=fields[4],
-                    name=fields[5],
-                    profile_path=fields[6] if fields[6] else None
-                )
-                self._crew_buffer.append(crew_member)
-
-            elif len(fields) == 1:
-                try:
-                    credit_id = int(fields[0])
-                    credit = Credit(
-                        cast=self._cast_buffer,
-                        crew=self._crew_buffer,
-                        id=credit_id
-                    )
-                    completed_credits.append(credit)
-                    self._cast_buffer = []  # resetear buffers
-                    self._crew_buffer = []
-                except ValueError:
-                    # Si no es un int válido, quizás es una línea corrupta
-                    continue
-
-            else:
-                # Línea desconocida o corrupta: la podés loguear o ignorar
+            except (TypeError, ValueError) as e:
+                logger.error(f"Error decoding line: {line} -> {e}")
                 continue
 
         return completed_credits

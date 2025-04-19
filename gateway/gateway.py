@@ -81,6 +81,8 @@ class Gateway():
                         logger.info(f"Received {total_lines} lines from {dataset_name}")
                         self._datasets_received += 1
 
+                    # TODO: NO hace falta esperar todos los datasets, podemos empezar a mandar respuestas 
+                    # Deberia de preguntarle a la queue de respuestas si hay algo para mandarle al cliente
                     if self._datasets_received == self._datasets_expected:
                         logger.info("All datasets received, processing queries.")
                         # TODO: PROCESAR LAS QUERIES Y MANDAR RESPUESTAS
