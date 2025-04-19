@@ -1,2 +1,3 @@
 # Ignore the client/data directory
-client/data/
+datasets_for_test/
+client/data
