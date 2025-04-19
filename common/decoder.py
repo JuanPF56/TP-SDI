@@ -4,6 +4,7 @@ import re
 
 from common.classes.movie import Movie, BelongsToCollection, Genre, ProductionCompany, ProductionCountry, SpokenLanguage, MOVIE_LINE_FIELDS
 from common.classes.credit import Credit, parse_raw_cast_data, parse_raw_crew_data
+from common.classes.rating import Rating, RATING_LINE_FIELDS
 
 from common.logger import get_logger
 logger = get_logger("Decoder")
@@ -225,9 +226,26 @@ class Decoder:
 
         return completed_credits
 
-    def decode_ratings(self, data: str) -> list:
+    def decode_ratings(self, data: str) -> list[Rating]:
         """
         Decode ratings from the data string
         """
-        # Implement the decoding logic here
-        return data.split(",")
+        ratings = []
+        lines = data.strip().split("\n")
+        
+        for line in lines:
+            fields = line.split("\0")
+            if len(fields) != RATING_LINE_FIELDS:
+                logger.warning(f"Ignoring line with insufficient fields")
+                continue
+
+            user_id, movie_id, rating, timestamp = fields
+            ratings.append(Rating(
+                userId=int(user_id),
+                movieId=int(movie_id),
+                rating=float(rating),
+                timestamp=int(timestamp)
+            ))
+            self._decoded_ratings += 1
+
+        return ratings

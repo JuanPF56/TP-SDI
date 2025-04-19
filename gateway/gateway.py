@@ -65,6 +65,7 @@ class Gateway():
                         break
                     
                     protocol_gateway.process_payload(message_code, payload)
+                    # TODO: Pasarle a rabbit
                     
                     if is_last_batch == IS_LAST_BATCH_FLAG:
                         protocol_gateway.send_confirmation(SUCCESS)

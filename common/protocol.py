@@ -17,6 +17,7 @@ TIPO_MENSAJE = {
     "BATCH_MOVIES": 1,
     "BATCH_CREDITS": 2,
     "BATCH_RATINGS": 3,
+    "EOF": 4,
 }
 
 SIZE_OF_HEADER = 1 + 4 + 1 + 4  # tipo_de_mensaje (1 byte) + nro_batch_actual (4 bytes) + es_el_ultimo_batch (1 byte) + payload_len (4 bytes)

@@ -85,7 +85,14 @@ class ProtocolGateway:
 
         elif message_code == "BATCH_RATINGS":
             ratings_from_batch = self._decoder.decode_ratings(decoded_payload)
-            logger.info(f"Received ratings from batch {ratings_from_batch}")
+            if not ratings_from_batch:
+                logger.error("No ratings received or incomplete data")
+                return None
+            else:
+                logger.info(f"Amount of received ratings {len(ratings_from_batch)}")
+                for rating in ratings_from_batch:
+                    rating.log_rating_info()
+                    # TODO: PASARLE A LA QUEUE
 
         else:
             logger.error(f"Unknown message code: {message_code}")
