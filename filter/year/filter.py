@@ -47,7 +47,25 @@ class YearFilter(FilterBase):
             channel.queue_declare(queue=queue)
 
         def callback(ch, method, properties, body):
-            pass
+            movie = json.loads(body)
+            title = movie.get("title", "Unknown title")
+            date_str = movie.get("release_date", "")
+            release_year = self.extract_year(date_str)
+
+            logger.info(f"Processing '{title}' released in {release_year} from queue '{method.routing_key}'")
+
+            if method.routing_key == input_queues["argentina"]:
+                if release_year and release_year > 2000:
+                    channel.basic_publish(exchange='', routing_key=output_queues["arg_post_2000"], body=body)
+                    logger.info(f"✔ Sent to {output_queues['arg_post_2000']}")
+            elif method.routing_key == input_queues["arg_spain"]:
+                if release_year and 2000 <= release_year <= 2009:
+                    channel.basic_publish(exchange='', routing_key=output_queues["arg_spain_2000s"], body=body)
+                    logger.info(f"✔ Sent to {output_queues['arg_spain_2000s']}")
+            else:
+                logger.warning("⚠ Unknown source queue")
+
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
         for queue in input_queues.values():
             logger.info(f"Waiting for messages from '{queue}'...")
