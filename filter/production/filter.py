@@ -13,6 +13,18 @@ class ProductionFilter(FilterBase):
         self.config = config
 
     def process(self):
+        """
+        Main processing function for the ProductionFilter.
+        This function connects to RabbitMQ, consumes messages from the input queue,
+        processes the messages, and publishes them to the appropriate output queues.
+
+        It filters movies based on their production countries and sends them to the respective queues.
+
+        Reads from the clean queue and sends to the filtered queues: 
+        - movies_argentina: for movies produced in Argentina
+        - movies_solo: for movies produced in only one country
+        - movies_arg_spain: for movies produced in both Argentina and Spain
+        """
         logger.info("Node is online")
         logger.info("Configuration loaded successfully")
         for key, value in self.config["DEFAULT"].items():
@@ -35,6 +47,11 @@ class ProductionFilter(FilterBase):
 
 
         def callback(ch, method, properties, body):
+            """
+            Callback function to process messages from the input queue.
+            This function filters the movies based on their production countries and
+            sends them to the appropriate output queues.
+            """
             movie = json.loads(body)
             country_dicts = movie.get("production_countries", [])
             country_names = [c.get("name") for c in country_dicts if "name" in c]
