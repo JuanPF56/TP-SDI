@@ -1,10 +1,12 @@
-FROM python:3.13-slim
+FROM huggingface/transformers-pytorch-cpu
+
 WORKDIR /app
 
-# Copy common code
+# Copiá todo el código necesario
+COPY sentiment_analyzer/ .
 COPY common/ ./common/
 
-# Copy specific code
-COPY sentiment_analyzer/ .
+# Instalá dependencias adicionales
+RUN pip install pika
 
 CMD ["python3", "sentiment_analyzer.py"]
