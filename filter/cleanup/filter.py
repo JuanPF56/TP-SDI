@@ -31,7 +31,10 @@ class CleanupFilter(FilterBase):
         ]
 
         self.target_queues = {
-            self.source_queues[0]: self.config["DEFAULT"].get("movies_clean_queue", "movies_clean"),
+            self.source_queues[0]: [
+            self.config["DEFAULT"].get("movies_clean_for_production_queue", "movies_clean_for_production"),
+            self.config["DEFAULT"].get("movies_clean_for_sentiment_queue", "movies_clean_for_sentiment"),
+            ],
             self.source_queues[1]: self.config["DEFAULT"].get("ratings_clean_queue", "ratings_clean"),
             self.source_queues[2]: self.config["DEFAULT"].get("credits_clean_queue", "credits_clean"),
         }
@@ -57,9 +60,15 @@ class CleanupFilter(FilterBase):
 
             logger.info("Connected to RabbitMQ")
 
-            for queue in self.source_queues + list(self.target_queues.values()):
-                self.channel = self.connection.channel()
+            for queue in self.source_queues:
                 self.channel.queue_declare(queue=queue)
+
+            for target in self.target_queues.values():
+                if isinstance(target, list):
+                    for queue in target:
+                        self.channel.queue_declare(queue=queue)
+                else:
+                    self.channel.queue_declare(queue=target)
 
             return True
         except pika.exceptions.AMQPConnectionError as e:
@@ -133,14 +142,21 @@ class CleanupFilter(FilterBase):
                 cleaned = self.clean_credit(data)
 
             if cleaned:
-                logger.info(f"Publishing cleaned data to {self.target_queues[queue_name]}")
-                self.channel.basic_publish(
-                    exchange='',
-                    routing_key=self.target_queues[queue_name],
-                    body=json.dumps(cleaned)
-                )
-            else:
-                logger.info(f"Skipped invalid data from {queue_name}")
+                if isinstance(self.target_queues[queue_name], list):  # Multiple target queues
+                    for target_queue in self.target_queues[queue_name]:
+                        logger.info(f"Publishing cleaned data to {target_queue}")
+                        self.channel.basic_publish(
+                            exchange='',
+                            routing_key=target_queue,
+                            body=json.dumps(cleaned)
+                        )
+                else:  # Single target queue
+                    logger.info(f"Publishing cleaned data to {self.target_queues[queue_name]}")
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.target_queues[queue_name],
+                        body=json.dumps(cleaned)
+                    )
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in message from {queue_name}: {e}")
             logger.error(f"Raw message: {body[:100]}...") 
