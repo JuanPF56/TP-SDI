@@ -7,4 +7,4 @@ COPY common/ ./common/
 # Copy specific code
 COPY gateway/ .
 
-CMD ["python3", "gateway.py"]
+CMD ["python3", "main.py"]
