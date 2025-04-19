@@ -8,4 +8,4 @@ COPY common/ ./common/
 COPY gateway/ .
 RUN pip install pika
 
-CMD ["python3", "gateway.py"]
+CMD ["python3", "main.py"]

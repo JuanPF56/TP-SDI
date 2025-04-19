@@ -1,192 +1,121 @@
-import configparser
-import json
-import pika
-import csv
-import ast
-import os
+import socket
+import signal
 
 from common.logger import get_logger
-
 logger = get_logger("Gateway")
-""" TEST_DATA = {
-    "movies_raw": [
-        {
-            "title": "Inception",
-            "release_date": "2010-07-16",
-            "budget": 160000000,
-            "revenue": 829895144,
-            "production_countries": [{"iso_3166_1": "US", "name": "United States of America"}],
-            "genres": [{"id": 28, "name": "Action"}, {"id": 878, "name": "Science Fiction"}]
-        },
-        {
-            "title": "The Matrix",
-            "release_date": "1999-03-31",
-            "budget": 63000000,
-            "revenue": 463517383,
-            "production_countries": [{"iso_3166_1": "US", "name": "United States of America"}],
-            "genres": [{"id": 28, "name": "Action"}, {"id": 878, "name": "Science Fiction"}]
-        }
-    ],
-    "ratings_raw": [
-        {
-            "userId": 1,
-            "movieId": 101,
-            "rating": 4.5
-        },
-        {
-            "userId": 2,
-            "movieId": 102,
-            "rating": 5.0
-        }
-    ],
-    "credits_raw": [
-        {
-            "movieId": 101,
-            "cast": ["Leonardo DiCaprio", "Joseph Gordon-Levitt"],
-            "crew": [{"name": "Christopher Nolan", "job": "Director"}]
-        },
-        {
-            "movieId": 102,
-            "cast": ["Keanu Reeves", "Laurence Fishburne"],
-            "crew": [{"name": "Lana Wachowski", "job": "Director"}, {"name": "Lilly Wachowski", "job": "Director"}]
-        }
-    ]
-}
-TEST_DATA["movies_raw"].extend([
-    {
-        "title": "The Secret in Their Eyes",
-        "release_date": "2009-08-13",
-        "budget": 2000000,
-        "revenue": 34000000,
-        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 9648, "name": "Mystery"}]
-    },
-    {
-        "title": "Wild Tales",
-        "release_date": "2014-08-21",
-        "budget": 3300000,
-        "revenue": 30000000,
-        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": [{"id": 35, "name": "Comedy"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
-    },
-    {
-        "title": "The Clan",
-        "release_date": "2015-08-13",
-        "budget": 4000000,
-        "revenue": 21000000,
-        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
-    },
-    {
-        "title": "Nine Queens",
-        "release_date": "2000-08-31",
-        "budget": 1200000,
-        "revenue": 12000000,
-        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
-    },
-    {
-        "title": "The Motorcycle Diaries",
-        "release_date": "2004-09-24",
-        "budget": 4000000,
-        "revenue": 57000000,
-        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": [{"id": 12, "name": "Adventure"}, {"id": 18, "name": "Biography"}, {"id": 18, "name": "Drama"}]
-    },
-    {
-        "title": "The Official Story",
-        "release_date": "1985-04-03",
-        "budget": 800000,
-        "revenue": 4000000,
-        "production_countries": [
-            {"iso_3166_1": "AR", "name": "Argentina"},
-            {"iso_3166_1": "ES", "name": "Spain"}
-        ],
-        "genres": [{"id": 18, "name": "Drama"}, {"id": 36, "name": "History"}]
-    },
-    {
-        "title": "Kóblic",
-        "release_date": "2016-04-14",
-        "budget": 2000000,
-        "revenue": 3000000,
-        "production_countries": [
-            {"iso_3166_1": "AR", "name": "Argentina"},
-            {"iso_3166_1": "ES", "name": "Spain"}
-        ],
-        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
-    },
-    {
-        "title": "Everybody Knows",
-        "release_date": "2001-05-09",
-        "budget": 11000000,
-        "revenue": 18000000,
-        "production_countries": [
-            {"iso_3166_1": "AR", "name": "Argentina"},
-            {"iso_3166_1": "ES", "name": "Spain"}
-        ],
-        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 9648, "name": "Mystery"}]
-    }
-]) """
-def load_config():
-    config = configparser.ConfigParser()
-    config.read("config.ini")
-    return config
-def send_movies_from_csv(config):
-    file_path = os.path.join("client", "data", "movies.csv")
-    rabbitmq_host = config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
 
-    for _ in range(10):  
-        try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
-            channel = connection.channel()
-            logger.info("Connected to RabbitMQ")
-            break  
-        except pika.exceptions.AMQPConnectionError:
-            logger.warning("Waiting for RabbitMQ to be available...")
-    else:
-        logger.error("Failed to connect to RabbitMQ after 10 attempts")
-        return
+from protocol_gateway_client import ProtocolGateway
+from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
 
-    movies_raw_queue = config["DEFAULT"].get("movies_raw_queue", "movies_raw")
-    channel.queue_declare(queue=movies_raw_queue)
+class Gateway():
+    def __init__(self, port, listen_backlog, datasets_expected):
+        self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._gateway_socket.bind(('', port))
+        self._gateway_socket.listen(listen_backlog)
+        self._was_closed = False
+        self._clients_conected = []
+        self._datasets_expected = datasets_expected
+        self._datasets_received = 0
+        logger.info(f"Gateway listening on port {port}")
 
-    with open(file_path, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
+        signal.signal(signal.SIGTERM, self._stop_server)
+        signal.signal(signal.SIGINT, self._stop_server)
 
-        for row in reader:
+    def run(self):
+        while not self._was_closed:
             try:
-                movie = {
-                    "title": row["title"],
-                    "release_date": row["release_date"],
-                    "budget": int(row["budget"]) if row["budget"] else 0,
-                    "revenue": int(row["revenue"]) if row["revenue"] else 0,
-                    "production_countries": ast.literal_eval(row["production_countries"]) if row["production_countries"] else [],
-                    "genres": ast.literal_eval(row["genres"]) if row["genres"] else []
-                }
+                client_sock = self.__accept_new_connection()
+                self.__handle_client_connection(client_sock)
+            except OSError as e:
+                if self._was_closed:
+                    break
+                logger.error(f"Error accepting new connection: {e}")
 
-                message = json.dumps(movie)
-                channel.basic_publish(
-                    exchange='',
-                    routing_key=movies_raw_queue,
-                    body=message,
-                    properties=pika.BasicProperties(
-                        delivery_mode=2,  # make message persistent
-                    )
-                )
-                logger.info(f"Sent movie: {movie['title']}")
+    def __accept_new_connection(self):
+        logger.info("Waiting for new connections...")
+        c, addr = self._gateway_socket.accept()
+        self._clients_conected.append(c)
+        logger.info(f"New connection from {addr}")
+        return c
+
+    def __handle_client_connection(self, client_sock: socket.socket):
+        try:
+            protocol_gateway = ProtocolGateway(client_sock)
+
+            while protocol_gateway._client_is_connected():
+                logger.debug("Waiting for message...")
+
+                header = protocol_gateway.receive_header()
+                if header is None:
+                    logger.error("Header is None")
+                    break
+                message_code, current_batch, is_last_batch, payload_len = header
+
+                logger.debug(f"Message code: {message_code}")
+                if message_code not in TIPO_MENSAJE:
+                    logger.error(f"Invalid message code: {message_code}")
+                    protocol_gateway.send_confirmation(ERROR)
+                    break
+
+                else:
+                    logger.debug(f"{message_code} - Receiving batch {current_batch}")
+                    payload = protocol_gateway.receive_payload(payload_len)
+                    if not payload or len(payload) != payload_len:
+                        logger.error("Failed to receive full payload")
+                        break
+                    
+                    protocol_gateway.process_payload(message_code, payload)
+                    # TODO: Pasarle a rabbit
+                    
+                    if is_last_batch == IS_LAST_BATCH_FLAG:
+                        protocol_gateway.send_confirmation(SUCCESS)
+                        if message_code == "BATCH_MOVIES":
+                            total_lines = protocol_gateway._decoder.get_decoded_movies()
+                            dataset_name = "movies"
+                        elif message_code == "BATCH_CREDITS":
+                            total_lines = protocol_gateway._decoder.get_decoded_credits()
+                            dataset_name = "credits"
+                        elif message_code == "BATCH_RATINGS":
+                            total_lines = protocol_gateway._decoder.get_decoded_ratings()
+                            dataset_name = "ratings"
+
+                        logger.info(f"Received {total_lines} lines from {dataset_name}")
+                        self._datasets_received += 1
+
+                    # TODO: NO hace falta esperar todos los datasets, podemos empezar a mandar respuestas 
+                    # Deberia de preguntarle a la queue de respuestas si hay algo para mandarle al cliente
+                    if self._datasets_received == self._datasets_expected:
+                        logger.info("All datasets received, processing queries.")
+                        # TODO: PROCESAR LAS QUERIES Y MANDAR RESPUESTAS
+                        break
+
+        except OSError as e:
+            if protocol_gateway._client_is_connected() is False:
+                logger.error(f"Client disconnected: {e}")
+                return
+
+        except Exception as e:
+            logger.error(f"Error handling client connection: {e}")
+            logger.error("Client socket is not connected")
+            return
+
+    def _stop_server(self, signum, frame):
+        logger.info("Stopping server...")
+        self._was_closed = True
+        self._close_connected_clients()
+        try:
+            self._gateway_socket.shutdown(socket.SHUT_RDWR)
+        except OSError as e:
+            logger.error(f"Error shutting down server socket: {e}")
+        finally:
+            self._gateway_socket.close()
+            logger.info("Server stopped.")
+
+    def _close_connected_clients(self):
+        for client in self._clients_conected:
+            try:
+                client.shutdown(socket.SHUT_RDWR)
+                client.close()
             except Exception as e:
-                logger.error(f"Failed to process row: {row['title'] if 'title' in row else 'Unknown'} - {e}")
-
-    connection.close()
-
-def main():
-    config = load_config()
-    logger.info("Gateway node is online")
-    logger.info("Configuration loaded successfully")
-    for key, value in config["DEFAULT"].items():
-        logger.info(f"{key}: {value}")
-
-    send_movies_from_csv(config)
-
-if __name__ == "__main__":
-    main()
+                logger.error(f"Error closing client socket: {e}")
+        self._clients_conected.clear()
