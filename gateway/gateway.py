@@ -13,7 +13,7 @@ TEST_DATA = {
             "budget": 160000000,
             "revenue": 829895144,
             "production_countries": [{"iso_3166_1": "US", "name": "United States of America"}],
-            "genres": ["Action", "Science Fiction"]
+            "genres": [{"id": 28, "name": "Action"}, {"id": 878, "name": "Science Fiction"}]
         },
         {
             "title": "The Matrix",
@@ -21,7 +21,7 @@ TEST_DATA = {
             "budget": 63000000,
             "revenue": 463517383,
             "production_countries": [{"iso_3166_1": "US", "name": "United States of America"}],
-            "genres": ["Action", "Science Fiction"]
+            "genres": [{"id": 28, "name": "Action"}, {"id": 878, "name": "Science Fiction"}]
         }
     ],
     "ratings_raw": [
@@ -56,7 +56,7 @@ TEST_DATA["movies_raw"].extend([
         "budget": 2000000,
         "revenue": 34000000,
         "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": ["Crime", "Drama", "Mystery"]
+        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 9648, "name": "Mystery"}]
     },
     {
         "title": "Wild Tales",
@@ -64,7 +64,7 @@ TEST_DATA["movies_raw"].extend([
         "budget": 3300000,
         "revenue": 30000000,
         "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": ["Comedy", "Drama", "Thriller"]
+        "genres": [{"id": 35, "name": "Comedy"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
     },
     {
         "title": "The Clan",
@@ -72,7 +72,7 @@ TEST_DATA["movies_raw"].extend([
         "budget": 4000000,
         "revenue": 21000000,
         "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": ["Crime", "Drama", "Thriller"]
+        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
     },
     {
         "title": "Nine Queens",
@@ -80,7 +80,7 @@ TEST_DATA["movies_raw"].extend([
         "budget": 1200000,
         "revenue": 12000000,
         "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": ["Crime", "Drama", "Thriller"]
+        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
     },
     {
         "title": "The Motorcycle Diaries",
@@ -88,7 +88,7 @@ TEST_DATA["movies_raw"].extend([
         "budget": 4000000,
         "revenue": 57000000,
         "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
-        "genres": ["Adventure", "Biography", "Drama"]
+        "genres": [{"id": 12, "name": "Adventure"}, {"id": 18, "name": "Biography"}, {"id": 18, "name": "Drama"}]
     },
     {
         "title": "The Official Story",
@@ -99,7 +99,7 @@ TEST_DATA["movies_raw"].extend([
             {"iso_3166_1": "AR", "name": "Argentina"},
             {"iso_3166_1": "ES", "name": "Spain"}
         ],
-        "genres": ["Drama", "History"]
+        "genres": [{"id": 18, "name": "Drama"}, {"id": 36, "name": "History"}]
     },
     {
         "title": "Kóblic",
@@ -110,7 +110,7 @@ TEST_DATA["movies_raw"].extend([
             {"iso_3166_1": "AR", "name": "Argentina"},
             {"iso_3166_1": "ES", "name": "Spain"}
         ],
-        "genres": ["Crime", "Drama", "Thriller"]
+        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
     },
     {
         "title": "Everybody Knows",
@@ -121,10 +121,9 @@ TEST_DATA["movies_raw"].extend([
             {"iso_3166_1": "AR", "name": "Argentina"},
             {"iso_3166_1": "ES", "name": "Spain"}
         ],
-        "genres": ["Crime", "Drama", "Mystery"]
+        "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 9648, "name": "Mystery"}]
     }
 ])
-
 def load_config():
     config = configparser.ConfigParser()
     config.read("config.ini")
