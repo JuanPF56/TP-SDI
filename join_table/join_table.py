@@ -64,7 +64,14 @@ def main():
         "movies": movies,
         "last": True,
     }
-    channel.basic_publish(exchange='broadcast', routing_key='', body=json.dumps(data).encode('utf-8'))
+    channel.basic_publish(
+        exchange='broadcast',
+        routing_key='',
+        body=json.dumps(data).encode('utf-8'),
+        properties=pika.BasicProperties(
+            delivery_mode=2  # make message persistent
+        )
+    )
 
     print(" [x] Sent broadcast")
     connection.close()

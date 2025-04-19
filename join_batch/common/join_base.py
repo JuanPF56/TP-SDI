@@ -50,7 +50,7 @@ class JoinBatchBase:
         self.channel.exchange_declare(exchange='broadcast', exchange_type='fanout')
 
         # Create a new queue with a random name
-        result = self.channel.queue_declare(queue='', exclusive=True)
+        result = self.channel.queue_declare(queue='', exclusive=True, durable=True)
         queue_name = result.method.queue
 
         # Bind the queue to the exchange
