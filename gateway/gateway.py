@@ -114,7 +114,7 @@ TEST_DATA["movies_raw"].extend([
     },
     {
         "title": "Everybody Knows",
-        "release_date": "2018-05-09",
+        "release_date": "2001-05-09",
         "budget": 11000000,
         "revenue": 18000000,
         "production_countries": [
