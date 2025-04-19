@@ -131,30 +131,25 @@ class CleanupFilter(FilterBase):
         self._eos_flags[queue_name] = True
         logger.info(f"EOS marked for source queue: {queue_name}")
 
-        if all(self._eos_flags.values()):
-            logger.info("All EOS received — forwarding EOS to target queues for each source queue.")
-
-            targets = self.target_queues.get(queue_name)
-            if targets:
-                if isinstance(targets, list):
-                    for target in targets:
-                        self.channel.basic_publish(
-                            exchange='',
-                            routing_key=target,
-                            body=b'',
-                            properties=pika.BasicProperties(type=msg_type)
-                        )
-                        logger.info(f"EOS sent to target queue: {target}")
-                else:
+        targets = self.target_queues.get(queue_name)
+        if targets:
+            if isinstance(targets, list):
+                for target in targets:
                     self.channel.basic_publish(
                         exchange='',
-                        routing_key=targets,
+                        routing_key=target,
                         body=b'',
                         properties=pika.BasicProperties(type=msg_type)
                     )
-                    logger.info(f"EOS sent to target queue: {targets}")
-
-            self._process_after_cleaning()
+                    logger.info(f"EOS sent to target queue: {target}")
+            else:
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=targets,
+                    body=b'',
+                    properties=pika.BasicProperties(type=msg_type)
+                )
+                logger.info(f"EOS sent to target queue: {targets}")
 
 
     def callback(self, ch, method, properties, body, queue_name):
