@@ -53,6 +53,22 @@ ratings = [
         "movie_id": 6,
         "rating": 1,
     },
+    {
+        "movie_id": 7,
+        "rating": 5,
+    },
+    {
+        "movie_id": 8,
+        "rating": 4,
+    },
+    {
+        "movie_id": 9,
+        "rating": 3,
+    },
+    {
+        "movie_id": 10,
+        "rating": 2,
+    },
 ]
 
 class JoinBatchRatings(JoinBatchBase):
@@ -64,7 +80,7 @@ class JoinBatchRatings(JoinBatchBase):
         logger.info("Movies table received")
         logger.info("Movies table: %s", self.movies_table)
 
-        # Perform the join operation (only keep cast for movies in the movies table)
+        # Perform the join operation (only keep ratings for movies in the movies table)
         joined_data = []
         for movie in ratings:
             for movie_table in self.movies_table:
@@ -79,12 +95,13 @@ class JoinBatchRatings(JoinBatchBase):
         # Q3 logic (average rating)
         ratings_by_movie = {}
         for movie in joined_data:
-            if movie["movie_id"] not in ratings:
+            if movie["movie_id"] not in ratings_by_movie:
                 ratings_by_movie[movie["movie_id"]] = []
             ratings_by_movie[movie["movie_id"]].append(movie["rating"])
-        for movie_id, ratings_list in ratings_by_movie.items():
-            avg_rating = sum(ratings_list) / len(ratings_list)
-            logger.info(f"Movie ID: {movie_id}, Average Rating: {avg_rating}")
+        average_ratings = {}
+        for movie_id, rating_list in ratings_by_movie.items():
+            average_ratings[movie_id] = sum(rating_list) / len(rating_list)
+        logger.info("Average ratings: %s", average_ratings)
 
 
 if __name__ == "__main__":
