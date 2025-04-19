@@ -48,7 +48,8 @@ class SoloCountryBudgetQuery:
             country = production_countries[0]["name"]
             budget = movie.get("budget", 0)
             self.budget_by_country[country] += budget
-            logger.info(f"Added ${budget} to {country}. Total: {self.budget_by_country[country]}")
+            self.calculate_top_5()
+
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -62,6 +63,16 @@ class SoloCountryBudgetQuery:
             channel.stop_consuming()
         finally:
             connection.close()
+    def calculate_top_5(self):
+        """
+        Calculate the top 5 countries by budget.
+        """
+        sorted_countries = sorted(self.budget_by_country.items(), key=lambda x: x[1], reverse=True)
+        top_5 = sorted_countries[:5]
+        logger.info("Top 5 countries by budget:")
+        for country, budget in top_5:
+            logger.info(f"{country}: ${budget}")
+        return top_5
 
 
 

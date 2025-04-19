@@ -15,6 +15,7 @@ services:
     entrypoint: python3 /app/gateway.py
     volumes:
     - ./gateway/config.ini:/app/config.ini
+    - ./client/data:/app/client/data
     depends_on:
     - rabbitmq
     networks:

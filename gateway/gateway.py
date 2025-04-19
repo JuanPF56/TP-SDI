@@ -1,11 +1,14 @@
 import configparser
 import json
 import pika
+import csv
+import ast
+import os
 
 from common.logger import get_logger
 
 logger = get_logger("Gateway")
-TEST_DATA = {
+""" TEST_DATA = {
     "movies_raw": [
         {
             "title": "Inception",
@@ -123,38 +126,56 @@ TEST_DATA["movies_raw"].extend([
         ],
         "genres": [{"id": 80, "name": "Crime"}, {"id": 18, "name": "Drama"}, {"id": 9648, "name": "Mystery"}]
     }
-])
+]) """
 def load_config():
     config = configparser.ConfigParser()
     config.read("config.ini")
     return config
-
-def send_test_messages(config):
+def send_movies_from_csv(config):
+    file_path = os.path.join("client", "data", "movies.csv")
     rabbitmq_host = config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
+
     for _ in range(10):  
         try:
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
             channel = connection.channel()
-            print("Connected to RabbitMQ")
+            logger.info("Connected to RabbitMQ")
             break  
         except pika.exceptions.AMQPConnectionError:
-            print("Waiting for RabbitMQ to be available...")
+            logger.warning("Waiting for RabbitMQ to be available...")
     else:
-        print("Failed to connect to RabbitMQ after 10 attempts")
+        logger.error("Failed to connect to RabbitMQ after 10 attempts")
         return
 
-    queues = {
-        "movies_raw": config["DEFAULT"].get("movies_raw_queue", "movies_raw"),
-        "ratings_raw": config["DEFAULT"].get("ratings_raw_queue", "ratings_raw"),
-        "credits_raw": config["DEFAULT"].get("credits_raw_queue", "credits_raw"),
-    }
+    movies_raw_queue = config["DEFAULT"].get("movies_raw_queue", "movies_raw")
+    channel.queue_declare(queue=movies_raw_queue)
 
-    for key, queue_name in queues.items():
-        channel.queue_declare(queue=queue_name)
-        for item in TEST_DATA[key]:
-            message = json.dumps(item)
-            channel.basic_publish(exchange='', routing_key=queue_name, body=message)
-            logger.info(f"Sent test message to '{queue_name}': {message}")
+    with open(file_path, newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+
+        for row in reader:
+            try:
+                movie = {
+                    "title": row["title"],
+                    "release_date": row["release_date"],
+                    "budget": int(row["budget"]) if row["budget"] else 0,
+                    "revenue": int(row["revenue"]) if row["revenue"] else 0,
+                    "production_countries": ast.literal_eval(row["production_countries"]) if row["production_countries"] else [],
+                    "genres": ast.literal_eval(row["genres"]) if row["genres"] else []
+                }
+
+                message = json.dumps(movie)
+                channel.basic_publish(
+                    exchange='',
+                    routing_key=movies_raw_queue,
+                    body=message,
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,  # make message persistent
+                    )
+                )
+                logger.info(f"Sent movie: {movie['title']}")
+            except Exception as e:
+                logger.error(f"Failed to process row: {row['title'] if 'title' in row else 'Unknown'} - {e}")
 
     connection.close()
 
@@ -165,7 +186,7 @@ def main():
     for key, value in config["DEFAULT"].items():
         logger.info(f"{key}: {value}")
 
-    send_test_messages(config)
+    send_movies_from_csv(config)
 
 if __name__ == "__main__":
     main()
