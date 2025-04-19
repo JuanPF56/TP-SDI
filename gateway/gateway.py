@@ -58,7 +58,7 @@ class Gateway():
                     break
 
                 else:
-                    logger.info(f"{message_code} - Receiving batch {current_batch}")
+                    logger.debug(f"{message_code} - Receiving batch {current_batch}")
                     payload = protocol_gateway.receive_payload(payload_len)
                     if not payload or len(payload) != payload_len:
                         logger.error("Failed to receive full payload")

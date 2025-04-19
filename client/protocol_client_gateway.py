@@ -29,7 +29,7 @@ class ProtocolClient:
             return False
 
     def send_dataset(self, dataset_path, dataset_name, message_type_str):
-        logger.info(f"Sending dataset {dataset_name} as {message_type_str}...")
+        logger.debug(f"Sending dataset {dataset_name} as {message_type_str}...")
 
         csv_path = os.path.join(dataset_path, f"{dataset_name}.csv")
         if not os.path.exists(csv_path):
@@ -120,7 +120,7 @@ class ProtocolClient:
         if len(header) != SIZE_OF_HEADER:
             raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
 
-        logger.info(f"{message_type_str} - Sending batch {batch_number}")
+        logger.debug(f"{message_type_str} - Sending batch {batch_number}")
         self.send_batch(header, payload)
 
     def send_batch(self, header: bytes, payload: bytes):
