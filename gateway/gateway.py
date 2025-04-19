@@ -109,7 +109,6 @@ TEST_DATA["movies_raw"].extend([
     {
         "title": "The Lord of the Rings: The Fellowship of the Ring",
         "release_date": "2001-12-19",
-        "budget": 93000000,
         "revenue": 871530324,
         "production_countries": ["New Zealand", "United States of America"],
         "genres": ["Adventure", "Fantasy", "Action"]
@@ -143,9 +142,10 @@ def send_test_messages(config):
 
     for key, queue_name in queues.items():
         channel.queue_declare(queue=queue_name)
-        message = json.dumps(TEST_DATA[key])
-        channel.basic_publish(exchange='', routing_key=queue_name, body=message)
-        logger.info(f"Sent test message to '{queue_name}': {message}")
+        for item in TEST_DATA[key]:
+            message = json.dumps(item)
+            channel.basic_publish(exchange='', routing_key=queue_name, body=message)
+            logger.info(f"Sent test message to '{queue_name}': {message}")
 
     connection.close()
 
