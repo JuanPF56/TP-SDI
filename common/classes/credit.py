@@ -14,7 +14,7 @@ def fix_double_quotes_inside_json(raw: str) -> str:
 
 class CastMember:
     def __init__(self, cast_id: int, character: str, credit_id: str, gender: Optional[int],
-                 id: str, name: str, order: int, profile_path: Optional[str]):
+                 id: int, name: str, order: int, profile_path: Optional[str]):
         self.cast_id = cast_id
         self.character = character
         self.credit_id = credit_id
@@ -51,7 +51,7 @@ class CrewMember:
     credit_id: str
     department: str
     gender: Optional[int]
-    id: str
+    id: int
     job: str
     name: str
     profile_path: Optional[str]
@@ -84,7 +84,7 @@ CREDITS_LINE_FIELDS = 3
 class Credit:
     cast: List[CastMember]
     crew: List[CrewMember]
-    id: str
+    id: int
 
     def log_credit_info(self) -> None:
         logger.debug("Credit Information:")
@@ -95,5 +95,4 @@ class Credit:
         logger.debug(f"\tCrew Members: {len(self.crew)}")
         for crew_member in self.crew:
             logger.debug(f"\t\tName: {crew_member.name}, Job: {crew_member.job}")
-        logger.debug(f"\t\tName: {crew_member.name}, Job: {crew_member.job}")
  

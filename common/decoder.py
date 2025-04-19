@@ -166,7 +166,7 @@ class Decoder:
 
         # Last line may be incomplete, save it in _partial_data
         self._partial_data = lines[-1]
-        logger.debug(f"PPARTIAL DATA SAVED: {self._partial_data}")
+        logger.debug(f"PARTIAL DATA SAVED: {self._partial_data}")
         complete_lines = lines[:-1]  # all lines except the last one
 
         for line in complete_lines:
@@ -177,25 +177,38 @@ class Decoder:
 
             try:
                 logger.debug("SPLITTING LINE")
-                regex = r'^"(?P<cast_data>.*?)","(?P<crew_data>.*?)",(?P<id>\d+)$'
+                regex = r'^(?P<cast_data>".*?"|\[\]),(?P<crew_data>".*?"|\[\]),(?P<id>\d+)$'
                 match = re.match(regex, line)
 
                 if not match:
                     raise ValueError("Line format does not match expected structure.")
 
+                # --- Cast ---
                 raw_cast_data = match.group("cast_data")
                 logger.debug(f"Raw cast data: {raw_cast_data}")
-                cast_members = parse_raw_cast_data(raw_cast_data)
-                for cast_member in cast_members:
-                    cast_member.log_cast_member_info()
 
+                clean_cast_data = raw_cast_data.strip('"')
+                if clean_cast_data and clean_cast_data != '[]':
+                    cast_members = parse_raw_cast_data(clean_cast_data)
+                    for cast_member in cast_members:
+                        cast_member.log_cast_member_info()
+                else:
+                    cast_members = []
+
+                # --- Crew ---
                 raw_crew_data = match.group("crew_data")
                 logger.debug(f"Raw crew data: {raw_crew_data}")
-                crew_members = parse_raw_crew_data(raw_crew_data)
-                for crew_member in crew_members:
-                    crew_member.log_crew_member_info()
 
-                credit_id = match.group("id")
+                clean_crew_data = raw_crew_data.strip('"')
+                if clean_crew_data and clean_crew_data != '[]':
+                    crew_members = parse_raw_crew_data(clean_crew_data)
+                    for crew_member in crew_members:
+                        crew_member.log_crew_member_info()
+                else:
+                    crew_members = []
+
+                # --- ID ---
+                credit_id = int(match.group("id"))
                 logger.debug(f"Credit ID: {credit_id}")
 
                 credit = Credit(
