@@ -17,8 +17,7 @@ def main():
     for key, value in config["DEFAULT"].items():
         logger.info(f"{key}: {value}")
 
-    gateway = Gateway(int(config["DEFAULT"]["GATEWAY_PORT"]), int(config["DEFAULT"]["LISTEN_BACKLOG"]),
-                      int(config["DEFAULT"]["DATASETS_EXPECTED"]))
+    gateway = Gateway(config)
     logger.info("Gateway started successfully")
 
     gateway.run()

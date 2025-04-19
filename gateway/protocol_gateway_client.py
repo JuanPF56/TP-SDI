@@ -57,7 +57,7 @@ class ProtocolGateway:
             logger.error("Payload length is zero")
             return None
     
-    def process_payload(self, message_code: str, payload: bytes) -> None:
+    def process_payload(self, message_code: str, payload: bytes) -> list | None:
         """
         Process the payload
         """
@@ -71,6 +71,7 @@ class ProtocolGateway:
             for movie in movies_from_batch:
                 movie.log_movie_info()
                 # TODO: PASARLE A LA QUEUE
+            return movies_from_batch    
 
         elif message_code == "BATCH_CREDITS":
             credits_from_batch = self._decoder.decode_credits(decoded_payload)
@@ -82,6 +83,7 @@ class ProtocolGateway:
                 for credit in credits_from_batch:
                     credit.log_credit_info()
                     # TODO: PASARLE A LA QUEUE
+            return credits_from_batch
 
         elif message_code == "BATCH_RATINGS":
             ratings_from_batch = self._decoder.decode_ratings(decoded_payload)
@@ -93,6 +95,7 @@ class ProtocolGateway:
                 for rating in ratings_from_batch:
                     rating.log_rating_info()
                     # TODO: PASARLE A LA QUEUE
+            return ratings_from_batch
 
         else:
             logger.error(f"Unknown message code: {message_code}")

@@ -1,5 +1,8 @@
 import socket
 import signal
+import pika
+import json
+from dataclasses import asdict
 
 from common.logger import get_logger
 logger = get_logger("Gateway")
@@ -8,18 +11,31 @@ from protocol_gateway_client import ProtocolGateway
 from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
 
 class Gateway():
-    def __init__(self, port, listen_backlog, datasets_expected):
+    def __init__(self, config):
+        self.config = config
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._gateway_socket.bind(('', port))
-        self._gateway_socket.listen(listen_backlog)
+        self._gateway_socket.bind(('', int(config["DEFAULT"]["GATEWAY_PORT"])))
+        self._gateway_socket.listen(int(config["DEFAULT"]["LISTEN_BACKLOG"]))
         self._was_closed = False
         self._clients_conected = []
-        self._datasets_expected = datasets_expected
+        self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
         self._datasets_received = 0
-        logger.info(f"Gateway listening on port {port}")
 
+        # RabbitMQ connection
+        self.rabbitmq_connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=config["DEFAULT"]["rabbitmq_host"])
+        )
+        self.rabbitmq_channel = self.rabbitmq_connection.channel()
+
+        # Declare queues
+        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["movies_raw_queue"])
+        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["credits_raw_queue"])
+        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["ratings_raw_queue"])
+
+        logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
         signal.signal(signal.SIGTERM, self._stop_server)
         signal.signal(signal.SIGINT, self._stop_server)
+
 
     def run(self):
         while not self._was_closed:
@@ -64,9 +80,33 @@ class Gateway():
                         logger.error("Failed to receive full payload")
                         break
                     
-                    protocol_gateway.process_payload(message_code, payload)
-                    # TODO: Pasarle a rabbit
-                    
+                    processed_data = protocol_gateway.process_payload(message_code, payload)
+                    if processed_data is None:
+                        logger.error("Failed to process payload")
+                        protocol_gateway.send_confirmation(ERROR)
+                        break
+                    # Send data to RabbitMQ
+                    try:
+                        queue_key = None
+                        if message_code == "BATCH_MOVIES":
+                            queue_key = self.config["DEFAULT"]["movies_raw_queue"]
+                        elif message_code == "BATCH_CREDITS":
+                            queue_key = self.config["DEFAULT"]["credits_raw_queue"]
+                        elif message_code == "BATCH_RATINGS":
+                            queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
+
+                        if queue_key:
+                            for item in processed_data:
+                                self.rabbitmq_channel.basic_publish(
+                                    exchange='',
+                                    routing_key=queue_key,
+                                    body=json.dumps(asdict(item))
+                                )
+                    except (TypeError, ValueError) as e:
+                        logger.error(f"Error serializing data to JSON: {e}")
+                        protocol_gateway.send_confirmation(ERROR)
+                        break
+
                     if is_last_batch == IS_LAST_BATCH_FLAG:
                         protocol_gateway.send_confirmation(SUCCESS)
                         if message_code == "BATCH_MOVIES":
@@ -98,7 +138,7 @@ class Gateway():
             logger.error(f"Error handling client connection: {e}")
             logger.error("Client socket is not connected")
             return
-
+        
     def _stop_server(self, signum, frame):
         logger.info("Stopping server...")
         self._was_closed = True
@@ -109,6 +149,7 @@ class Gateway():
             logger.error(f"Error shutting down server socket: {e}")
         finally:
             self._gateway_socket.close()
+            self.rabbitmq_connection.close()
             logger.info("Server stopped.")
 
     def _close_connected_clients(self):
