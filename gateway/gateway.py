@@ -12,7 +12,7 @@ TEST_DATA = {
             "release_date": "2010-07-16",
             "budget": 160000000,
             "revenue": 829895144,
-            "production_countries": ["United States of America"],
+            "production_countries": [{"iso_3166_1": "US", "name": "United States of America"}],
             "genres": ["Action", "Science Fiction"]
         },
         {
@@ -20,7 +20,7 @@ TEST_DATA = {
             "release_date": "1999-03-31",
             "budget": 63000000,
             "revenue": 463517383,
-            "production_countries": ["United States of America"],
+            "production_countries": [{"iso_3166_1": "US", "name": "United States of America"}],
             "genres": ["Action", "Science Fiction"]
         }
     ],
@@ -51,67 +51,77 @@ TEST_DATA = {
 }
 TEST_DATA["movies_raw"].extend([
     {
-        "title": "Interstellar",
-        "release_date": "2014-11-07",
-        "budget": 165000000,
-        "revenue": 677471339,
-        "production_countries": ["United States of America"],
-        "genres": ["Adventure", "Drama", "Science Fiction"]
+        "title": "The Secret in Their Eyes",
+        "release_date": "2009-08-13",
+        "budget": 2000000,
+        "revenue": 34000000,
+        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
+        "genres": ["Crime", "Drama", "Mystery"]
     },
     {
-        "title": "The Dark Knight",
-        "release_date": "2008-07-18",
-        "budget": 185000000,
-        "revenue": 1004558444,
-        "production_countries": ["United States of America"],
-        "genres": ["Action", "Crime", "Drama"]
+        "title": "Wild Tales",
+        "release_date": "2014-08-21",
+        "budget": 3300000,
+        "revenue": 30000000,
+        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
+        "genres": ["Comedy", "Drama", "Thriller"]
     },
     {
-        "title": "Pulp Fiction",
-        "release_date": "1994-10-14",
-        "budget": 8000000,
-        "revenue": 213928762,
-        "production_countries": ["United States of America"],
-        "genres": ["Crime", "Drama"]
+        "title": "The Clan",
+        "release_date": "2015-08-13",
+        "budget": 4000000,
+        "revenue": 21000000,
+        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
+        "genres": ["Crime", "Drama", "Thriller"]
     },
     {
-        "title": "Fight Club",
-        "release_date": "1999-10-15",
-        "budget": 63000000,
-        "revenue": 101209702,
-        "production_countries": ["United States of America"],
-        "genres": ["Drama"]
+        "title": "Nine Queens",
+        "release_date": "2000-08-31",
+        "budget": 1200000,
+        "revenue": 12000000,
+        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
+        "genres": ["Crime", "Drama", "Thriller"]
     },
     {
-        "title": "Forrest Gump",
-        "release_date": "1994-07-06",
-        "budget": 55000000,
-        "revenue": 678226465,
-        "production_countries": ["United States of America"],
-        "genres": ["Comedy", "Drama", "Romance"]
+        "title": "The Motorcycle Diaries",
+        "release_date": "2004-09-24",
+        "budget": 4000000,
+        "revenue": 57000000,
+        "production_countries": [{"iso_3166_1": "AR", "name": "Argentina"}],
+        "genres": ["Adventure", "Biography", "Drama"]
     },
     {
-        "title": "The Shawshank Redemption",
-        "release_date": "1994-09-23",
-        "budget": 25000000,
-        "revenue": 28341469,
-        "production_countries": ["United States of America"],
-        "genres": ["Drama", "Crime"]
+        "title": "The Official Story",
+        "release_date": "1985-04-03",
+        "budget": 800000,
+        "revenue": 4000000,
+        "production_countries": [
+            {"iso_3166_1": "AR", "name": "Argentina"},
+            {"iso_3166_1": "ES", "name": "Spain"}
+        ],
+        "genres": ["Drama", "History"]
     },
     {
-        "title": "The Godfather",
-        "release_date": "1972-03-24",
-        "budget": 6000000,
-        "revenue": 246120974,
-        "production_countries": ["United States of America"],
-        "genres": ["Crime", "Drama"]
+        "title": "Kóblic",
+        "release_date": "2016-04-14",
+        "budget": 2000000,
+        "revenue": 3000000,
+        "production_countries": [
+            {"iso_3166_1": "AR", "name": "Argentina"},
+            {"iso_3166_1": "ES", "name": "Spain"}
+        ],
+        "genres": ["Crime", "Drama", "Thriller"]
     },
     {
-        "title": "The Lord of the Rings: The Fellowship of the Ring",
-        "release_date": "2001-12-19",
-        "revenue": 871530324,
-        "production_countries": ["New Zealand", "United States of America"],
-        "genres": ["Adventure", "Fantasy", "Action"]
+        "title": "Everybody Knows",
+        "release_date": "2018-05-09",
+        "budget": 11000000,
+        "revenue": 18000000,
+        "production_countries": [
+            {"iso_3166_1": "AR", "name": "Argentina"},
+            {"iso_3166_1": "ES", "name": "Spain"}
+        ],
+        "genres": ["Crime", "Drama", "Mystery"]
     }
 ])
 
