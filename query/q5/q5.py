@@ -26,7 +26,36 @@ class SentimentStats:
 
     def _callback_factory(self, sentiment):
         def callback(ch, method, properties, body):
-            pass
+            try:
+                movie = json.loads(body)
+            except json.JSONDecodeError:
+                logger.warning(f"❌ Invalid JSON in {sentiment} queue. Skipping.")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
+            budget = movie.get("budget", 0)
+            revenue = movie.get("revenue", 0)
+            if budget > 0:
+                rate = revenue / budget
+                if sentiment == "positive":
+                    self.positive_rates.append(rate)
+                else:
+                    self.negative_rates.append(rate)
+
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            #self._print_stats()
+
+        return callback
+
+    def _print_stats(self):
+        pos_avg = sum(self.positive_rates) / len(self.positive_rates) if self.positive_rates else 0
+        neg_avg = sum(self.negative_rates) / len(self.negative_rates) if self.negative_rates else 0
+
+        print(f"\n✅ Promedio ingreso/presupuesto:")
+        print(f"   - Positivo: {pos_avg:.2f} (de {len(self.positive_rates)} películas)")
+        print(f"   - Negativo: {neg_avg:.2f} (de {len(self.negative_rates)} películas)")
+
     def run(self):
         self._connect()
 
