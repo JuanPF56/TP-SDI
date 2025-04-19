@@ -12,9 +12,10 @@ services:
   gateway:
     container_name: gateway
     image: gateway:latest
-    entrypoint: python3 /app/gateway.py
+    entrypoint: python3 /app/main.py
     volumes:
     - ./gateway/config.ini:/app/config.ini
+    - ./datasets_for_tests:/app/datasets
     depends_on:
     - rabbitmq
     networks:
@@ -144,7 +145,7 @@ services:
   client:
     container_name: client
     image: client:latest
-    entrypoint: python3 /app/client.py
+    entrypoint: python3 /app/main.py
     volumes:
     - ./client/config.ini:/app/config.ini
     depends_on:
