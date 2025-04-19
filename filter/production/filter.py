@@ -56,7 +56,7 @@ class ProductionFilter(FilterBase):
             country_dicts = movie.get("production_countries", [])
             country_names = [c.get("name") for c in country_dicts if "name" in c]
 
-            logger.info(f"Processing movie: {movie.get('title')}")
+            logger.info(f"Processing movie: {movie.get('original_title')}")
             logger.info(f"Production countries: {country_names}")
 
             if "Argentina" in country_names:

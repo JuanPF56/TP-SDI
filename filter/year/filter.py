@@ -48,7 +48,7 @@ class YearFilter(FilterBase):
 
         def callback(ch, method, properties, body):
             movie = json.loads(body)
-            title = movie.get("title", "Unknown title")
+            title = movie.get("original_title")
             date_str = movie.get("release_date", "")
             release_year = self.extract_year(date_str)
 

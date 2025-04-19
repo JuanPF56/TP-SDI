@@ -73,28 +73,25 @@ class CleanupFilter(FilterBase):
         """
         Callback function to process movie data to clean it.
         """
-        if not data.get("title") or data.get("budget") is None:
-            logger.debug(f"Skipping invalid movie data: {data}")
+        required_fields = [
+            "id", "original_title", "release_date", "budget",
+            "revenue", "production_countries", "genres", "overview"
+        ]
+        if not all(data.get(field) is not None for field in required_fields):
             return None
-        return {
-            "title": data["title"],
-            "release_date": data.get("release_date"),
-            "budget": data.get("budget"),
-            "revenue": data.get("revenue"),
-            "production_countries": data.get("production_countries"),
-            "genres": data.get("genres")
-        }
+        return {field: data[field] for field in required_fields}
 
     def clean_rating(self, data):
         """
         Callback function to process rating data to clean it.
         """
-        if not data.get("userId") or not data.get("movieId") or data.get("rating") is None:
+        required_fields = ["id", "movie_id", "rating"]
+        if not all(data.get(field) is not None for field in required_fields):
             logger.debug(f"Skipping invalid rating data: {data}")
             return None
         return {
-            "userId": data["userId"],
-            "movieId": data["movieId"],
+            "id": data["id"],
+            "movie_id": data["movie_id"],
             "rating": data["rating"]
         }
 
@@ -102,14 +99,16 @@ class CleanupFilter(FilterBase):
         """
         Callback function to process credit data to clean it.
         """
-        if not data.get("movieId") or not data.get("cast"):
+        required_fields = ["id", "cast", "crew"]
+        if not all(data.get(field) is not None for field in required_fields):
             logger.debug(f"Skipping invalid credit data: {data}")
             return None
         return {
-            "movieId": data["movieId"],
+            "id": data["id"],
             "cast": data["cast"],
             "crew": data.get("crew", [])
         }
+
 
     def callback(self, ch, method, properties, body, queue_name):
         """
