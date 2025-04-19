@@ -38,13 +38,13 @@ class Client:
             logger.error(f"Failed to close connection properly: {e}")
 
     def run(self):
-        #datasets_path = download_dataset()
-        #if not datasets_path:
-        #    logger.error("Dataset download failed.")
-        #    return
+        datasets_path = download_dataset()
+        if not datasets_path:
+            logger.error("Dataset download failed.")
+            return
 
         #for testing purposes, use this path to shorter datasets
-        datasets_path = "/datasets"
+        #datasets_path = "/datasets"
 
         self._connect()
         if not self._socket:
