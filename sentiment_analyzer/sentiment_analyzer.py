@@ -51,7 +51,26 @@ class SentimentAnalyzer:
             return "neutral"
 
     def callback(self, ch, method, properties, body):
-        pass
+        try:
+            movie_dict = json.loads(body)
+            sentiment = self.analyze_sentiment(movie_dict["overview"])
+
+
+            if sentiment == "neutral":
+                logger.info(f"Ignoring neutral/empty overview for '{movie_dict['original_title']}'")
+                return
+
+            target_queue = self.positive_queue if sentiment == 'positive' else self.negative_queue
+
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=target_queue,
+                body=json.dumps(movie_dict)
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+
     def run(self):
         logger.info("Waiting for clean movies...")
         self.channel.basic_consume(queue=self.source_queue, on_message_callback=self.callback, auto_ack=True)
