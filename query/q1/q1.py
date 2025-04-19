@@ -43,7 +43,7 @@ class ArgSpainGenreQuery:
             title = movie.get("title", "Unknown title")
             genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
             self.results.append((title, genres))
-            logger.debug(f"Buffered: {self.results}")
+            logger.info(f"Buffered: {self.results}")
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
