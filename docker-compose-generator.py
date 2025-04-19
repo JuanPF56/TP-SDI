@@ -19,7 +19,7 @@ def generate_compose(filename):
     services["gateway"] = {
         "container_name": "gateway",
         "image": "gateway:latest",
-        "entrypoint": "python3 /app/gateway.py",
+        "entrypoint": "python3 /app/main.py",
         "volumes": [
             "./gateway/config.ini:/app/config.ini"
         ],
@@ -95,9 +95,10 @@ def generate_compose(filename):
     services["client"] = {
         "container_name": "client",
         "image": "client:latest",
-        "entrypoint": "python3 /app/client.py",
+        "entrypoint": "python3 /app/main.py",
         "volumes": [
-            "./client/config.ini:/app/config.ini"
+            "./client/config.ini:/app/config.ini",
+            "./datasets_for_test:/datasets"
         ],
         "depends_on": ["gateway"],
         "networks": ["testing_net"]
