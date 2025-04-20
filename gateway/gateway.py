@@ -109,20 +109,13 @@ class Gateway():
                 
                 processed_data = protocol_gateway.process_payload(message_code, payload)
                 if processed_data is None:
-                    logger.error("Failed to process payload")
-                    protocol_gateway.send_confirmation(ERROR)
-                    break
-                
-                # track the number of data received
-                if message_code == "BATCH_MOVIES":
-                    if protocol_gateway._decoder.get_decoded_movies() % 1000 == 0:
-                        logger.info(f"Received {protocol_gateway._decoder.get_decoded_movies()} movies")
-                elif message_code == "BATCH_CREDITS":
-                    if protocol_gateway._decoder.get_decoded_credits() % 1000 == 0:
-                        logger.info(f"Received {protocol_gateway._decoder.get_decoded_credits()} credits")
-                elif message_code == "BATCH_RATINGS":
-                    if protocol_gateway._decoder.get_decoded_ratings() % 500000 == 0:
-                        logger.info(f"Received {protocol_gateway._decoder.get_decoded_ratings()} ratings")
+                    if message_code == "BATCH_CREDITS":
+                        # May be a partial batch
+                        continue
+                    else:
+                        logger.error("Failed to process payload")
+                        # protocol_gateway.send_confirmation(ERROR)
+                        break
 
                 try:
                     queue_key = None
@@ -150,11 +143,11 @@ class Gateway():
                             )
                 except (TypeError, ValueError) as e:
                     logger.error(f"Error serializing data to JSON: {e}")
-                    protocol_gateway.send_confirmation(ERROR)
+                    # protocol_gateway.send_confirmation(ERROR)
                     break
 
                 if is_last_batch == IS_LAST_BATCH_FLAG:
-                    protocol_gateway.send_confirmation(SUCCESS)
+                    # protocol_gateway.send_confirmation(SUCCESS)
                     if message_code == "BATCH_MOVIES":
                         total_lines = protocol_gateway._decoder.get_decoded_movies()
                         dataset_name = "movies"

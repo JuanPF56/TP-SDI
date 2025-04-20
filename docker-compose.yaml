@@ -175,6 +175,7 @@ services:
     entrypoint: python3 /app/main.py
     volumes:
     - ./client/config.ini:/app/config.ini
+    - ./resultados:/app/resultados
     environment:
       USE_TEST_DATASET: '0'
     depends_on:

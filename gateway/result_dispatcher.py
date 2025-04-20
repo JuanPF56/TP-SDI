@@ -36,7 +36,7 @@ class ResultDispatcher(threading.Thread):
             if body:
                 try:
                     result_data = json.loads(body)
-                    logger.info(f"Received result: {result_data}")
+                    logger.debug(f"Received result: {result_data}")
 
                     for client in self.connected_clients:
                         if client._client_is_connected():

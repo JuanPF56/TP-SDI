@@ -125,7 +125,8 @@ def generate_compose(filename, short_test=False):
 
     # Client node
     client_volumes = [
-        "./client/config.ini:/app/config.ini"
+        "./client/config.ini:/app/config.ini",
+        "./resultados:/app/resultados"
     ]
     if short_test:
         client_volumes.append("./datasets_for_test:/datasets")

@@ -79,20 +79,20 @@ class ProductionFilter(FilterBase):
             country_dicts = movie.get("production_countries", [])
             country_names = [c.get("name") for c in country_dicts if "name" in c]
 
-            logger.info(f"Processing movie: {movie.get('original_title')}")
-            logger.info(f"Production countries: {country_names}")
+            logger.debug(f"Processing movie: {movie.get('original_title')}")
+            logger.debug(f"Production countries: {country_names}")
 
             if "Argentina" in country_names:
                 channel.basic_publish(exchange='', routing_key=output_queues["movies_argentina"], body=body)
-                logger.info(f"Sent to {output_queues['movies_argentina']}")
+                logger.debug(f"Sent to {output_queues['movies_argentina']}")
 
             if len(country_names) == 1:
                 channel.basic_publish(exchange='', routing_key=output_queues["movies_solo"], body=body)
-                logger.info(f"Sent to {output_queues['movies_solo']}")
+                logger.debug(f"Sent to {output_queues['movies_solo']}")
 
             if "Argentina" in country_names and "Spain" in country_names:
                 channel.basic_publish(exchange='', routing_key=output_queues["movies_arg_spain"], body=body)
-                logger.info(f"Sent to {output_queues['movies_arg_spain']}")
+                logger.debug(f"Sent to {output_queues['movies_arg_spain']}")
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 

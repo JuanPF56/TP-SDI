@@ -158,7 +158,7 @@ class CleanupFilter(FilterBase):
         """
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
-            logger.info(f"Received message from {queue_name}, type: {msg_type}")
+            logger.debug(f"Received message from {queue_name}, type: {msg_type}")
             
             # Check for EOS marker
             if msg_type == "EOS":

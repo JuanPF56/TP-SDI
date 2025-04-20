@@ -1,0 +1,213 @@
+{
+  "query": "Q2",
+  "results": [
+    [
+      "United States of America",
+      120128886644
+    ],
+    [
+      "France",
+      2283781209
+    ],
+    [
+      "United Kingdom",
+      1611604610
+    ],
+    [
+      "India",
+      1184682797
+    ],
+    [
+      "Japan",
+      832585873
+    ]
+  ]
+}
+
+{
+  "query": "Q1",
+  "results": [
+    [
+      "La Ciénaga",
+      [
+        "Comedy",
+        "Drama"
+      ]
+    ],
+    [
+      "Plata quemada",
+      [
+        "Crime"
+      ]
+    ],
+    [
+      "En la ciudad sin límites",
+      [
+        "Thriller",
+        "Drama"
+      ]
+    ],
+    [
+      "Nicotina",
+      [
+        "Drama",
+        "Action",
+        "Comedy",
+        "Thriller"
+      ]
+    ],
+    [
+      "El abrazo partido",
+      [
+        "Drama",
+        "Foreign"
+      ]
+    ],
+    [
+      "Lugares comunes",
+      [
+        "Drama"
+      ]
+    ],
+    [
+      "Whisky",
+      [
+        "Comedy",
+        "Drama",
+        "Foreign"
+      ]
+    ],
+    [
+      "La niña santa",
+      [
+        "Drama",
+        "Foreign"
+      ]
+    ],
+    [
+      "El Aura",
+      [
+        "Crime",
+        "Drama",
+        "Thriller"
+      ]
+    ],
+    [
+      "Bombón, el perro",
+      [
+        "Drama"
+      ]
+    ],
+    [
+      "Familia rodante",
+      [
+        "Drama",
+        "Comedy"
+      ]
+    ],
+    [
+      "El método",
+      [
+        "Drama",
+        "Thriller"
+      ]
+    ],
+    [
+      "Todas las azafatas van al cielo",
+      [
+        "Drama",
+        "Romance",
+        "Foreign"
+      ]
+    ],
+    [
+      "Tetro",
+      [
+        "Drama",
+        "Mystery"
+      ]
+    ],
+    [
+      "El secreto de sus ojos",
+      [
+        "Crime",
+        "Drama",
+        "Mystery",
+        "Romance"
+      ]
+    ],
+    [
+      "Liverpool",
+      [
+        "Drama"
+      ]
+    ],
+    [
+      "La mujer sin cabeza",
+      [
+        "Drama",
+        "Mystery",
+        "Thriller"
+      ]
+    ],
+    [
+      "El último verano de La Boyita",
+      [
+        "Drama"
+      ]
+    ],
+    [
+      "Aparecidos",
+      [
+        "Horror",
+        "Thriller",
+        "Mystery"
+      ]
+    ],
+    [
+      "El niño pez",
+      [
+        "Drama",
+        "Thriller",
+        "Romance",
+        "Foreign"
+      ]
+    ],
+    [
+      "Cleopatra",
+      [
+        "Drama",
+        "Comedy",
+        "Foreign"
+      ]
+    ],
+    [
+      "Roma",
+      [
+        "Drama",
+        "Foreign"
+      ]
+    ],
+    [
+      "Conversaciones con mamá",
+      [
+        "Comedy",
+        "Drama",
+        "Foreign"
+      ]
+    ],
+    [
+      "La educación de las hadas",
+      [
+        "Drama"
+      ]
+    ],
+    [
+      "La buena vida",
+      [
+        "Drama"
+      ]
+    ]
+  ]
+}
+

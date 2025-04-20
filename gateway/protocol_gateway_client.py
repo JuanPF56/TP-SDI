@@ -129,6 +129,6 @@ class ProtocolGateway:
     def send_result(self, result_dict: dict) -> None:
         query_id_str = result_dict.get("query", "Q0")  # fallback for missing query
         message = self.build_result_message(result_dict, query_id_str)
-        logger.info(f"Sending result message: {message}")
+        logger.debug(f"Sending result message: {message}")
         sender.send(self._client_socket, message)
     

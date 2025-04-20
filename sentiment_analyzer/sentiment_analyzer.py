@@ -81,7 +81,7 @@ class SentimentAnalyzer:
 
 
             if sentiment == "neutral":
-                logger.info(f"Ignoring neutral/empty overview for '{movie_dict['original_title']}'")
+                logger.debug(f"Ignoring neutral/empty overview for '{movie_dict['original_title']}'")
                 return
 
             target_queue = self.positive_queue if sentiment == 'positive' else self.negative_queue
