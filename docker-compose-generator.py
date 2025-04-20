@@ -1,7 +1,7 @@
 import sys
 import yaml
 
-def generate_compose(filename):
+def generate_compose(filename, short_test=False):
     services = {}
 
     # RabbitMQ node
@@ -12,7 +12,13 @@ def generate_compose(filename):
         "volumes": [
             "./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json"
         ],
-        "networks": ["testing_net"]
+        "networks": ["testing_net"], 
+        "healthcheck": {
+            "test": ["CMD", "rabbitmq-diagnostics", "ping"],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 5
+        }
     }
 
     # Gateway node
@@ -23,7 +29,11 @@ def generate_compose(filename):
         "volumes": [
             "./gateway/config.ini:/app/config.ini"
         ],
-        "depends_on": ["rabbitmq"],
+        "depends_on": {
+            "rabbitmq": {
+                "condition": "service_healthy"
+            }
+        },
         "networks": ["testing_net"]
     }
 
@@ -92,14 +102,17 @@ def generate_compose(filename):
         }
 
     # Client node
+    client_volumes = [
+        "./client/config.ini:/app/config.ini"
+    ]
+    if short_test:
+        client_volumes.append("./datasets_for_test:/datasets")
+
     services["client"] = {
         "container_name": "client",
         "image": "client:latest",
         "entrypoint": "python3 /app/main.py",
-        "volumes": [
-            "./client/config.ini:/app/config.ini",
-            "./datasets_for_test:/datasets"
-        ],
+        "volumes": client_volumes,
         "depends_on": ["gateway"],
         "networks": ["testing_net"]
     }
@@ -121,10 +134,15 @@ def generate_compose(filename):
         yaml.dump(compose, f, sort_keys=False)
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python3 docker-compose-generator.py <output_file.yml>")
+    args = sys.argv[1:]
+
+    if not args or args[0].startswith("-"):
+        print("Usage: python3 docker-compose-generator.py <output_file.yml> [-short_test]")
         sys.exit(1)
-    generate_compose(sys.argv[1])
+
+    filename = args[0]
+    short_test = "-short_test" in args
+    generate_compose(filename, short_test)
 
 if __name__ == "__main__":
     main()
