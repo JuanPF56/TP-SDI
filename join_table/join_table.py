@@ -1,6 +1,7 @@
+import os
 import time
 import pika
-import json # Just to test RabbitMQ
+import json
 import configparser
 from common.logger import get_logger
 
@@ -36,32 +37,56 @@ movies = [
 ]
 
 def load_config():
+    # Load the config file
     config = configparser.ConfigParser()
-    config.read("config.ini")
-    return config
+    try:
+        config.read("config.ini")
+    except FileNotFoundError:
+        logger.error("Error: config.ini not found.")
+        raise
 
-def main():
-    config = load_config()
-    logger.info("Join Table node is online")
-
+    # Get RabbitMQ host from the config file
     rabbitmq_host = config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
+
+    # Get queue names from the config file
     input_queue = config["DEFAULT"].get("movies_arg_post_2000_queue", "movies_arg_post_2000")
     broadcast_exchange = config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
+    jb_ready_queue = config["DEFAULT"].get("join_batch_ready_queue", "join_batch_ready")
 
-    connection = None
-    channel = None
+    return {
+        "rabbitmq_host": rabbitmq_host,
+        "input_queue": input_queue,
+        "broadcast_exchange": broadcast_exchange,
+        "jb_ready_queue": jb_ready_queue
+    }
 
+def setup_rabbitmq_connection(rabbitmq_host):
+    # Establish a connection to RabbitMQ
     while True:
         try:
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
             channel = connection.channel()
             logger.info("Connected to RabbitMQ")
-            break
+            return connection, channel
         except pika.exceptions.AMQPConnectionError:
+            logger.error("RabbitMQ connection error. Retrying in 5 seconds...")
             time.sleep(5)
+
+def main():
+    config = load_config()
+    connection, channel = setup_rabbitmq_connection(config["rabbitmq_host"])
+
+    broadcast_exchange = config["broadcast_exchange"]
+    input_queue = config["input_queue"]
 
     # Declare a fanout exchange
     channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout', durable=True)
+    # Declare a queue for the input data
+    channel.queue_declare(queue=input_queue, durable=True)
+
+    # Send the movies table to the join batch nodes
+    logger.info("Sending movies table to join batch nodes...")
+    
     # Publish a message to the exchange
     data = {
         "movies": movies,

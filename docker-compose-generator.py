@@ -97,10 +97,14 @@ def generate_compose(filename, short_test=False):
             "container_name": f"join_batch_credits_{i}",
             "image": f"join_batch_credits:latest",
             "entrypoint": "python3 /app/join_batch.py",
+            "environment": {
+                "NODE_ID": str(i),
+                "NODE_TYPE": "credits"
+            },
             "volumes": [
                 f"./join_batch/credits/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway", "join_table"],
+            "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
     for i in range(1, jb_ratings + 1):
@@ -108,10 +112,14 @@ def generate_compose(filename, short_test=False):
             "container_name": f"join_batch_ratings_{i}",
             "image": f"join_batch_ratings:latest",
             "entrypoint": "python3 /app/join_batch.py",
+            "environment": {
+                "NODE_ID": str(i),
+                "NODE_TYPE": "ratings"
+            },
             "volumes": [
                 f"./join_batch/ratings/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway", "join_table"],
+            "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
 

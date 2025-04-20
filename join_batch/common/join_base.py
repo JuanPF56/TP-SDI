@@ -20,6 +20,15 @@ class JoinBatchBase:
             except pika.exceptions.AMQPConnectionError:
                 print("RabbitMQ connection error. Retrying in 5 seconds...")
                 time.sleep(5)
+        # Get the movies table exchange name from the config
+        movies_table_exchange = self.config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
+        # Declare a fanout exchange
+        self.channel.exchange_declare(exchange=movies_table_exchange, exchange_type='fanout', durable=True)
+        # Create a new queue with a random name
+        result = self.channel.queue_declare(queue='', exclusive=True, durable=True)
+        self.queue_name = result.method.queue
+        # Bind the queue to the exchange
+        self.channel.queue_bind(exchange=movies_table_exchange, queue=self.queue_name)
         self.manager = multiprocessing.Manager()
         self.movies_table = self.manager.list()
         self.movies_table_ready = self.manager.Event()
@@ -47,21 +56,7 @@ class JoinBatchBase:
 
         self.table_receiver.join()
 
-
     def receive_movies_table(self):
-        # Get the movies table exchange name from the config
-        movies_table_exchange = self.config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
-
-        # Declare a fanout exchange
-        self.channel.exchange_declare(exchange=movies_table_exchange, exchange_type='fanout', durable=True)
-
-        # Create a new queue with a random name
-        result = self.channel.queue_declare(queue='', exclusive=True, durable=True)
-        queue_name = result.method.queue
-
-        # Bind the queue to the exchange
-        self.channel.queue_bind(exchange=movies_table_exchange, queue=queue_name)
-
         # Callback function to handle incoming messages
         def callback(ch, method, properties, body):
             # Process the incoming message (the movies table)
@@ -77,9 +72,8 @@ class JoinBatchBase:
             if movies_table["last"]:
                 self.channel.stop_consuming()
                 
-                
         # Start consuming messages from the queue
-        self.channel.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
+        self.channel.basic_consume(queue=self.queue_name, on_message_callback=callback, auto_ack=True)
         
         self.channel.start_consuming()
 
