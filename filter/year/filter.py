@@ -19,7 +19,9 @@ class YearFilter(FilterBase):
         """
         Mark the end of stream (EOS) for the given message type and propagate to target queues.
         """
-        logger.info(f"EOS received for {msg_type}")
+        if msg_type in self._eos_flags:
+            logger.info(f"EOS already received for {msg_type}")
+            return
         self._eos_flags[msg_type] = True
 
         for queue in output_queues.values():
