@@ -5,13 +5,31 @@ import pika
 from collections import defaultdict
 from common.logger import get_logger
 
+EOS_TYPE = "EOS" 
 logger = get_logger("Query-Top5-Solo-Country-Budgets")
 
 
 class SoloCountryBudgetQuery:
+    """
+    Top 5 de países que más dinero han invertido en producciones sin colaborar con otros países. 
+    """
     def __init__(self, config):
         self.config = config
         self.budget_by_country = defaultdict(int)
+
+    def _calculate_and_publish_results(self):
+        """
+        Calculate the top 5 countries by budget.
+        """
+        sorted_countries = sorted(self.budget_by_country.items(), key=lambda x: x[1], reverse=True)
+        top_5 = sorted_countries[:5]
+        results = {
+            "query": "Q2",
+            "results": top_5
+        }
+        logger.info("RESULTS:" + str(results))
+        # Publish results to a results queue
+
 
     def process(self):
         """
@@ -38,6 +56,13 @@ class SoloCountryBudgetQuery:
 
         def callback(ch, method, properties, body):
             try:
+                msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+                if msg_type == EOS_TYPE:
+                    logger.info("End of stream received")
+                    self._calculate_and_publish_results()
+                    return
+
                 movie = json.loads(body)
             except json.JSONDecodeError:
                 logger.warning("❌ Skipping invalid JSON")
@@ -48,8 +73,6 @@ class SoloCountryBudgetQuery:
             country = production_countries[0]["name"]
             budget = movie.get("budget", 0)
             self.budget_by_country[country] += budget
-            self.calculate_top_5()
-
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -63,16 +86,6 @@ class SoloCountryBudgetQuery:
             channel.stop_consuming()
         finally:
             connection.close()
-    def calculate_top_5(self):
-        """
-        Calculate the top 5 countries by budget.
-        """
-        sorted_countries = sorted(self.budget_by_country.items(), key=lambda x: x[1], reverse=True)
-        top_5 = sorted_countries[:5]
-        logger.info("Top 5 countries by budget:")
-        for country, budget in top_5:
-            logger.info(f"{country}: ${budget}")
-        return top_5
 
 
 
