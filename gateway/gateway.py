@@ -31,6 +31,7 @@ class Gateway():
         self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["movies_raw_queue"])
         self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["credits_raw_queue"])
         self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["ratings_raw_queue"])
+        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
 
         logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
         signal.signal(signal.SIGTERM, self._stop_server)
