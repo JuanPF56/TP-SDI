@@ -41,3 +41,15 @@ docker-compose-logs:
 	@echo "📜 Showing logs (press Ctrl+C to exit)..."
 	docker compose -f docker-compose.yaml logs -f
 .PHONY: docker-compose-logs
+
+
+# Logs dividided in multiple terminals
+docker-compose-logs-split:
+	@echo "📺 Opening logs dividided in multiple terminals..."
+
+	# List of services that you want to track
+	services="gateway client join_table join_batch_credits join_batch_ratings filter_cleanup filter_year filter_production sentiment_analyzer query_q1 query_q2 query_q3 query_q4 query_q5"; \
+	for svc in $$services; do \
+		gnome-terminal -- bash -c "echo 🧩 Logs for $$svc; docker compose -f docker-compose.yaml logs -f $$svc; exec bash"; \
+	done
+.PHONY: docker-compose-logs-split
