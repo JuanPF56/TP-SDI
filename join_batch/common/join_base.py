@@ -12,7 +12,8 @@ class JoinBatchBase:
         self.channel = None
         while True:
             try:
-                self.connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+                rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
+                self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
                 self.channel = self.connection.channel()
                 print("Connected to RabbitMQ")
                 break
@@ -48,20 +49,22 @@ class JoinBatchBase:
 
 
     def receive_movies_table(self):
+        # Get the movies table exchange name from the config
+        movies_table_exchange = self.config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
+
         # Declare a fanout exchange
-        self.channel.exchange_declare(exchange='broadcast', exchange_type='fanout')
+        self.channel.exchange_declare(exchange=movies_table_exchange, exchange_type='fanout', durable=True)
 
         # Create a new queue with a random name
         result = self.channel.queue_declare(queue='', exclusive=True, durable=True)
         queue_name = result.method.queue
 
         # Bind the queue to the exchange
-        self.channel.queue_bind(exchange='broadcast', queue=queue_name)
+        self.channel.queue_bind(exchange=movies_table_exchange, queue=queue_name)
 
         # Callback function to handle incoming messages
         def callback(ch, method, properties, body):
             # Process the incoming message (the movies table)
-            # TODO: Use own protocol to decode the message
             movies_table = body.decode('utf-8')
             movies_table = json.loads(movies_table)
 

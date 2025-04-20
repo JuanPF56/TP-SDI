@@ -44,28 +44,31 @@ def main():
     config = load_config()
     logger.info("Join Table node is online")
 
+    rabbitmq_host = config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
+    input_queue = config["DEFAULT"].get("movies_arg_post_2000_queue", "movies_arg_post_2000")
+    broadcast_exchange = config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
+
     connection = None
     channel = None
 
     while True:
         try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
             channel = connection.channel()
-            print("Connected to RabbitMQ")
+            logger.info("Connected to RabbitMQ")
             break
         except pika.exceptions.AMQPConnectionError:
             time.sleep(5)
 
     # Declare a fanout exchange
-    channel.exchange_declare(exchange='broadcast', exchange_type='fanout')
+    channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout', durable=True)
     # Publish a message to the exchange
-    # TODO: Serialize with our own protocol
     data = {
         "movies": movies,
         "last": True,
     }
     channel.basic_publish(
-        exchange='broadcast',
+        exchange=broadcast_exchange,
         routing_key='',
         body=json.dumps(data).encode('utf-8'),
         properties=pika.BasicProperties(
@@ -73,7 +76,7 @@ def main():
         )
     )
 
-    print(" [x] Sent broadcast")
+    logger.info(" [x] Sent broadcast")
     connection.close()
 
 if __name__ == "__main__":

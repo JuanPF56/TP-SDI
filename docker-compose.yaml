@@ -9,6 +9,14 @@ services:
     - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
     networks:
     - testing_net
+    healthcheck:
+      test:
+      - CMD
+      - rabbitmq-diagnostics
+      - ping
+      interval: 5s
+      timeout: 5s
+      retries: 5
   gateway:
     container_name: gateway
     image: gateway:latest
@@ -16,47 +24,8 @@ services:
     volumes:
     - ./gateway/config.ini:/app/config.ini
     depends_on:
-    - rabbitmq
-    networks:
-    - testing_net
-  filter_cleanup:
-    container_name: filter_cleanup
-    image: filter_cleanup:latest
-    entrypoint: python3 /app/filter.py
-    volumes:
-    - ./filter/cleanup/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  filter_year:
-    container_name: filter_year
-    image: filter_year:latest
-    entrypoint: python3 /app/filter.py
-    volumes:
-    - ./filter/year/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  filter_production:
-    container_name: filter_production
-    image: filter_production:latest
-    entrypoint: python3 /app/filter.py
-    volumes:
-    - ./filter/production/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  sentiment_analyzer:
-    container_name: sentiment_analyzer
-    image: sentiment_analyzer:latest
-    entrypoint: python3 /app/sentiment_analyzer.py
-    volumes:
-    - ./sentiment_analyzer/config.ini:/app/config.ini
-    depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   join_table:
@@ -65,12 +34,15 @@ services:
     entrypoint: python3 /app/join_table.py
     volumes:
     - ./join_table/config.ini:/app/config.ini
+    environment:
+      JB_CREDITS_NODES: '1'
+      JB_RATINGS_NODES: '1'
     depends_on:
     - gateway
     networks:
     - testing_net
-  join_batch_credits:
-    container_name: join_batch_credits
+  join_batch_credits_1:
+    container_name: join_batch_credits_1
     image: join_batch_credits:latest
     entrypoint: python3 /app/join_batch.py
     volumes:
@@ -80,8 +52,8 @@ services:
     - join_table
     networks:
     - testing_net
-  join_batch_ratings:
-    container_name: join_batch_ratings
+  join_batch_ratings_1:
+    container_name: join_batch_ratings_1
     image: join_batch_ratings:latest
     entrypoint: python3 /app/join_batch.py
     volumes:
@@ -89,66 +61,6 @@ services:
     depends_on:
     - gateway
     - join_table
-    networks:
-    - testing_net
-  q1:
-    container_name: q1
-    image: query_q1:latest
-    entrypoint: python3 /app/q1.py
-    volumes:
-    - ./query/q1/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  q2:
-    container_name: q2
-    image: query_q2:latest
-    entrypoint: python3 /app/q2.py
-    volumes:
-    - ./query/q2/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  q3:
-    container_name: q3
-    image: query_q3:latest
-    entrypoint: python3 /app/q3.py
-    volumes:
-    - ./query/q3/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  q4:
-    container_name: q4
-    image: query_q4:latest
-    entrypoint: python3 /app/q4.py
-    volumes:
-    - ./query/q4/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  q5:
-    container_name: q5
-    image: query_q5:latest
-    entrypoint: python3 /app/q5.py
-    volumes:
-    - ./query/q5/config.ini:/app/config.ini
-    depends_on:
-    - gateway
-    networks:
-    - testing_net
-  client:
-    container_name: client
-    image: client:latest
-    entrypoint: python3 /app/client.py
-    volumes:
-    - ./client/config.ini:/app/config.ini
-    depends_on:
-    - gateway
     networks:
     - testing_net
 networks:

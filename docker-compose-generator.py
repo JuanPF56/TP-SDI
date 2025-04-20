@@ -1,9 +1,22 @@
 import sys
+import configparser
 import yaml
 
-def generate_compose(filename):
-    services = {}
+def generate_compose(filename, short_test=False):
 
+    # Get amount of nodes
+    config = configparser.ConfigParser()
+    try:
+        config.read("global_config.ini")
+    except FileNotFoundError:
+        print("Error: global_config.ini not found.")
+        sys.exit(1)
+    # TODO: Add rest of node amounts
+    jb_credits = config["DEFAULT"].getint("join_batch_credits_nodes", 1)
+    jb_ratings = config["DEFAULT"].getint("join_batch_ratings_nodes", 1)
+
+    services = {}
+    
     # RabbitMQ node
     services["rabbitmq"] = {
         "image": "rabbitmq:3-management",
@@ -12,7 +25,13 @@ def generate_compose(filename):
         "volumes": [
             "./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json"
         ],
-        "networks": ["testing_net"]
+        "networks": ["testing_net"], 
+        "healthcheck": {
+            "test": ["CMD", "rabbitmq-diagnostics", "ping"],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 5
+        }
     }
 
     # Gateway node
@@ -23,7 +42,11 @@ def generate_compose(filename):
         "volumes": [
             "./gateway/config.ini:/app/config.ini"
         ],
-        "depends_on": ["rabbitmq"],
+        "depends_on": {
+            "rabbitmq": {
+                "condition": "service_healthy"
+            }
+        },
         "networks": ["testing_net"]
     }
 
@@ -60,18 +83,33 @@ def generate_compose(filename):
         "volumes": [
             "./join_table/config.ini:/app/config.ini"
         ],
+        "environment": {
+            "JB_CREDITS_NODES": str(jb_credits),
+            "JB_RATINGS_NODES": str(jb_ratings)
+        },
         "depends_on": ["gateway"],
         "networks": ["testing_net"]
     }
 
     # Join batch nodes
-    for subtype in ["credits", "ratings"]:
-        services[f"join_batch_{subtype}"] = {
-            "container_name": f"join_batch_{subtype}",
-            "image": f"join_batch_{subtype}:latest",
+    for i in range(1, jb_credits + 1):
+        services[f"join_batch_credits_{i}"] = {
+            "container_name": f"join_batch_credits_{i}",
+            "image": f"join_batch_credits:latest",
             "entrypoint": "python3 /app/join_batch.py",
             "volumes": [
-                f"./join_batch/{subtype}/config.ini:/app/config.ini"
+                f"./join_batch/credits/config.ini:/app/config.ini"
+            ],
+            "depends_on": ["gateway", "join_table"],
+            "networks": ["testing_net"]
+        }
+    for i in range(1, jb_ratings + 1):
+        services[f"join_batch_ratings_{i}"] = {
+            "container_name": f"join_batch_ratings_{i}",
+            "image": f"join_batch_ratings:latest",
+            "entrypoint": "python3 /app/join_batch.py",
+            "volumes": [
+                f"./join_batch/ratings/config.ini:/app/config.ini"
             ],
             "depends_on": ["gateway", "join_table"],
             "networks": ["testing_net"]
@@ -92,13 +130,20 @@ def generate_compose(filename):
         }
 
     # Client node
+    client_volumes = [
+        "./client/config.ini:/app/config.ini"
+    ]
+    if short_test:
+        client_volumes.append("./datasets_for_test:/datasets")
+
     services["client"] = {
         "container_name": "client",
         "image": "client:latest",
-        "entrypoint": "python3 /app/client.py",
-        "volumes": [
-            "./client/config.ini:/app/config.ini"
-        ],
+        "entrypoint": "python3 /app/main.py",
+        "volumes": client_volumes,
+        "environment": {
+            "USE_TEST_DATASET": "1" if short_test else "0"
+        },
         "depends_on": ["gateway"],
         "networks": ["testing_net"]
     }
