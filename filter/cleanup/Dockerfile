@@ -7,5 +7,6 @@ COPY filter/common/ ./common/
 
 # Copy specific code
 COPY filter/cleanup/ .
+RUN pip install pika
 
 CMD ["python3", "filter.py"]

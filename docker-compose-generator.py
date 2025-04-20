@@ -38,7 +38,7 @@ def generate_compose(filename, short_test=False):
     services["gateway"] = {
         "container_name": "gateway",
         "image": "gateway:latest",
-        "entrypoint": "python3 /app/gateway.py",
+        "entrypoint": "python3 /app/main.py",
         "volumes": [
             "./gateway/config.ini:/app/config.ini"
         ],
@@ -173,10 +173,15 @@ def generate_compose(filename, short_test=False):
         yaml.dump(compose, f, sort_keys=False)
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python3 docker-compose-generator.py <output_file.yml>")
+    args = sys.argv[1:]
+
+    if not args or args[0].startswith("-"):
+        print("Usage: python3 docker-compose-generator.py <output_file.yml> [-short_test]")
         sys.exit(1)
-    generate_compose(sys.argv[1])
+
+    filename = args[0]
+    short_test = "-short_test" in args
+    generate_compose(filename, short_test)
 
 if __name__ == "__main__":
     main()
