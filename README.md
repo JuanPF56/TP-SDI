@@ -54,6 +54,18 @@ python3 prepare_test_dataset.py [--test <cant_lineas>]
 
 ---
 
+### 📦 Requisitos de instalación adicionales
+
+Este proyecto utiliza **RabbitMQ** como sistema de mensajería y la librería **[pika](https://pika.readthedocs.io/en/stable/)** para la comunicación en Python.
+
+🔧 Asegurate de tener `pika` instalado para que el sistema funcione correctamente:
+
+```bash
+pip install pika
+```
+
+---
+
 ### ▶️ Correr el sistema
 
 Los siguientes comandos permiten levantar el entorno completo con Docker:
