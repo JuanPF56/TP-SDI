@@ -39,7 +39,7 @@ python3 docker-compose-generator.py <output_file.yml> [-short_test]
 ### 🧪 Preparar datasets de prueba
 
 ```bash
-python3 prepare_test_dataset.py [--test <cant_lineas>]
+python3 download_datasets.py [--test <cant_lineas>]
 ```
 
 - Por defecto descarga el dataset completo desde Kaggle.
