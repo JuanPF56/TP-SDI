@@ -78,6 +78,19 @@ make docker-compose-down       # Detiene y elimina contenedores
 
 ---
 
+### 📊 Monitoreo de las colas (RabbitMQ)
+
+Podés visualizar el estado de las **queues** y monitorear la actividad del sistema accediendo al panel de administración de **RabbitMQ** desde tu navegador:
+
+🔗 [http://localhost:15672/#/queues](http://localhost:15672/#/queues)
+
+- **Usuario**: `guest`  
+- **Contraseña**: `guest`
+
+Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadísticas en tiempo real y comprobar que los workers estén procesando correctamente.
+
+---
+
 ## Construido con 🛠️
 
 - [Python](https://www.python.org/)
