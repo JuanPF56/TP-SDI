@@ -5,6 +5,7 @@ from datetime import datetime
 
 from common.logger import get_logger
 from common.filter_base import FilterBase
+EOS_TYPE = "EOS" 
 
 logger = get_logger("Filter-Year")
 
@@ -12,6 +13,26 @@ class YearFilter(FilterBase):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
+        self._eos_flags = {}
+    
+    def _mark_eos_received(self, msg_type, output_queues, channel):
+        """
+        Mark the end of stream (EOS) for the given message type and propagate to target queues.
+        """
+        if msg_type in self._eos_flags:
+            logger.info(f"EOS already received for {msg_type}")
+            return
+        self._eos_flags[msg_type] = True
+
+        for queue in output_queues.values():
+            channel.basic_publish(
+                exchange='',
+                routing_key=queue,
+                body=b'',
+                properties=pika.BasicProperties(type=msg_type)
+            )
+            logger.info(f"EOS message sent to {queue}")
+
 
     def process(self):
         """
@@ -47,6 +68,13 @@ class YearFilter(FilterBase):
             channel.queue_declare(queue=queue)
 
         def callback(ch, method, properties, body):
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+            if msg_type == EOS_TYPE:
+                self._mark_eos_received(msg_type, output_queues, channel)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
             movie = json.loads(body)
             title = movie.get("original_title")
             date_str = movie.get("release_date", "")

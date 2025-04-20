@@ -6,6 +6,7 @@ from configparser import ConfigParser
 from dataclasses import asdict
 from transformers import pipeline
 from common.logger import get_logger
+EOS_TYPE = "EOS" 
 
 logger = get_logger("SentimentAnalyzer")
 
@@ -50,8 +51,31 @@ class SentimentAnalyzer:
             logger.error(f"Error during sentiment analysis: {e}")
             return "neutral"
 
+    def _mark_eos_received(self, msg_type):
+        logger.info(f"Received EOS message of type '{msg_type}'.")
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.positive_queue,
+            body=b'',
+            properties=pika.BasicProperties(type=msg_type)
+        )
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.negative_queue,
+            body=b'',
+            properties=pika.BasicProperties(type=msg_type)
+        )
+        logger.info("Sent EOS message to both queues.")
+
     def callback(self, ch, method, properties, body):
         try:
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+            if msg_type == EOS_TYPE:
+                self._mark_eos_received(msg_type)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
             movie_dict = json.loads(body)
             sentiment = self.analyze_sentiment(movie_dict["overview"])
 

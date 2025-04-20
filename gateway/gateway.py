@@ -31,6 +31,7 @@ class Gateway():
         self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["movies_raw_queue"])
         self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["credits_raw_queue"])
         self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["ratings_raw_queue"])
+        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
 
         logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
         signal.signal(signal.SIGTERM, self._stop_server)
@@ -96,12 +97,20 @@ class Gateway():
                             queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
 
                         if queue_key:
-                            for item in processed_data:
-                                self.rabbitmq_channel.basic_publish(
-                                    exchange='',
-                                    routing_key=queue_key,
-                                    body=json.dumps(asdict(item))
-                                )
+                                for item in processed_data:
+                                    self.rabbitmq_channel.basic_publish(
+                                        exchange='',
+                                        routing_key=queue_key,
+                                        body=json.dumps(asdict(item)),
+                                        properties=pika.BasicProperties(type=message_code)
+                                    )
+                                if is_last_batch == IS_LAST_BATCH_FLAG:
+                                    self.rabbitmq_channel.basic_publish(
+                                        exchange='',
+                                        routing_key=queue_key,
+                                        body=b'',
+                                        properties=pika.BasicProperties(type="EOS")
+                                    )
                     except (TypeError, ValueError) as e:
                         logger.error(f"Error serializing data to JSON: {e}")
                         protocol_gateway.send_confirmation(ERROR)
@@ -112,6 +121,7 @@ class Gateway():
                         if message_code == "BATCH_MOVIES":
                             total_lines = protocol_gateway._decoder.get_decoded_movies()
                             dataset_name = "movies"
+
                         elif message_code == "BATCH_CREDITS":
                             total_lines = protocol_gateway._decoder.get_decoded_credits()
                             dataset_name = "credits"

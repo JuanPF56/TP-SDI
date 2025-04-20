@@ -1,15 +1,44 @@
 import configparser
 import json
 import pika
+EOS_TYPE = "EOS" 
 
 from common.logger import get_logger
 
 logger = get_logger("Query-Arg-Spain-Genres")
 
 class ArgSpainGenreQuery:
+    """
+    Películas y sus géneros de los años 00' con producción Argentina y Española. 
+    """
     def __init__(self, config):
         self.config = config
         self.results = []
+
+        rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
+        input_queue = self.config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
+
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
+        self.channel = self.connection.channel()
+
+        self.channel.queue_declare(queue=input_queue)
+        self.channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
+
+
+
+    def _calculate_and_publish_results(self):
+        results = { 
+            "query": "Q1",
+            "results": self.results
+        }
+        logger.info("RESULTS:" + str(results))
+
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.config["DEFAULT"]["results_queue"],
+            body=json.dumps(results),
+        )
+
 
     def process(self):
         """
@@ -24,15 +53,16 @@ class ArgSpainGenreQuery:
         """
         logger.info("Node is online")
 
-        rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
-        input_queue = self.config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
 
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
-        channel = connection.channel()
-
-        channel.queue_declare(queue=input_queue)
 
         def callback(ch, method, properties, body):
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+            if msg_type == EOS_TYPE:
+                self._calculate_and_publish_results()
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
             try:
                 movie = json.loads(body)
             except json.JSONDecodeError:
@@ -43,20 +73,19 @@ class ArgSpainGenreQuery:
             title = movie.get("original_title")
             genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
             self.results.append((title, genres))
-            logger.info(f"Buffered: {self.results}")
+            
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        logger.info(f"Waiting for messages from '{input_queue}'...")
-        channel.basic_consume(queue=input_queue, on_message_callback=callback)
+        self.channel.basic_consume(queue=self.config["DEFAULT"]["movies_arg_spain_2000s_queue"], on_message_callback=callback)
 
         try:
-            channel.start_consuming()
+            self.channel.start_consuming()
         except KeyboardInterrupt:
             logger.info("Shutting down gracefully...")
-            channel.stop_consuming()
+            self.channel.stop_consuming()
         finally:
-            connection.close()
+            self.connection.close()
 
 
 if __name__ == "__main__":

@@ -5,22 +5,37 @@ import pika
 from common.logger import get_logger
 from common.filter_base import FilterBase
 
+EOS_TYPE = "EOS" 
+
 logger = get_logger("Filter-Production")
 
 class ProductionFilter(FilterBase):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
+        self._eos_flags = {}
+
+    def _mark_eos_received(self, msg_type, output_queues, channel):
+        """
+        Mark the end of stream (EOS) for the given message type and propagate to target queues.
+        """
+        logger.info(f"EOS received for {msg_type}")
+        self._eos_flags[msg_type] = True
+
+        for queue in output_queues.values():
+            channel.basic_publish(
+                exchange='',
+                routing_key=queue,
+                body=b'',
+                properties=pika.BasicProperties(type=msg_type)
+            )
+            logger.info(f"EOS message sent to {queue}")
 
     def process(self):
         """
         Main processing function for the ProductionFilter.
-        This function connects to RabbitMQ, consumes messages from the input queue,
-        processes the messages, and publishes them to the appropriate output queues.
 
-        It filters movies based on their production countries and sends them to the respective queues.
-
-        Reads from the clean queue and sends to the filtered queues: 
+        It filters movies based on their production countries and sends them to the respective queues:
         - movies_argentina: for movies produced in Argentina
         - movies_solo: for movies produced in only one country
         - movies_arg_spain: for movies produced in both Argentina and Spain
@@ -38,6 +53,9 @@ class ProductionFilter(FilterBase):
             "movies_arg_spain": self.config["DEFAULT"].get("movies_arg_spain_queue", "movies_arg_spain")
         }
 
+        # Initialize EOS flag for this input queue
+        self._eos_flags[input_queue] = False
+
         connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
         channel = connection.channel()
 
@@ -45,13 +63,18 @@ class ProductionFilter(FilterBase):
         for queue in output_queues.values():
             channel.queue_declare(queue=queue)
 
-
         def callback(ch, method, properties, body):
             """
             Callback function to process messages from the input queue.
-            This function filters the movies based on their production countries and
-            sends them to the appropriate output queues.
+            Filters movies by production countries and sends them to the appropriate queues.
             """
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+            if msg_type == EOS_TYPE:
+                self._mark_eos_received(msg_type, output_queues, channel)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
             movie = json.loads(body)
             country_dicts = movie.get("production_countries", [])
             country_names = [c.get("name") for c in country_dicts if "name" in c]
@@ -73,7 +96,6 @@ class ProductionFilter(FilterBase):
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-
         logger.info(f"Waiting for messages from '{input_queue}'...")
         channel.basic_consume(queue=input_queue, on_message_callback=callback)
 
@@ -84,6 +106,7 @@ class ProductionFilter(FilterBase):
             channel.stop_consuming()
         finally:
             connection.close()
+
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

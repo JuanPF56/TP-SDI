@@ -4,9 +4,11 @@ import pika
 from common.logger import get_logger
 
 logger = get_logger("SentimentStats")
-
-
+EOS_TYPE = "EOS"  # Type of message indicating end of stream
 class SentimentStats:
+    """
+    Promedio de la tasa ingreso/presupuesto de películas con overview de sentimiento positivo vs. sentimiento negativo
+    """
     def __init__(self, config):
         self.config = config
         self.positive_rates = []
@@ -23,10 +25,54 @@ class SentimentStats:
 
         self.channel.queue_declare(queue=self.positive_queue)
         self.channel.queue_declare(queue=self.negative_queue)
+        self.channel.queue_declare(queue=self.config["DEFAULT"]["results_queue"])
+
+    def _calculate_and_publish_results(self):
+        """
+        Calculate the average rates and publish the results.
+        """
+        if self.received_eos["positive"] and self.received_eos["negative"]:
+            if self.positive_rates:
+                avg_positive = sum(self.positive_rates) / len(self.positive_rates)
+            else:
+                avg_positive = 0
+
+            if self.negative_rates:
+                avg_negative = sum(self.negative_rates) / len(self.negative_rates)
+            else:
+                avg_negative = 0
+
+            results = {
+                "query": "Q5",
+                "results": {
+                    "average_positive_rate": avg_positive,
+                    "average_negative_rate": avg_negative
+                }
+            }
+            logger.info("RESULTS:" + str(results))
+            # Publish results to a results queue (not implemented here)
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.config["DEFAULT"]["results_queue"],
+                body=json.dumps(results),
+            )
 
     def _callback_factory(self, sentiment):
         def callback(ch, method, properties, body):
             try:
+                msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+                if msg_type == EOS_TYPE:
+                    if sentiment == "positive":
+                        self.received_eos["positive"] = True
+                    else:
+                        self.received_eos["negative"] = True
+                    logger.info("End of stream received")
+                    self._calculate_and_publish_results()
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    return
+
+
                 movie = json.loads(body)
             except json.JSONDecodeError:
                 logger.warning(f"❌ Invalid JSON in {sentiment} queue. Skipping.")
@@ -44,17 +90,8 @@ class SentimentStats:
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-            #self._print_stats()
-
         return callback
 
-    def _print_stats(self):
-        pos_avg = sum(self.positive_rates) / len(self.positive_rates) if self.positive_rates else 0
-        neg_avg = sum(self.negative_rates) / len(self.negative_rates) if self.negative_rates else 0
-
-        print(f"\n✅ Promedio ingreso/presupuesto:")
-        print(f"   - Positivo: {pos_avg:.2f} (de {len(self.positive_rates)} películas)")
-        print(f"   - Negativo: {neg_avg:.2f} (de {len(self.negative_rates)} películas)")
 
     def run(self):
         self._connect()
