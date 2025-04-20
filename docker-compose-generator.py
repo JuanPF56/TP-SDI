@@ -1,7 +1,20 @@
 import sys
+import configparser
 import yaml
 
 def generate_compose(filename, short_test=False):
+
+    # Get amount of nodes
+    config = configparser.ConfigParser()
+    try:
+        config.read("global_config.ini")
+    except FileNotFoundError:
+        print("Error: global_config.ini not found.")
+        sys.exit(1)
+    # TODO: Add rest of node amounts
+    jb_credits = config["DEFAULT"].getint("join_batch_credits_nodes", 1)
+    jb_ratings = config["DEFAULT"].getint("join_batch_ratings_nodes", 1)
+
     services = {}
 
     # RabbitMQ node
@@ -84,6 +97,10 @@ def generate_compose(filename, short_test=False):
         "volumes": [
             "./join_table/config.ini:/app/config.ini"
         ],
+        "environment": {
+            "JB_CREDITS_NODES": str(jb_credits),
+            "JB_RATINGS_NODES": str(jb_ratings)
+        },
         "depends_on": {
             "gateway": {
                 "condition": "service_healthy"
@@ -93,15 +110,42 @@ def generate_compose(filename, short_test=False):
     }
 
     # Join batch nodes
-    for subtype in ["credits", "ratings"]:
-        services[f"join_batch_{subtype}"] = {
-            "container_name": f"join_batch_{subtype}",
-            "image": f"join_batch_{subtype}:latest",
+    for i in range(1, jb_credits + 1):
+        services[f"join_batch_credits_{i}"] = {
+            "container_name": f"join_batch_credits_{i}",
+            "image": f"join_batch_credits:latest",
             "entrypoint": "python3 /app/join_batch.py",
+            "environment": {
+                "NODE_ID": str(i),
+                "NODE_TYPE": "credits"
+            },
             "volumes": [
-                f"./join_batch/{subtype}/config.ini:/app/config.ini"
+                f"./join_batch/credits/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway", "join_table"],
+            "depends_on": {
+                "gateway": {
+                    "condition": "service_healthy"
+                }
+            },
+            "networks": ["testing_net"]
+        }
+    for i in range(1, jb_ratings + 1):
+        services[f"join_batch_ratings_{i}"] = {
+            "container_name": f"join_batch_ratings_{i}",
+            "image": f"join_batch_ratings:latest",
+            "entrypoint": "python3 /app/join_batch.py",
+            "environment": {
+                "NODE_ID": str(i),
+                "NODE_TYPE": "ratings"
+            },
+            "volumes": [
+                f"./join_batch/ratings/config.ini:/app/config.ini"
+            ],
+            "depends_on": {
+                "gateway": {
+                    "condition": "service_healthy"
+                }
+            },
             "networks": ["testing_net"]
         }
 
