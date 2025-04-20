@@ -96,12 +96,7 @@ def generate_compose(filename, short_test=False):
             "volumes": [
                 f"./join_batch/{subtype}/config.ini:/app/config.ini"
             ],
-            "depends_on": {
-                "gateway": {
-                    "condition": "service_healthy"
-                },
-                "join_table": {}
-            },
+            "depends_on": ["gateway", "join_table"],
             "networks": ["testing_net"]
         }
 
