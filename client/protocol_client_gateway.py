@@ -6,11 +6,12 @@ import os
 import csv
 
 import struct
+import json
 
 from common.logger import get_logger
 logger = get_logger("Protocol Client")
 
-from common.protocol import TIPO_MENSAJE, SIZE_OF_HEADER, SIZE_OF_UINT8
+from common.protocol import TIPO_MENSAJE, SIZE_OF_HEADER, SIZE_OF_UINT8, SIZE_OF_HEADER_RESULTS
 
 class ProtocolClient:
     def __init__(self, socket: socket.socket, max_batch_size):
@@ -151,4 +152,28 @@ class ProtocolClient:
             return confirmation
         except Exception as e:
             logger.error(f"Error receiving confirmation: {e}")
+            return None
+        
+    def receive_query_response(self) -> dict:
+        # Recibir header
+        header_bytes = receiver.receive_data(self._socket, SIZE_OF_HEADER_RESULTS)
+        if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
+            return None
+
+        tipo_mensaje, query_id, payload_len = struct.unpack(">BBI", header_bytes)
+
+        if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
+            print(f"Unexpected message type: {tipo_mensaje}")
+            return None
+
+        # Recibir payload
+        payload_bytes = receiver.receive_data(self._socket, payload_len)
+        if not payload_bytes or len(payload_bytes) != payload_len:
+            return None
+
+        try:
+            result = json.loads(payload_bytes.decode())
+            return result
+        except json.JSONDecodeError:
+            print("Failed to decode JSON response")
             return None

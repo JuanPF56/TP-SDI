@@ -12,6 +12,8 @@ logger = get_logger("Gateway")
 from protocol_gateway_client import ProtocolGateway
 from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
 
+from result_dispatcher import ResultDispatcher
+
 def connect_to_rabbitmq(host, retries=5, delay=3):
     for attempt in range(1, retries + 1):
         try:
@@ -46,6 +48,14 @@ class Gateway():
 
         logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
 
+        # Initialize ResultDispatcher
+        self.result_dispatcher = ResultDispatcher(
+            config["DEFAULT"]["rabbitmq_host"],
+            config["DEFAULT"]["results_queue"],
+            self._clients_conected
+        )
+        self.result_dispatcher.start()
+
         try:
             with open("/tmp/gateway_ready", "w") as f:
                 f.write("ready")
@@ -59,8 +69,8 @@ class Gateway():
     def run(self):
         while not self._was_closed:
             try:
-                client_sock = self.__accept_new_connection()
-                self.__handle_client_connection(client_sock)
+                protocol_gateway = self.__accept_new_connection()
+                self.__handle_client_connection(protocol_gateway)
             except OSError as e:
                 if self._was_closed:
                     break
@@ -69,14 +79,13 @@ class Gateway():
     def __accept_new_connection(self):
         logger.info("Waiting for new connections...")
         c, addr = self._gateway_socket.accept()
-        self._clients_conected.append(c)
+        protocol_gateway = ProtocolGateway(c)
+        self._clients_conected.append(protocol_gateway)
         logger.info(f"New connection from {addr}")
-        return c
+        return protocol_gateway
 
-    def __handle_client_connection(self, client_sock: socket.socket):
+    def __handle_client_connection(self, protocol_gateway: ProtocolGateway):
         try:
-            protocol_gateway = ProtocolGateway(client_sock)
-
             while protocol_gateway._client_is_connected():
                 logger.debug("Waiting for message...")
 
@@ -103,6 +112,17 @@ class Gateway():
                     logger.error("Failed to process payload")
                     protocol_gateway.send_confirmation(ERROR)
                     break
+                
+                # track the number of data received
+                if message_code == "BATCH_MOVIES":
+                    if protocol_gateway._decoder.get_decoded_movies() % 1000 == 0:
+                        logger.info(f"Received {protocol_gateway._decoder.get_decoded_movies()} movies")
+                elif message_code == "BATCH_CREDITS":
+                    if protocol_gateway._decoder.get_decoded_credits() % 1000 == 0:
+                        logger.info(f"Received {protocol_gateway._decoder.get_decoded_credits()} credits")
+                elif message_code == "BATCH_RATINGS":
+                    if protocol_gateway._decoder.get_decoded_ratings() % 500000 == 0:
+                        logger.info(f"Received {protocol_gateway._decoder.get_decoded_ratings()} ratings")
 
                 try:
                     queue_key = None
@@ -150,7 +170,6 @@ class Gateway():
 
                 if self._datasets_received == self._datasets_expected:
                     logger.info("All datasets received, processing queries.")
-                    # TODO: procesar las queries
                     break
 
         except OSError as e:
@@ -167,6 +186,8 @@ class Gateway():
         logger.info("Stopping server...")
         self._was_closed = True
         self._close_connected_clients()
+        self.result_dispatcher.stop()
+        self.result_dispatcher.join()
         try:
             self._gateway_socket.shutdown(socket.SHUT_RDWR)
         except OSError as e:

@@ -11,6 +11,8 @@ from utils import download_dataset, send_datasets_to_server
 MAX_RETRIES = 5
 DELAY_BETWEEN_RETRIES = 10
 
+QUERYS_EXPECTED = 5
+
 class Client:
     def __init__(self, host, port, max_batch_size):
         self._host = host
@@ -19,6 +21,8 @@ class Client:
         self._protocol = None
         self._max_batch_size = max_batch_size
         self._was_closed = False
+        self._query_responses = []
+        self._query_responses_expected = QUERYS_EXPECTED
 
         signal.signal(signal.SIGTERM, self._stop_client)
         signal.signal(signal.SIGINT, self._stop_client)
@@ -74,6 +78,16 @@ class Client:
                 logger.info("Sending datasets to server...")
                 send_datasets_to_server(datasets_path, self._protocol)
                 logger.info("Datasets sent successfully.")
+
+                logger.info("Waiting for server to process datasets...")
+                while len(self._query_responses) < self._query_responses_expected:
+                    query_response = self._protocol.receive_query_response()
+                    if query_response is not None:
+                        self._query_responses.append(query_response)
+                        logger.info(f"Received query response: {query_response}")
+                    else:
+                        logger.warning("No response received from server.")
+                        break
                 break
             
             except OSError as e:
