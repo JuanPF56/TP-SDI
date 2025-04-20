@@ -74,30 +74,37 @@ services:
     entrypoint: python3 /app/join_table.py
     volumes:
     - ./join_table/config.ini:/app/config.ini
+    environment:
+      JB_CREDITS_NODES: '1'
+      JB_RATINGS_NODES: '1'
     depends_on:
     - gateway
     networks:
     - testing_net
-  join_batch_credits:
-    container_name: join_batch_credits
+  join_batch_credits_1:
+    container_name: join_batch_credits_1
     image: join_batch_credits:latest
     entrypoint: python3 /app/join_batch.py
+    environment:
+      NODE_ID: '1'
+      NODE_TYPE: 'credits'
     volumes:
     - ./join_batch/credits/config.ini:/app/config.ini
     depends_on:
     - gateway
-    - join_table
     networks:
     - testing_net
-  join_batch_ratings:
-    container_name: join_batch_ratings
+  join_batch_ratings_1:
+    container_name: join_batch_ratings_1
     image: join_batch_ratings:latest
     entrypoint: python3 /app/join_batch.py
+    environment:
+      NODE_ID: '1'
+      NODE_TYPE: 'ratings'
     volumes:
     - ./join_batch/ratings/config.ini:/app/config.ini
     depends_on:
     - gateway
-    - join_table
     networks:
     - testing_net
   q1:
