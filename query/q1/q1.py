@@ -15,6 +15,17 @@ class ArgSpainGenreQuery:
         self.config = config
         self.results = []
 
+        rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
+        input_queue = self.config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
+
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
+        self.channel = self.connection.channel()
+
+        self.channel.queue_declare(queue=input_queue)
+        self.channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
+
+
+
     def _calculate_and_publish_results(self):
         results = { 
             "query": "Q1",
@@ -22,7 +33,11 @@ class ArgSpainGenreQuery:
         }
         logger.info("RESULTS:" + str(results))
 
-        # ACA SE PUBLICAN LOS RESULTADOS A LA COLA DE RESULTADOS
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.config["DEFAULT"]["results_queue"],
+            body=json.dumps(results),
+        )
 
 
     def process(self):
@@ -38,13 +53,6 @@ class ArgSpainGenreQuery:
         """
         logger.info("Node is online")
 
-        rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
-        input_queue = self.config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
-
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
-        channel = connection.channel()
-
-        channel.queue_declare(queue=input_queue)
 
 
         def callback(ch, method, properties, body):
@@ -69,16 +77,15 @@ class ArgSpainGenreQuery:
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        logger.info(f"Waiting for messages from '{input_queue}'...")
-        channel.basic_consume(queue=input_queue, on_message_callback=callback)
+        self.channel.basic_consume(queue=self.config["DEFAULT"]["movies_arg_spain_2000s_queue"], on_message_callback=callback)
 
         try:
-            channel.start_consuming()
+            self.channel.start_consuming()
         except KeyboardInterrupt:
             logger.info("Shutting down gracefully...")
-            channel.stop_consuming()
+            self.channel.stop_consuming()
         finally:
-            connection.close()
+            self.connection.close()
 
 
 if __name__ == "__main__":
