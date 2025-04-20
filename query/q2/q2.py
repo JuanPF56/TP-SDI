@@ -16,6 +16,16 @@ class SoloCountryBudgetQuery:
     def __init__(self, config):
         self.config = config
         self.budget_by_country = defaultdict(int)
+        rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
+        input_queue = self.config["DEFAULT"].get("movies_solo_queue", "movies_solo")
+
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
+        self.channel = connection.channel()
+
+        self.channel.queue_declare(queue=input_queue)
+        self.channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
+
+
 
     def _calculate_and_publish_results(self):
         """
@@ -28,7 +38,11 @@ class SoloCountryBudgetQuery:
             "results": top_5
         }
         logger.info("RESULTS:" + str(results))
-        # Publish results to a results queue
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.config["DEFAULT"]["results_queue"],
+            body=json.dumps(results),
+        )
 
 
     def process(self):
@@ -45,14 +59,6 @@ class SoloCountryBudgetQuery:
         NEXT: When receiving the end of stream flag, publish the results to a results queue.
         """
         logger.info("Node is online")
-
-        rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
-        input_queue = self.config["DEFAULT"].get("movies_solo_queue", "movies_solo")
-
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
-        channel = connection.channel()
-
-        channel.queue_declare(queue=input_queue)
 
         def callback(ch, method, properties, body):
             try:
@@ -77,16 +83,15 @@ class SoloCountryBudgetQuery:
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        logger.info(f"Waiting for messages from '{input_queue}'...")
-        channel.basic_consume(queue=input_queue, on_message_callback=callback)
+        self.channel.basic_consume(queue=self.config["DEFAULT"]["movies_solo_queue"], on_message_callback=callback)
 
         try:
-            channel.start_consuming()
+            self.channel.start_consuming()
         except KeyboardInterrupt:
             logger.info("Shutting down gracefully...")
-            channel.stop_consuming()
+            self.channel.stop_consuming()
         finally:
-            connection.close()
+            self.connection.close()
 
 
 
