@@ -5,7 +5,7 @@ import pika
 from common.logger import get_logger
 from common.filter_base import FilterBase
 
-EOS_TYPE = "EOS"  # Constant for EOS message type
+EOS_TYPE = "EOS" 
 
 logger = get_logger("Filter-Production")
 
