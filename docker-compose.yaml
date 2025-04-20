@@ -29,7 +29,11 @@ services:
     networks:
     - testing_net
     healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/gateway_ready"]
+      test:
+      - CMD
+      - test
+      - -f
+      - /tmp/gateway_ready
       interval: 5s
       timeout: 5s
       retries: 5
@@ -106,8 +110,8 @@ services:
     volumes:
     - ./join_batch/ratings/config.ini:/app/config.ini
     depends_on:
-      - join_table
-      - gateway
+    - gateway
+    - join_table
     networks:
     - testing_net
   q1:
@@ -171,9 +175,8 @@ services:
     entrypoint: python3 /app/main.py
     volumes:
     - ./client/config.ini:/app/config.ini
-    - ./datasets_for_test:/datasets
     environment:
-      USE_TEST_DATASET: '1'
+      USE_TEST_DATASET: '0'
     depends_on:
       gateway:
         condition: service_healthy

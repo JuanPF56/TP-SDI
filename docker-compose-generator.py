@@ -29,6 +29,11 @@ def generate_compose(filename, short_test=False):
         "volumes": [
             "./gateway/config.ini:/app/config.ini"
         ],
+        "depends_on": {
+            "rabbitmq": {
+                "condition": "service_healthy"
+            }
+        },
         "networks": ["testing_net"], 
         "healthcheck": {
             "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
