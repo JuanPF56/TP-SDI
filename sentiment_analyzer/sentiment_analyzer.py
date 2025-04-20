@@ -73,6 +73,7 @@ class SentimentAnalyzer:
 
             if msg_type == EOS_TYPE:
                 self._mark_eos_received(msg_type)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             movie_dict = json.loads(body)

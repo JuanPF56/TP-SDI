@@ -51,8 +51,8 @@ class ArgSpainGenreQuery:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
-                logger.info("End of stream received")
                 self._calculate_and_publish_results()
+                ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             try:

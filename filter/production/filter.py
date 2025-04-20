@@ -72,6 +72,7 @@ class ProductionFilter(FilterBase):
 
             if msg_type == EOS_TYPE:
                 self._mark_eos_received(msg_type, output_queues, channel)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             movie = json.loads(body)
