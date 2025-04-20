@@ -113,6 +113,9 @@ def generate_compose(filename, short_test=False):
         "image": "client:latest",
         "entrypoint": "python3 /app/main.py",
         "volumes": client_volumes,
+        "environment": {
+            "USE_TEST_DATASET": "1" if short_test else "0"
+        },
         "depends_on": ["gateway"],
         "networks": ["testing_net"]
     }

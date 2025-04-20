@@ -3,29 +3,31 @@ services:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - 5672:5672
-      - 15672:15672
+    - 5672:5672
+    - 15672:15672
     volumes:
-      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
+    - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
     networks:
-      - testing_net
+    - testing_net
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test:
+      - CMD
+      - rabbitmq-diagnostics
+      - ping
       interval: 5s
       timeout: 5s
       retries: 5
-
   gateway:
     container_name: gateway
     image: gateway:latest
     entrypoint: python3 /app/main.py
     volumes:
-      - ./gateway/config.ini:/app/config.ini
+    - ./gateway/config.ini:/app/config.ini
     depends_on:
       rabbitmq:
         condition: service_healthy
     networks:
-      - testing_net
+    - testing_net
   filter_cleanup:
     container_name: filter_cleanup
     image: filter_cleanup:latest
@@ -154,6 +156,8 @@ services:
     entrypoint: python3 /app/main.py
     volumes:
     - ./client/config.ini:/app/config.ini
+    environment:
+      USE_TEST_DATASET: '0'
     depends_on:
     - gateway
     networks:

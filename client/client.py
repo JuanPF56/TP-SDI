@@ -1,11 +1,15 @@
 import socket
 import signal
+import time
 
 from common.logger import get_logger
 logger = get_logger("Client")
 
 from protocol_client_gateway import ProtocolClient
 from utils import download_dataset, send_datasets_to_server
+
+MAX_RETRIES = 5
+DELAY_BETWEEN_RETRIES = 2
 
 class Client:
     def __init__(self, host, port, max_batch_size):
@@ -19,13 +23,22 @@ class Client:
         signal.signal(signal.SIGTERM, self._stop_client)
         signal.signal(signal.SIGINT, self._stop_client)
 
-    def _connect(self):
-        try:
-            self._socket.connect((self._host, self._port))
-            logger.info(f"Connected to server at {self._host}:{self._port}")
-            self._protocol = ProtocolClient(self._socket, self._max_batch_size)
-        except Exception as e:
-            logger.error(f"Failed to connect to server: {e}")
+    def _connect(self, retries=MAX_RETRIES, delay=DELAY_BETWEEN_RETRIES):
+        attempt = 0
+        while attempt < retries:
+            try:
+                self._socket.connect((self._host, self._port))
+                logger.info(f"Connected to server at {self._host}:{self._port}")
+                self._protocol = ProtocolClient(self._socket, self._max_batch_size)
+                return
+            except Exception as e:
+                attempt += 1
+                logger.warning(f"Connection attempt {attempt} failed: {e}")
+                if attempt < retries:
+                    logger.info(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                else:
+                    logger.error("Max connection attempts reached. Check if server is up.")
 
     def _stop_client(self):
         try:
@@ -37,16 +50,21 @@ class Client:
         except Exception as e:
             logger.error(f"Failed to close connection properly: {e}")
 
-    def run(self):
-        datasets_path = download_dataset()
-        if not datasets_path:
-            logger.error("Dataset download failed.")
-            return
-
-        #for testing purposes, use this path to shorter datasets
-        #datasets_path = "/datasets"
+    def run(self, use_test_dataset):
+        if use_test_dataset:
+            datasets_path = "/datasets"
+            logger.info("Using test dataset.")
+        else:
+            datasets_path = download_dataset()
+            if not datasets_path:
+                logger.error("Dataset download failed.")
+                return
+            logger.info("Using full dataset.")
 
         self._connect()
+        if not self._protocol:
+            logger.error("Protocol initialization failed. Stopping client.")
+            return
         if not self._socket:
             logger.error("Socket connection failed.")
             return
