@@ -9,7 +9,7 @@ from protocol_client_gateway import ProtocolClient
 from utils import download_dataset, send_datasets_to_server
 
 MAX_RETRIES = 5
-DELAY_BETWEEN_RETRIES = 2
+DELAY_BETWEEN_RETRIES = 10
 
 class Client:
     def __init__(self, host, port, max_batch_size):

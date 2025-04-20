@@ -2,6 +2,8 @@ import socket
 import signal
 import pika
 import json
+import os
+import time
 from dataclasses import asdict
 
 from common.logger import get_logger
@@ -9,6 +11,17 @@ logger = get_logger("Gateway")
 
 from protocol_gateway_client import ProtocolGateway
 from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
+
+def connect_to_rabbitmq(host, retries=5, delay=3):
+    for attempt in range(1, retries + 1):
+        try:
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
+            logger.info("Successfully connected to RabbitMQ.")
+            return connection
+        except pika.exceptions.AMQPConnectionError as e:
+            logger.warning(f"RabbitMQ connection failed (attempt {attempt}/{retries}): {e}")
+            time.sleep(delay)
+    raise RuntimeError("Failed to connect to RabbitMQ after multiple attempts.")
 
 class Gateway():
     def __init__(self, config):
@@ -21,10 +34,8 @@ class Gateway():
         self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
         self._datasets_received = 0
 
-        # RabbitMQ connection
-        self.rabbitmq_connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=config["DEFAULT"]["rabbitmq_host"])
-        )
+        # Connect to RabbitMQ with retry
+        self.rabbitmq_connection = connect_to_rabbitmq(config["DEFAULT"]["rabbitmq_host"])
         self.rabbitmq_channel = self.rabbitmq_connection.channel()
 
         # Declare queues
@@ -34,9 +45,16 @@ class Gateway():
         self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
 
         logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
+
+        try:
+            with open("/tmp/gateway_ready", "w") as f:
+                f.write("ready")
+            logger.info("Gateway is ready. Healthcheck file created.")
+        except Exception as e:
+            logger.error(f"Failed to create healthcheck file: {e}")
+
         signal.signal(signal.SIGTERM, self._stop_server)
         signal.signal(signal.SIGINT, self._stop_server)
-
 
     def run(self):
         while not self._was_closed:
@@ -66,81 +84,77 @@ class Gateway():
                 if header is None:
                     logger.error("Header is None")
                     break
-                message_code, current_batch, is_last_batch, payload_len = header
 
+                message_code, current_batch, is_last_batch, payload_len = header
                 logger.debug(f"Message code: {message_code}")
                 if message_code not in TIPO_MENSAJE:
                     logger.error(f"Invalid message code: {message_code}")
                     protocol_gateway.send_confirmation(ERROR)
                     break
 
-                else:
-                    logger.debug(f"{message_code} - Receiving batch {current_batch}")
-                    payload = protocol_gateway.receive_payload(payload_len)
-                    if not payload or len(payload) != payload_len:
-                        logger.error("Failed to receive full payload")
-                        break
-                    
-                    processed_data = protocol_gateway.process_payload(message_code, payload)
-                    if processed_data is None:
-                        logger.error("Failed to process payload")
-                        protocol_gateway.send_confirmation(ERROR)
-                        break
-                    # Send data to RabbitMQ
-                    try:
-                        queue_key = None
-                        if message_code == "BATCH_MOVIES":
-                            queue_key = self.config["DEFAULT"]["movies_raw_queue"]
-                        elif message_code == "BATCH_CREDITS":
-                            queue_key = self.config["DEFAULT"]["credits_raw_queue"]
-                        elif message_code == "BATCH_RATINGS":
-                            queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
+                logger.debug(f"{message_code} - Receiving batch {current_batch}")
+                payload = protocol_gateway.receive_payload(payload_len)
+                if not payload or len(payload) != payload_len:
+                    logger.error("Failed to receive full payload")
+                    break
+                
+                processed_data = protocol_gateway.process_payload(message_code, payload)
+                if processed_data is None:
+                    logger.error("Failed to process payload")
+                    protocol_gateway.send_confirmation(ERROR)
+                    break
 
-                        if queue_key:
-                                for item in processed_data:
-                                    self.rabbitmq_channel.basic_publish(
-                                        exchange='',
-                                        routing_key=queue_key,
-                                        body=json.dumps(asdict(item)),
-                                        properties=pika.BasicProperties(type=message_code)
-                                    )
-                                if is_last_batch == IS_LAST_BATCH_FLAG:
-                                    self.rabbitmq_channel.basic_publish(
-                                        exchange='',
-                                        routing_key=queue_key,
-                                        body=b'',
-                                        properties=pika.BasicProperties(type="EOS")
-                                    )
-                    except (TypeError, ValueError) as e:
-                        logger.error(f"Error serializing data to JSON: {e}")
-                        protocol_gateway.send_confirmation(ERROR)
-                        break
+                try:
+                    queue_key = None
+                    if message_code == "BATCH_MOVIES":
+                        queue_key = self.config["DEFAULT"]["movies_raw_queue"]
+                    elif message_code == "BATCH_CREDITS":
+                        queue_key = self.config["DEFAULT"]["credits_raw_queue"]
+                    elif message_code == "BATCH_RATINGS":
+                        queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
 
-                    if is_last_batch == IS_LAST_BATCH_FLAG:
-                        protocol_gateway.send_confirmation(SUCCESS)
-                        if message_code == "BATCH_MOVIES":
-                            total_lines = protocol_gateway._decoder.get_decoded_movies()
-                            dataset_name = "movies"
+                    if queue_key:
+                        for item in processed_data:
+                            self.rabbitmq_channel.basic_publish(
+                                exchange='',
+                                routing_key=queue_key,
+                                body=json.dumps(asdict(item)),
+                                properties=pika.BasicProperties(type=message_code)
+                            )
+                        if is_last_batch == IS_LAST_BATCH_FLAG:
+                            self.rabbitmq_channel.basic_publish(
+                                exchange='',
+                                routing_key=queue_key,
+                                body=b'',
+                                properties=pika.BasicProperties(type="EOS")
+                            )
+                except (TypeError, ValueError) as e:
+                    logger.error(f"Error serializing data to JSON: {e}")
+                    protocol_gateway.send_confirmation(ERROR)
+                    break
 
-                        elif message_code == "BATCH_CREDITS":
-                            total_lines = protocol_gateway._decoder.get_decoded_credits()
-                            dataset_name = "credits"
-                        elif message_code == "BATCH_RATINGS":
-                            total_lines = protocol_gateway._decoder.get_decoded_ratings()
-                            dataset_name = "ratings"
+                if is_last_batch == IS_LAST_BATCH_FLAG:
+                    protocol_gateway.send_confirmation(SUCCESS)
+                    if message_code == "BATCH_MOVIES":
+                        total_lines = protocol_gateway._decoder.get_decoded_movies()
+                        dataset_name = "movies"
+                    elif message_code == "BATCH_CREDITS":
+                        total_lines = protocol_gateway._decoder.get_decoded_credits()
+                        dataset_name = "credits"
+                    elif message_code == "BATCH_RATINGS":
+                        total_lines = protocol_gateway._decoder.get_decoded_ratings()
+                        dataset_name = "ratings"
 
-                        logger.info(f"Received {total_lines} lines from {dataset_name}")
-                        self._datasets_received += 1
+                    logger.info(f"Received {total_lines} lines from {dataset_name}")
+                    self._datasets_received += 1
 
-                    # TODO: NO hace falta esperar todos los datasets, podemos empezar a mandar respuestas 
-                    # Deberia de preguntarle a la queue de respuestas si hay algo para mandarle al cliente
-                    if self._datasets_received == self._datasets_expected:
-                        logger.info("All datasets received, processing queries.")
-                        # TODO: PROCESAR LAS QUERIES Y MANDAR RESPUESTAS
-                        break
+                if self._datasets_received == self._datasets_expected:
+                    logger.info("All datasets received, processing queries.")
+                    # TODO: procesar las queries
+                    break
 
         except OSError as e:
-            if protocol_gateway._client_is_connected() is False:
+            if not protocol_gateway._client_is_connected():
                 logger.error(f"Client disconnected: {e}")
                 return
 
@@ -160,6 +174,10 @@ class Gateway():
         finally:
             self._gateway_socket.close()
             self.rabbitmq_connection.close()
+            try:
+                os.remove("/tmp/gateway_ready")
+            except FileNotFoundError:
+                pass
             logger.info("Server stopped.")
 
     def _close_connected_clients(self):
