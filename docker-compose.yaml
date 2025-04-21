@@ -17,6 +17,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    logging:
+      driver: "none"
   gateway:
     container_name: gateway
     image: gateway:latest
@@ -91,7 +93,8 @@ services:
       JB_CREDITS_NODES: '1'
       JB_RATINGS_NODES: '1'
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   join_batch_credits_1:
@@ -103,7 +106,8 @@ services:
     volumes:
     - ./join_batch/credits/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   join_batch_ratings_1:
@@ -115,7 +119,8 @@ services:
     volumes:
     - ./join_batch/ratings/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q1:
@@ -180,8 +185,9 @@ services:
     volumes:
     - ./client/config.ini:/app/config.ini
     - ./resultados:/app/resultados
+    - ./datasets_for_test:/datasets
     environment:
-      USE_TEST_DATASET: '0'
+      USE_TEST_DATASET: '1'
     depends_on:
       gateway:
         condition: service_healthy

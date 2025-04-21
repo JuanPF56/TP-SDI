@@ -143,6 +143,7 @@ class Gateway():
                             )
                 except (TypeError, ValueError) as e:
                     logger.error(f"Error serializing data to JSON: {e}")
+                    logger.error(processed_data)
                     # protocol_gateway.send_confirmation(ERROR)
                     break
 
@@ -163,6 +164,7 @@ class Gateway():
 
                 if self._datasets_received == self._datasets_expected:
                     logger.info("All datasets received, processing queries.")
+                    self.result_dispatcher.join()
                     break
 
         except OSError as e:

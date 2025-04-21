@@ -76,10 +76,10 @@ class ProtocolGateway:
         elif message_code == "BATCH_CREDITS":
             credits_from_batch = self._decoder.decode_credits(decoded_payload)
             if not credits_from_batch:
-                logger.error("No credits received or incomplete data")
+                # logger.error("No credits received or incomplete data")
                 return None
             else:
-                logger.info(f"Amount of received credits {len(credits_from_batch)}")
+                logger.debug(f"Amount of received credits {len(credits_from_batch)}")
                 for credit in credits_from_batch:
                     credit.log_credit_info()
             return credits_from_batch
@@ -90,7 +90,7 @@ class ProtocolGateway:
                 logger.error("No ratings received or incomplete data")
                 return None
             else:
-                logger.info(f"Amount of received ratings {len(ratings_from_batch)}")
+                logger.debug(f"Amount of received ratings {len(ratings_from_batch)}")
                 for rating in ratings_from_batch:
                     rating.log_rating_info()
             return ratings_from_batch

@@ -12,6 +12,7 @@ CREW_MEMBER_FIELDS = 7
 def fix_double_quotes_inside_json(raw: str) -> str:
     return re.sub(r'""([^"{}]+?)""', r'"\1"', raw)
 
+@dataclass
 class CastMember:
     def __init__(self, cast_id: int, character: str, credit_id: str, gender: Optional[int],
                  id: int, name: str, order: int, profile_path: Optional[str]):
