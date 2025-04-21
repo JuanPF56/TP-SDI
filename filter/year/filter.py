@@ -2,11 +2,10 @@ import configparser
 import json
 import pika
 from datetime import datetime
-
 from common.logger import get_logger
 from common.filter_base import FilterBase
-EOS_TYPE = "EOS" 
 
+EOS_TYPE = "EOS" 
 logger = get_logger("Filter-Year")
 
 class YearFilter(FilterBase):
@@ -14,7 +13,7 @@ class YearFilter(FilterBase):
         super().__init__(config)
         self.config = config
         self._eos_flags = {}
-    
+
     def _mark_eos_received(self, msg_type, output_queues, channel):
         """
         Mark the end of stream (EOS) for the given message type and propagate to target queues.
@@ -32,7 +31,6 @@ class YearFilter(FilterBase):
                 properties=pika.BasicProperties(type=msg_type)
             )
             logger.info(f"EOS message sent to {queue}")
-
 
     def process(self):
         """
@@ -75,25 +73,63 @@ class YearFilter(FilterBase):
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            movie = json.loads(body)
-            title = movie.get("original_title")
-            date_str = movie.get("release_date", "")
-            release_year = self.extract_year(date_str)
+            try:
+                movies_batch = json.loads(body)
+                if not isinstance(movies_batch, list):
+                    logger.warning("❌ Expected a list (batch) of movies, skipping.")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    return
 
-            logger.debug(f"Processing '{title}' released in {release_year} from queue '{method.routing_key}'")
+                # Batch processing
+                processed_batch = {
+                    "arg_post_2000": [],
+                    "arg_spain_2000s": []
+                }
 
-            if method.routing_key == input_queues["argentina"]:
-                if release_year and release_year > 2000:
-                    channel.basic_publish(exchange='', routing_key=output_queues["arg_post_2000"], body=body)
-                    logger.debug(f"Sent to {output_queues['arg_post_2000']}")
-            elif method.routing_key == input_queues["arg_spain"]:
-                if release_year and 2000 <= release_year <= 2009:
-                    channel.basic_publish(exchange='', routing_key=output_queues["arg_spain_2000s"], body=body)
-                    logger.debug(f"Sent to {output_queues['arg_spain_2000s']}")
-            else:
-                logger.warning("Unknown source queue")
+                for movie in movies_batch:
+                    title = movie.get("original_title")
+                    date_str = movie.get("release_date", "")
+                    release_year = self.extract_year(date_str)
 
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+                    logger.debug(f"Processing '{title}' released in {release_year} from queue '{method.routing_key}'")
+
+                    if method.routing_key == input_queues["argentina"]:
+                        if release_year and release_year > 2000:
+                            processed_batch["arg_post_2000"].append(movie)
+                            logger.debug(f"Prepared for {output_queues['arg_post_2000']}")
+                    elif method.routing_key == input_queues["arg_spain"]:
+                        if release_year and 2000 <= release_year <= 2009:
+                            processed_batch["arg_spain_2000s"].append(movie)
+                            logger.debug(f"Prepared for {output_queues['arg_spain_2000s']}")
+                    else:
+                        logger.warning("Unknown source queue")
+
+                # Publish the processed batch to the output queues
+                if processed_batch["arg_post_2000"]:
+                    # Publish the whole batch as a single message
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["arg_post_2000"],
+                        body=json.dumps(processed_batch["arg_post_2000"]),
+                        properties=pika.BasicProperties(type="batch")
+                    )
+                    logger.debug(f"Sent entire batch to {output_queues['arg_post_2000']}")
+
+                if processed_batch["arg_spain_2000s"]:
+                    # Publish the whole batch as a single message
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["arg_spain_2000s"],
+                        body=json.dumps(processed_batch["arg_spain_2000s"]),
+                        properties=pika.BasicProperties(type="batch")
+                    )
+                    logger.debug(f"Sent entire batch to {output_queues['arg_spain_2000s']}")
+
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            except json.JSONDecodeError:
+                logger.warning("❌ Skipping invalid JSON")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
 
         for queue in input_queues.values():
             logger.info(f"Waiting for messages from '{queue}'...")

@@ -1,19 +1,21 @@
 import configparser
 import json
 import pika
-EOS_TYPE = "EOS" 
-
 from common.logger import get_logger
+
+EOS_TYPE = "EOS"
 
 logger = get_logger("Query-Arg-Spain-Genres")
 
+
 class ArgSpainGenreQuery:
     """
-    Películas y sus géneros de los años 00' con producción Argentina y Española. 
+    Películas y sus géneros de los años 00' con producción Argentina y Española.
     """
     def __init__(self, config):
         self.config = config
         self.results = []
+        self.batch_size = 100  # Set your desired batch size
 
         rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
         input_queue = self.config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
@@ -24,10 +26,8 @@ class ArgSpainGenreQuery:
         self.channel.queue_declare(queue=input_queue)
         self.channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
 
-
-
     def _calculate_and_publish_results(self):
-        results = { 
+        results = {
             "query": "Q1",
             "results": self.results
         }
@@ -39,41 +39,50 @@ class ArgSpainGenreQuery:
             body=json.dumps(results),
         )
 
+    def process_batch(self, movies_batch):
+        """
+        Process a batch of movies.
+        """
+        for movie in movies_batch:
+            title = movie.get("original_title")
+            genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
+            self.results.append((title, genres))
 
     def process(self):
         """
-        Reads from:
-        - movies_arg_spain_2000s_queue (already filtered for Argentina + Spain and 2000s)
+        Reads from the input queue (movies_arg_spain_2000s_queue).
 
         Collects:
         - title
         - genres (list of names)
 
-        Prints the results when an end-of-stream flag is received.
+        Publishes the results after processing a batch.
         """
         logger.info("Node is online")
-
-
 
         def callback(ch, method, properties, body):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
-                self._calculate_and_publish_results()
+                if self.results:
+                    self._calculate_and_publish_results()  # Publish remaining results
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             try:
-                movie = json.loads(body)
+                movies_batch = json.loads(body)
+                if not isinstance(movies_batch, list):
+                    logger.warning("❌ Expected a list (batch) of movies, skipping.")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    return
+
+                # Process the batch of movies
+                self.process_batch(movies_batch)
+
             except json.JSONDecodeError:
                 logger.warning("❌ Skipping invalid JSON")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
-
-            title = movie.get("original_title")
-            genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
-            self.results.append((title, genres))
-            
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 

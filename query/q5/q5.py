@@ -73,20 +73,20 @@ class SentimentStats:
                     return
 
 
-                movie = json.loads(body)
+                movies_batch = json.loads(body)
             except json.JSONDecodeError:
                 logger.warning(f"❌ Invalid JSON in {sentiment} queue. Skipping.")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            budget = movie.get("budget", 0)
-            revenue = movie.get("revenue", 0)
-            if budget > 0:
-                rate = revenue / budget
-                if sentiment == "positive":
-                    self.positive_rates.append(rate)
-                else:
-                    self.negative_rates.append(rate)
+            for movie in movies_batch:
+                if (movie.get("budget") > 0):
+                    if sentiment == "positive":
+                        rate = movie.get("revenue") / movie.get("budget")
+                        self.positive_rates.append(rate)
+                    elif sentiment == "negative":
+                        rate = movie.get("revenue") / movie.get("budget") 
+                        self.negative_rates.append(rate)
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
