@@ -59,7 +59,7 @@ def receive_movies_table(channel, input_queue):
             channel.stop_consuming()
         else:
             message = json.loads(body)
-            logger.info(f"Received message: {message}")
+            logger.debug(f"Received message: {message}")
             movies_table.append(message)
 
     channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
@@ -87,7 +87,7 @@ def main():
     channel.queue_declare(queue=input_queue)
 
     movies_table = receive_movies_table(channel, input_queue)
-    logger.info("Received movies table: %s", movies_table)
+    logger.debug("Received movies table: %s", movies_table)
 
     # Send the movies table to the join batch nodes
     logger.info("Sending movies table to join batch nodes...")
