@@ -462,3 +462,34 @@
   ]
 }
 
+{
+  "query": "Q2",
+  "results": [
+    [
+      "United States of America",
+      8014218642
+    ],
+    [
+      "France",
+      61365000
+    ],
+    [
+      "United Kingdom",
+      42650000
+    ],
+    [
+      "Canada",
+      32300000
+    ],
+    [
+      "Hong Kong",
+      8400000
+    ]
+  ]
+}
+
+{
+  "query": "Q1",
+  "results": []
+}
+

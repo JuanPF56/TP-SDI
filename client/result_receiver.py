@@ -14,6 +14,10 @@ class ResultReceiver(threading.Thread):
         self._stop_flag = threading.Event()
         self.answers_received = 0
 
+        # Clean up previous results
+        with open("resultados/resultados.txt", "w", encoding="utf-8") as f:
+            f.write("") # Clear the file
+
     def run(self):
         logger.info("Starting result receiver thread...")
         while not self._stop_flag.is_set():

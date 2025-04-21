@@ -88,7 +88,8 @@ class Client:
                 logger.info("Sending datasets to server...")
                 send_datasets_to_server(datasets_path, self._protocol)
                 logger.info("Datasets sent successfully.")
-
+                
+                logger.info("Waiting for pending results...")
                 self._results_thread.join()
                 break
 
