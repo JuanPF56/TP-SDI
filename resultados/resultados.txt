@@ -372,3 +372,93 @@
   ]
 }
 
+{
+  "query": "Q2",
+  "results": [
+    [
+      "United States of America",
+      37193064363
+    ],
+    [
+      "United Kingdom",
+      381232462
+    ],
+    [
+      "France",
+      301363393
+    ],
+    [
+      "Australia",
+      117802337
+    ],
+    [
+      "Germany",
+      108350000
+    ]
+  ]
+}
+
+{
+  "query": "Q1",
+  "results": [
+    [
+      "La Ciénaga",
+      [
+        "Comedy",
+        "Drama"
+      ]
+    ],
+    [
+      "Plata quemada",
+      [
+        "Crime"
+      ]
+    ]
+  ]
+}
+
+{
+  "query": "Q2",
+  "results": [
+    [
+      "United States of America",
+      37193064363
+    ],
+    [
+      "United Kingdom",
+      381232462
+    ],
+    [
+      "France",
+      301363393
+    ],
+    [
+      "Australia",
+      117802337
+    ],
+    [
+      "Germany",
+      108350000
+    ]
+  ]
+}
+
+{
+  "query": "Q1",
+  "results": [
+    [
+      "La Ciénaga",
+      [
+        "Comedy",
+        "Drama"
+      ]
+    ],
+    [
+      "Plata quemada",
+      [
+        "Crime"
+      ]
+    ]
+  ]
+}
+

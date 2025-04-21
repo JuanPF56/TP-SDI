@@ -8,6 +8,8 @@ logger = get_logger("Result Dispatcher")
 
 COOL_DOWN_TIME = 0.5  # seconds
 
+QUERYS_TO_ANSWER = 5
+
 class ResultDispatcher(threading.Thread):
     def __init__(self, rabbitmq_host, results_queue, connected_clients):
         super().__init__(daemon=True)
@@ -17,6 +19,8 @@ class ResultDispatcher(threading.Thread):
         self._stop_flag = threading.Event()
         self.channel = None
         self.connection = None
+        self._results_send = 0
+        self._results_expected = QUERYS_TO_ANSWER
 
     def stop(self):
         self._stop_flag.set()
@@ -41,6 +45,10 @@ class ResultDispatcher(threading.Thread):
                     for client in self.connected_clients:
                         if client._client_is_connected():
                             client.send_result(result_data)
+                            self._results_send += 1
+                    if self._results_send >= self._results_expected:
+                        logger.info(f"Sent {self._results_send} results to clients.")
+                        self._stop_flag.set()  # Stop after sending expected results
                 except Exception as e:
                     logger.error(f"Error processing result: {e}")
                 finally:
