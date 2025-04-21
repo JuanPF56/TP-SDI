@@ -42,10 +42,8 @@ class SentimentAnalyzer:
             label = result["label"].lower()
 
             if label in {"positive", "negative"}:
-                logger.info(f"Sentiment analysis result: {label} for text: {text[:50]}...")
                 return label
             else:
-                logger.info(f"Unexpected sentiment label '{label}' for text: {text[:50]}...")
                 return "neutral"
         except Exception as e:
             logger.error(f"Error during sentiment analysis: {e}")
