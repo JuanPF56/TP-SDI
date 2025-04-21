@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM base_node:latest
 WORKDIR /app
 
 # Copy common code
@@ -7,6 +7,5 @@ COPY filter/common/ ./common/
 
 # Copy specific code
 COPY filter/cleanup/ .
-RUN pip install pika
 
 CMD ["python3", "filter.py"]

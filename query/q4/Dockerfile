@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM base_node:latest
 WORKDIR /app
 
 # Copy common code

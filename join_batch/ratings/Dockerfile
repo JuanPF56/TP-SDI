@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM base_node:latest
 WORKDIR /app
 
 # Copy common code
@@ -7,8 +7,5 @@ COPY join_batch/common/ ./common/
 
 # Copy specific code
 COPY join_batch/ratings/ .
-
-# Install dependencies
-RUN pip install pika
 
 CMD ["python3", "join_batch.py"]
