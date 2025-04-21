@@ -1,5 +1,7 @@
 import configparser
 import json
+
+import pika
 from common.logger import get_logger
 from common.join_base import JoinBatchBase
 
@@ -8,34 +10,45 @@ logger = get_logger("JoinBatch-Ratings")
 class JoinBatchRatings(JoinBatchBase):
     def process_batch(self, ch, method, properties, body):
         # Process the incoming message (cast batch)
-        ratings_batch = body.decode('utf-8')
-        ratings_batch = json.loads(ratings_batch)
+        msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
-        logger.info("Received ratings batch: %s", ratings_batch)
-        '''
+        if msg_type == "EOS":
+            logger.info("Received EOS message, stopping consumption.")
+            ch.stop_consuming()
+            return
+
+        # Load the data from the incoming message
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON: {e}")
+            return
+        
+        # Data is a single movie rating, not a batch
+        # TODO: Handle batches vs single messages?
+        data = [data]
+        
         # Perform the join operation (only keep ratings for movies in the movies table)
         joined_data = []
-        for movie in ratings:
-            for movie_table in self.movies_table:
-                if movie["movie_id"] == movie_table["id"]:
+        for movie in data:
+            for movie_tab in self.movies_table:
+                if movie["movie_id"] == movie_tab["id"]:
                     joined_data.append(movie)
                     break
 
-        logger.info("Joined data: %s", joined_data)
-
-        # TODO: Send the joined data to the next node in the pipeline
+        if not joined_data:
+            logger.debug("No matching movies found in the movies table.")
+            return
+        else:
+            logger.debug("Joined data: %s", joined_data)
         
-        # Q3 logic (average rating)
-        ratings_by_movie = {}
-        for movie in joined_data:
-            if movie["movie_id"] not in ratings_by_movie:
-                ratings_by_movie[movie["movie_id"]] = []
-            ratings_by_movie[movie["movie_id"]].append(movie["rating"])
-        average_ratings = {}
-        for movie_id, rating_list in ratings_by_movie.items():
-            average_ratings[movie_id] = sum(rating_list) / len(rating_list)
-        logger.info("Average ratings: %s", average_ratings)
-        '''    
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.output_queue,
+            body=json.dumps(joined_data).encode('utf-8'),
+            properties=pika.BasicProperties(type=msg_type)
+        )
+        
     def log_info(self, message):
         logger.info(message)
 

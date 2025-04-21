@@ -1,5 +1,7 @@
 import configparser
 import json
+
+import pika
 from common.logger import get_logger
 from common.join_base import JoinBatchBase
 
@@ -8,39 +10,45 @@ logger = get_logger("JoinBatch-Credits")
 class JoinBatchCredits(JoinBatchBase):
     def process_batch(self, ch, method, properties, body):
         # Process the incoming message (cast batch)
-        cast_batch = body.decode('utf-8')
-        cast_batch = json.loads(cast_batch)
+        msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
-        logger.info("Received cast batch: %s", cast_batch)
-
-        '''
+        if msg_type == "EOS":
+            logger.info("Received EOS message, stopping consumption.")
+            ch.stop_consuming()
+            return
+        
+        # Load the data from the incoming message
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON: {e}")
+            return
+        
+        # Data is a single movie rating, not a batch
+        # TODO: Handle batches vs single messages?
+        data = [data]
+        
         # Perform the join operation (only keep cast for movies in the movies table)
         joined_data = []
-        for movie in cast:
-            for movie_table in self.movies_table:
-                if movie["movie_id"] == movie_table["id"]:
+        for movie in data:
+            for movie_tab in self.movies_table:
+                if movie["movie_id"] == movie_tab["id"]:
                     joined_data.append(movie)
                     break
 
-        logger.info("Joined data: %s", joined_data)
-        '''
-        # TODO: Send the joined data to the next node in the pipeline
+        if not joined_data:
+            logger.debug("No matching movies found in the movies table.")
+            return
+        else:
+            logger.debug("Joined data: %s", joined_data)
+        
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.output_queue,
+            body=json.dumps(joined_data).encode('utf-8'),
+            properties=pika.BasicProperties(type=msg_type)
+        )
 
-        '''
-        # Q4 logic (count actor appearances)
-
-        actors = {}
-
-        for movie in joined_data:
-            for actor in movie["cast"]:
-                if actor not in actors:
-                    actors[actor] = 0
-                actors[actor] += 1
-
-        # Sort actors by appearances
-        actors = dict(sorted(actors.items(), key=lambda item: item[1], reverse=True))
-        logger.info("Actors appearances: %s", actors)
-        '''    
     def log_info(self, message):
         logger.info(message)
 
