@@ -76,28 +76,46 @@ class SentimentAnalyzer:
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            movie_dict = json.loads(body)
-            sentiment = self.analyze_sentiment(movie_dict["overview"])
+            movies_batch = json.loads(body)
+            positive_movies = []
+            negative_movies = []
 
+            for movie in movies_batch:
+                sentiment = self.analyze_sentiment(movie.get("overview"))
 
-            if sentiment == "neutral":
-                logger.debug(f"Ignoring neutral/empty overview for '{movie_dict['original_title']}'")
-                return
+                if sentiment == "neutral":
+                    logger.debug(f"Ignoring neutral/empty overview for '{movie.get('original_title')}'")
+                    continue
 
-            target_queue = self.positive_queue if sentiment == 'positive' else self.negative_queue
+                if sentiment == "positive":
+                    positive_movies.append(movie)
+                elif sentiment == "negative":
+                    negative_movies.append(movie)
 
-            self.channel.basic_publish(
-                exchange='',
-                routing_key=target_queue,
-                body=json.dumps(movie_dict)
-            )
+            if positive_movies:
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.positive_queue,
+                    body=json.dumps(positive_movies)
+                )
+                logger.debug(f"Sent {len(positive_movies)} positive movies to {self.positive_queue}")
+
+            if negative_movies:
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.negative_queue,
+                    body=json.dumps(negative_movies)
+                )
+    
+
+            self.channel.basic_ack(delivery_tag=method.delivery_tag)
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
 
     def run(self):
         logger.info("Waiting for clean movies...")
-        self.channel.basic_consume(queue=self.source_queue, on_message_callback=self.callback, auto_ack=True)
+        self.channel.basic_consume(queue=self.source_queue, on_message_callback=self.callback)
         self.channel.start_consuming()
 
 
