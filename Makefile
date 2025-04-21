@@ -7,7 +7,7 @@ default: docker-image
 # Build all Docker images (adjust/add as needed)
 docker-image:
 	@echo "🛠️  Building Docker images..."
-	docker build -f ./base_image/Dockerfile -t base_image:latest .
+	docker build -f ./base_node/Dockerfile -t base_node:latest .
 	docker build -f ./gateway/Dockerfile -t gateway:latest .
 	docker build -f ./client/Dockerfile -t client:latest .
 	docker build -f ./join_table/Dockerfile -t join_table:latest .
