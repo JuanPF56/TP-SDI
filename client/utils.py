@@ -27,11 +27,12 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
         logger.info(f"Sending {description} dataset...")
         protocol.send_dataset(datasets_path, filename, tag)
         
+        """
         confirmation = protocol.receive_confirmation()
         if confirmation != ACK:
             logger.error(f"Server returned an error after sending {description}.")
             raise Exception(f"Server returned an error after sending {description}.")
-        
+        """
         logger.info(f"{description.capitalize()} dataset sent successfully.")
 
     logger.info("All datasets were sent successfully.")

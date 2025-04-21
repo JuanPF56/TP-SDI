@@ -39,7 +39,7 @@ python3 docker-compose-generator.py <output_file.yml> [-short_test]
 ### 🧪 Preparar datasets de prueba
 
 ```bash
-python3 prepare_test_dataset.py [--test <cant_lineas>]
+python3 download_datasets.py [--test <cant_lineas>]
 ```
 
 - Por defecto descarga el dataset completo desde Kaggle.
@@ -54,18 +54,6 @@ python3 prepare_test_dataset.py [--test <cant_lineas>]
 
 ---
 
-### 📦 Requisitos de instalación adicionales
-
-Este proyecto utiliza **RabbitMQ** como sistema de mensajería y la librería **[pika](https://pika.readthedocs.io/en/stable/)** para la comunicación en Python.
-
-🔧 Asegurate de tener `pika` instalado para que el sistema funcione correctamente:
-
-```bash
-pip install pika
-```
-
----
-
 ### ▶️ Correr el sistema
 
 Los siguientes comandos permiten levantar el entorno completo con Docker:
@@ -75,6 +63,19 @@ make docker-compose-up         # Levanta el sistema
 make docker-compose-logs       # Muestra los logs
 make docker-compose-down       # Detiene y elimina contenedores
 ```
+
+---
+
+### 📊 Monitoreo de las colas (RabbitMQ)
+
+Podés visualizar el estado de las **queues** y monitorear la actividad del sistema accediendo al panel de administración de **RabbitMQ** desde tu navegador:
+
+🔗 [http://localhost:15672/#/queues](http://localhost:15672/#/queues)
+
+- **Usuario**: `guest`  
+- **Contraseña**: `guest`
+
+Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadísticas en tiempo real y comprobar que los workers estén procesando correctamente.
 
 ---
 

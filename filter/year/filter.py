@@ -80,18 +80,18 @@ class YearFilter(FilterBase):
             date_str = movie.get("release_date", "")
             release_year = self.extract_year(date_str)
 
-            logger.info(f"Processing '{title}' released in {release_year} from queue '{method.routing_key}'")
+            logger.debug(f"Processing '{title}' released in {release_year} from queue '{method.routing_key}'")
 
             if method.routing_key == input_queues["argentina"]:
                 if release_year and release_year > 2000:
                     channel.basic_publish(exchange='', routing_key=output_queues["arg_post_2000"], body=body)
-                    logger.info(f"✔ Sent to {output_queues['arg_post_2000']}")
+                    logger.debug(f"Sent to {output_queues['arg_post_2000']}")
             elif method.routing_key == input_queues["arg_spain"]:
                 if release_year and 2000 <= release_year <= 2009:
                     channel.basic_publish(exchange='', routing_key=output_queues["arg_spain_2000s"], body=body)
-                    logger.info(f"✔ Sent to {output_queues['arg_spain_2000s']}")
+                    logger.debug(f"Sent to {output_queues['arg_spain_2000s']}")
             else:
-                logger.warning("⚠ Unknown source queue")
+                logger.warning("Unknown source queue")
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -111,7 +111,7 @@ class YearFilter(FilterBase):
         try:
             return datetime.strptime(date_str, "%Y-%m-%d").year
         except Exception as e:
-            logger.warning(f"⚠ Invalid release_date '{date_str}': {e}")
+            logger.warning(f"Invalid release_date '{date_str}': {e}")
             return None
 
 if __name__ == "__main__":

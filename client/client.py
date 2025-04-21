@@ -8,8 +8,12 @@ logger = get_logger("Client")
 from protocol_client_gateway import ProtocolClient
 from utils import download_dataset, send_datasets_to_server
 
+from result_receiver import ResultReceiver
+
 MAX_RETRIES = 5
-DELAY_BETWEEN_RETRIES = 2
+DELAY_BETWEEN_RETRIES = 10
+
+QUERYS_EXPECTED = 5
 
 class Client:
     def __init__(self, host, port, max_batch_size):
@@ -19,6 +23,9 @@ class Client:
         self._protocol = None
         self._max_batch_size = max_batch_size
         self._was_closed = False
+
+        self._query_responses_expected = QUERYS_EXPECTED
+        self._results_thread = None
 
         signal.signal(signal.SIGTERM, self._stop_client)
         signal.signal(signal.SIGINT, self._stop_client)
@@ -42,6 +49,10 @@ class Client:
 
     def _stop_client(self):
         try:
+            if self._results_thread:
+                self._results_thread.stop()
+                self._results_thread.join()
+                logger.info("Result receiver thread stopped.")
             if self._socket:
                 self._was_closed = True
                 self._socket.shutdown(socket.SHUT_RDWR)
@@ -69,16 +80,22 @@ class Client:
             logger.error("Socket connection failed.")
             return
         
+        self._results_thread = ResultReceiver(self._protocol, self._query_responses_expected)
+        self._results_thread.start()
+
         while self._protocol._is_connected():
             try:
                 logger.info("Sending datasets to server...")
                 send_datasets_to_server(datasets_path, self._protocol)
                 logger.info("Datasets sent successfully.")
-                break
-            
+
+                self._results_thread.join()
+
             except OSError as e:
                 if self._was_closed:
                     logger.info("Socket client was closed.")
+                    self._results_thread.stop()
+                    self._results_thread.join()
                     break
 
             except Exception as e:

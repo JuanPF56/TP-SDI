@@ -28,6 +28,15 @@ services:
         condition: service_healthy
     networks:
     - testing_net
+    healthcheck:
+      test:
+      - CMD
+      - test
+      - -f
+      - /tmp/gateway_ready
+      interval: 5s
+      timeout: 5s
+      retries: 5
   filter_cleanup:
     container_name: filter_cleanup
     image: filter_cleanup:latest
@@ -35,7 +44,8 @@ services:
     volumes:
     - ./filter/cleanup/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   filter_year:
@@ -45,7 +55,8 @@ services:
     volumes:
     - ./filter/year/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   filter_production:
@@ -55,7 +66,8 @@ services:
     volumes:
     - ./filter/production/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   sentiment_analyzer:
@@ -65,7 +77,8 @@ services:
     volumes:
     - ./sentiment_analyzer/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   join_table:
@@ -78,7 +91,8 @@ services:
       JB_CREDITS_NODES: '1'
       JB_RATINGS_NODES: '1'
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   join_batch_credits_1:
@@ -114,7 +128,8 @@ services:
     volumes:
     - ./query/q1/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q2:
@@ -124,7 +139,8 @@ services:
     volumes:
     - ./query/q2/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q3:
@@ -134,7 +150,8 @@ services:
     volumes:
     - ./query/q3/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q4:
@@ -144,7 +161,8 @@ services:
     volumes:
     - ./query/q4/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q5:
@@ -154,7 +172,8 @@ services:
     volumes:
     - ./query/q5/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   client:
@@ -163,10 +182,12 @@ services:
     entrypoint: python3 /app/main.py
     volumes:
     - ./client/config.ini:/app/config.ini
+    - ./resultados:/app/resultados
     environment:
       USE_TEST_DATASET: '0'
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
 networks:

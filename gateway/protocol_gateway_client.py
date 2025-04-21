@@ -1,5 +1,6 @@
 import socket
 import struct
+import json
 
 import common.receiver as receiver
 import common.sender as sender
@@ -70,7 +71,6 @@ class ProtocolGateway:
             
             for movie in movies_from_batch:
                 movie.log_movie_info()
-                # TODO: PASARLE A LA QUEUE
             return movies_from_batch    
 
         elif message_code == "BATCH_CREDITS":
@@ -82,7 +82,6 @@ class ProtocolGateway:
                 logger.info(f"Amount of received credits {len(credits_from_batch)}")
                 for credit in credits_from_batch:
                     credit.log_credit_info()
-                    # TODO: PASARLE A LA QUEUE
             return credits_from_batch
 
         elif message_code == "BATCH_RATINGS":
@@ -94,7 +93,6 @@ class ProtocolGateway:
                 logger.info(f"Amount of received ratings {len(ratings_from_batch)}")
                 for rating in ratings_from_batch:
                     rating.log_rating_info()
-                    # TODO: PASARLE A LA QUEUE
             return ratings_from_batch
 
         else:
@@ -106,3 +104,31 @@ class ProtocolGateway:
         Send confirmation to the client
         """
         sender.send(self._client_socket, message_code.to_bytes(SIZE_OF_UINT8, byteorder="big"))
+
+    def build_result_message(self, result_dict, query_id_str):
+        """
+        result_dict: dict como {'query': 'Q1', 'results': [...]}
+        query_id_str: 'Q1', 'Q2', etc.
+        """
+        tipo_de_mensaje = TIPO_MENSAJE["RESULTS"]
+
+        # Extract number from query_id_str (Q1 -> 1)
+        query_id = int(query_id_str[1:])
+
+        # Serialize payload
+        payload = json.dumps(result_dict).encode()
+        payload_len = len(payload)
+
+        # Header: tipo(1 byte), query_id(1 byte), payload_len(4 bytes)
+        header = struct.pack(">BBI", tipo_de_mensaje, query_id, payload_len)
+
+        full_message = header + payload
+
+        return full_message
+
+    def send_result(self, result_dict: dict) -> None:
+        query_id_str = result_dict.get("query", "Q0")  # fallback for missing query
+        message = self.build_result_message(result_dict, query_id_str)
+        logger.debug(f"Sending result message: {message}")
+        sender.send(self._client_socket, message)
+    

@@ -47,7 +47,13 @@ def generate_compose(filename, short_test=False):
                 "condition": "service_healthy"
             }
         },
-        "networks": ["testing_net"]
+        "networks": ["testing_net"], 
+        "healthcheck": {
+            "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 5
+        }
     }
 
     # Filter nodes
@@ -59,7 +65,11 @@ def generate_compose(filename, short_test=False):
             "volumes": [
                 f"./filter/{subtype}/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "gateway": {
+                    "condition": "service_healthy"
+                }
+            },
             "networks": ["testing_net"]
         }
 
@@ -71,7 +81,11 @@ def generate_compose(filename, short_test=False):
         "volumes": [
             "./sentiment_analyzer/config.ini:/app/config.ini"
         ],
-        "depends_on": ["gateway"],
+        "depends_on": {
+            "gateway": {
+                "condition": "service_healthy"
+            }
+        },
         "networks": ["testing_net"]
     }
 
@@ -87,7 +101,11 @@ def generate_compose(filename, short_test=False):
             "JB_CREDITS_NODES": str(jb_credits),
             "JB_RATINGS_NODES": str(jb_ratings)
         },
-        "depends_on": ["gateway"],
+        "depends_on": {
+            "gateway": {
+                "condition": "service_healthy"
+            }
+        },
         "networks": ["testing_net"]
     }
 
@@ -104,7 +122,11 @@ def generate_compose(filename, short_test=False):
             "volumes": [
                 f"./join_batch/credits/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "gateway": {
+                    "condition": "service_healthy"
+                }
+            },
             "networks": ["testing_net"]
         }
     for i in range(1, jb_ratings + 1):
@@ -119,7 +141,11 @@ def generate_compose(filename, short_test=False):
             "volumes": [
                 f"./join_batch/ratings/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "gateway": {
+                    "condition": "service_healthy"
+                }
+            },
             "networks": ["testing_net"]
         }
 
@@ -133,13 +159,18 @@ def generate_compose(filename, short_test=False):
             "volumes": [
                 f"./query/{qname}/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "gateway": {
+                    "condition": "service_healthy"
+                }
+            },
             "networks": ["testing_net"]
         }
 
     # Client node
     client_volumes = [
-        "./client/config.ini:/app/config.ini"
+        "./client/config.ini:/app/config.ini",
+        "./resultados:/app/resultados"
     ]
     if short_test:
         client_volumes.append("./datasets_for_test:/datasets")
@@ -152,7 +183,11 @@ def generate_compose(filename, short_test=False):
         "environment": {
             "USE_TEST_DATASET": "1" if short_test else "0"
         },
-        "depends_on": ["gateway"],
+        "depends_on": {
+            "gateway": {
+                "condition": "service_healthy"
+            }
+        },
         "networks": ["testing_net"]
     }
 
