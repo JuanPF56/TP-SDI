@@ -23,6 +23,7 @@ def connect_to_rabbitmq(host, retries=5, delay=3):
         except pika.exceptions.AMQPConnectionError as e:
             logger.warning(f"RabbitMQ connection failed (attempt {attempt}/{retries}): {e}")
             time.sleep(delay)
+            delay *= 2  # Exponential backoff
     raise RuntimeError("Failed to connect to RabbitMQ after multiple attempts.")
 
 class Gateway():

@@ -41,6 +41,8 @@ class JoinBatchCredits(JoinBatchBase):
         actors = dict(sorted(actors.items(), key=lambda item: item[1], reverse=True))
         logger.info("Actors appearances: %s", actors)
         '''    
+    def log_info(self, message):
+        logger.info(message)
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

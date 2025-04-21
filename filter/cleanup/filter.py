@@ -164,7 +164,6 @@ class CleanupFilter(FilterBase):
             if msg_type == "EOS":
                 logger.info(f"Received EOS from {queue_name}")
                 self._mark_eos_received(queue_name, msg_type)
-                ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             data = json.loads(body)

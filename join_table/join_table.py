@@ -6,35 +6,7 @@ import configparser
 from common.logger import get_logger
 
 logger = get_logger("Join-Table")
-
-# Test batches
-
-movies = [
-    {
-        "id": 1,
-        "original_title": "El Secreto de Sus Ojos",
-    },
-    {
-        "id": 2,
-        "original_title": "Esperando la Carroza",
-    },
-    {
-        "id": 3,
-        "original_title": "Relatos Salvajes",
-    },
-    {
-        "id": 4,
-        "original_title": "Nueve Reinas",
-    },
-    {
-        "id": 5,
-        "original_title": "La Odisea de los Giles",
-    },
-    {
-        "id": 6,
-        "original_title": "Mi obra maestra",
-    },        
-]
+EOS_TYPE = "EOS" 
 
 def load_config():
     # Load the config file
@@ -80,13 +52,15 @@ def receive_movies_table(channel, input_queue):
 
     def callback(ch, method, properties, body):
         nonlocal done
-        message = json.loads(body.decode('utf-8'))
-        if message:
-            movies_table.append(message)
-        else:
-            logger.info("Received stop signal, stopping consumption.")
+        msg_type = properties.type if properties and properties.type else "UNKNOWN"
+        if msg_type == EOS_TYPE:
+            logger.info("Received EOS message, stopping consumption.")    
             done = True
             channel.stop_consuming()
+        else:
+            message = json.loads(body)
+            logger.info(f"Received message: {message}")
+            movies_table.append(message)
 
     channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
     logger.info("Waiting for movies table...")

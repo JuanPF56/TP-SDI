@@ -5,7 +5,7 @@ import pika
 import multiprocessing
 import signal
 
-from common import logger
+EOS_TYPE = "EOS"
 
 class JoinBatchBase:
     def __init__(self, config):
@@ -80,10 +80,13 @@ class JoinBatchBase:
 
             # Update the shared movies table with the new data
             self.movies_table.extend(movies_table["movies"])
+            log_message = f"Received movies table: {len(movies_table['movies'])} movies"
+            self.log_info(log_message)
             # Notify that the movies table is ready
             self.movies_table_ready.set()
             self.channel.stop_consuming()
-                
+        
+        self.log_info("Waiting for movies table...")
         # Start consuming messages from the queue
         self.channel.basic_consume(queue=self.table_queue, on_message_callback=callback, auto_ack=True)
         
@@ -92,16 +95,18 @@ class JoinBatchBase:
     def receive_batch(self):
         # Wait for the movies table to be received
         self.movies_table_ready.wait()
-        logger.info("Movies table: %s", self.movies_table)
         
+        self.log_info("Movies table is ready. Starting to receive batches...")
         self.channel.basic_consume(
             queue=self.input_queue,
             on_message_callback=self.process_batch,
             auto_ack=True
         )
 
-        logger.info("Waiting for messages in %s", self.input_queue)
         self.channel.start_consuming()
 
     def process_batch(self, ch, method, properties, body):
+        raise NotImplementedError("Subclasses must implement this method")
+    
+    def log_info(self, message):
         raise NotImplementedError("Subclasses must implement this method")

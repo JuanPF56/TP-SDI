@@ -35,7 +35,10 @@ class JoinBatchRatings(JoinBatchBase):
         for movie_id, rating_list in ratings_by_movie.items():
             average_ratings[movie_id] = sum(rating_list) / len(rating_list)
         logger.info("Average ratings: %s", average_ratings)
-        '''
+        '''    
+    def log_info(self, message):
+        logger.info(message)
+
 
 
 if __name__ == "__main__":
