@@ -87,7 +87,7 @@ def main():
     channel.queue_declare(queue=input_queue)
 
     movies_table = receive_movies_table(channel, input_queue)
-    logger.debug("Received movies table: %s", movies_table)
+    logger.info("Received movies table: %s", movies_table)
 
     # Send the movies table to the join batch nodes
     logger.info("Sending movies table to join batch nodes...")

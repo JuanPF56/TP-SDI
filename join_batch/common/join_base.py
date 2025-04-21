@@ -7,6 +7,8 @@ import signal
 
 EOS_TYPE = "EOS"
 
+SECONDS_TO_HEARTBEAT = 600  # 10 minutes (adjustable)
+
 class JoinBatchBase:
     def __init__(self, config):
         self.config = config
@@ -35,11 +37,17 @@ class JoinBatchBase:
     def __connect_to_rabbitmq(self):
         connection = None
         channel = None
-        delay = 2 # Seconds
+        delay = 2  # Seconds
         while True:
             try:
                 rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
-                connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
+                # Set heartbeat interval
+                connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=rabbitmq_host,
+                        heartbeat=SECONDS_TO_HEARTBEAT
+                    )
+                )
                 channel = connection.channel()
                 log_message = f"Process {os.getpid()} connected to RabbitMQ at {rabbitmq_host}"
                 self.log_info(log_message)
@@ -53,12 +61,16 @@ class JoinBatchBase:
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
-        self.connection.close()
-        self.channel.stop_consuming()
-        self.channel.close()
-        self.manager.shutdown()
-        os.kill(self.table_receiver.pid, signal.SIGTERM)
-        self.table_receiver.join()
+        try:
+            self.connection.close()
+        except Exception as e:
+            self.log_info(f"Error closing connection: {e}")
+        finally:
+            self.channel.stop_consuming()
+            self.channel.close()
+            self.manager.shutdown()
+            os.kill(self.table_receiver.pid, signal.SIGTERM)
+            self.table_receiver.join()
 
     def process(self):
         # Start the process to receive the movies table
@@ -118,17 +130,33 @@ class JoinBatchBase:
         chan.close()
 
     def receive_batch(self):
-        # Wait for the movies table to be received
+       # Wait for the movies table to be received
         self.movies_table_ready.wait()
-        
-        self.log_info("Movies table is ready. Starting to receive batches...")
-        self.channel.basic_consume(
-            queue=self.input_queue,
-            on_message_callback=self.process_batch,
-            auto_ack=True
-        )
 
-        self.channel.start_consuming()
+        self.log_info("Movies table is ready. Starting to receive batches...")
+
+        while True:
+            try:
+                self.channel.basic_consume(
+                    queue=self.input_queue,
+                    on_message_callback=self.process_batch,
+                    auto_ack=True
+                )
+                self.channel.start_consuming()
+
+            except pika.exceptions.StreamLostError as e:
+                self.log_info(f"[WARNING] Stream lost. Reconnecting... Reason: {e}")
+                time.sleep(1)
+                self.connection, self.channel = self.__connect_to_rabbitmq()
+
+            except pika.exceptions.AMQPConnectionError as e:
+                self.log_info(f"[WARNING] AMQP Connection error: {e}. Retrying in 2s...")
+                time.sleep(2)
+                self.connection, self.channel = self.__connect_to_rabbitmq()
+
+            except Exception as e:
+                self.log_info(f"[ERROR] Unexpected error in receive_batch: {e}")
+                break
 
     def process_batch(self, ch, method, properties, body):
         raise NotImplementedError("Subclasses must implement this method")
