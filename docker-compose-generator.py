@@ -116,8 +116,7 @@ def generate_compose(filename, short_test=False):
             "image": f"join_batch_credits:latest",
             "entrypoint": "python3 /app/join_batch.py",
             "environment": {
-                "NODE_ID": str(i),
-                "NODE_TYPE": "credits"
+                "NODE_ID": str(i)
             },
             "volumes": [
                 f"./join_batch/credits/config.ini:/app/config.ini"
@@ -135,8 +134,7 @@ def generate_compose(filename, short_test=False):
             "image": f"join_batch_ratings:latest",
             "entrypoint": "python3 /app/join_batch.py",
             "environment": {
-                "NODE_ID": str(i),
-                "NODE_TYPE": "ratings"
+                "NODE_ID": str(i)
             },
             "volumes": [
                 f"./join_batch/ratings/config.ini:/app/config.ini"

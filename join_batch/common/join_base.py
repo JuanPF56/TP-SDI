@@ -23,9 +23,9 @@ class JoinBatchBase:
         # Get the movies table exchange name from the config
         movies_table_exchange = self.config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
         # Declare a fanout exchange
-        self.channel.exchange_declare(exchange=movies_table_exchange, exchange_type='fanout', durable=True)
+        self.channel.exchange_declare(exchange=movies_table_exchange, exchange_type='fanout')
         # Create a new queue with a random name
-        result = self.channel.queue_declare(queue='', exclusive=True, durable=True)
+        result = self.channel.queue_declare(queue='', exclusive=True)
         self.queue_name = result.method.queue
         # Bind the queue to the exchange
         self.channel.queue_bind(exchange=movies_table_exchange, queue=self.queue_name)

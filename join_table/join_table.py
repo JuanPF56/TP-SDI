@@ -80,9 +80,9 @@ def main():
     input_queue = config["input_queue"]
 
     # Declare a fanout exchange
-    channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout', durable=True)
+    channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout')
     # Declare a queue for the input data
-    channel.queue_declare(queue=input_queue, durable=True)
+    channel.queue_declare(queue=input_queue)
 
     # Send the movies table to the join batch nodes
     logger.info("Sending movies table to join batch nodes...")
@@ -95,10 +95,7 @@ def main():
     channel.basic_publish(
         exchange=broadcast_exchange,
         routing_key='',
-        body=json.dumps(data).encode('utf-8'),
-        properties=pika.BasicProperties(
-            delivery_mode=2  # Make message persistent
-        )
+        body=json.dumps(data).encode('utf-8')
     )
 
     logger.info(" [x] Sent broadcast")
