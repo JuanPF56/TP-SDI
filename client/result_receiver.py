@@ -125,21 +125,23 @@ def pretty_print_top_actors(result: dict):
 
 def pretty_print_income_ratio_by_sentiment(result: dict):
     query_id = result.get("query", "Q?")
-    rows = result.get("results", [])
+    ratios = result.get("results", {})
 
     lines = []
-    if not rows or len(rows) != 2:
+    if not ratios or not isinstance(ratios, dict):
         lines.append(f"No se encontraron resultados para la consulta {query_id}")
     else:
-        positive_ratio, negative_ratio = rows
-        positive_ratio = float(positive_ratio)
-        negative_ratio = float(negative_ratio)
+        try:
+            positive_ratio = float(ratios.get("average_positive_rate", 0))
+            negative_ratio = float(ratios.get("average_negative_rate", 0))
 
-        lines.append(f"Resultados de la consulta {query_id}: Average de la tasa ingreso/presupuesto de peliculas con overview de sentimiento positivo vs. sentimiento negativo")
-        lines.append("-" * 58)
-        lines.append(f"😊 Sentimiento positivo - Tasa ingreso/presupuesto: {positive_ratio:.2f}")
-        lines.append(f"☹️  Sentimiento negativo - Tasa ingreso/presupuesto: {negative_ratio:.2f}")
-        lines.append("-" * 58)
+            lines.append(f"Resultados de la consulta {query_id}: Average de la tasa ingreso/presupuesto de peliculas con overview de sentimiento positivo vs. sentimiento negativo")
+            lines.append("-" * 58)
+            lines.append(f"😊 Sentimiento positivo - Tasa ingreso/presupuesto: {positive_ratio:.2f}")
+            lines.append(f"☹️  Sentimiento negativo - Tasa ingreso/presupuesto: {negative_ratio:.2f}")
+            lines.append("-" * 58)
+        except (ValueError, TypeError) as e:
+            lines.append(f"Error al procesar los resultados para la consulta {query_id}: {e}")
 
     print_ascii_box(lines)
 
