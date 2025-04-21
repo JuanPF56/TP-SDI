@@ -1,61 +1,19 @@
 import configparser
+import json
 from common.logger import get_logger
 from common.join_base import JoinBatchBase
 
 logger = get_logger("JoinBatch-Credits")
 
-cast = [
-    {
-        "movie_id": 1,
-        "cast": [ "Ricardo Darín", "Soledad Villamil", "Guillermo Francella" ],
-    },
-    {
-        "movie_id": 2,
-        "cast": [ "Antonio Gasalla", "China Zorrilla", "Luis Brandoni" ],
-    },
-    {
-        "movie_id": 3,
-        "cast": [ "Ricardo Darín", "Leonardo Sbaraglia", "Érica Rivas" ],
-    },
-    {
-        "movie_id": 4,
-        "cast": [ "Ricardo Darín", "Gastón Pauls", "Leticia Brédice" ],
-    },
-    {
-        "movie_id": 5,
-        "cast": [ "Ricardo Darín", "Luis Brandoni", "Chino Darín" ],
-    },
-    {
-        "movie_id": 6,
-        "cast": [ "Guillermo Francella", "Luis Brandoni", "Raúl Arévalo" ],
-    },
-    {
-        "movie_id": 7,
-        "cast": [ "Leonardo DiCaprio", "Kate Winslet", "Billy Zane" ],
-    },
-    {
-        "movie_id": 8,
-        "cast": [ "Robert Downey Jr.", "Chris Evans", "Scarlett Johansson" ],
-    },
-    {
-        "movie_id": 9,
-        "cast": [ "Tom Hanks", "Robin Wright", "Gary Sinise" ],
-    },
-    {
-        "movie_id": 10,
-        "cast": [ "Brad Pitt", "Angelina Jolie", "James McAvoy" ],
-    },
-]
-
 class JoinBatchCredits(JoinBatchBase):
-    def receive_batch(self):
-        # TODO: Read credits batch from RabbitMQ
+    def process_batch(self, ch, method, properties, body):
+        # Process the incoming message (cast batch)
+        cast_batch = body.decode('utf-8')
+        cast_batch = json.loads(cast_batch)
 
-        # Wait for the movies table to be received
-        self.movies_table_ready.wait()
-        logger.info("Movies table received")
-        logger.info("Movies table: %s", self.movies_table)
+        logger.info("Received cast batch: %s", cast_batch)
 
+        '''
         # Perform the join operation (only keep cast for movies in the movies table)
         joined_data = []
         for movie in cast:
@@ -65,9 +23,10 @@ class JoinBatchCredits(JoinBatchBase):
                     break
 
         logger.info("Joined data: %s", joined_data)
-
+        '''
         # TODO: Send the joined data to the next node in the pipeline
-        
+
+        '''
         # Q4 logic (count actor appearances)
 
         actors = {}
@@ -80,7 +39,8 @@ class JoinBatchCredits(JoinBatchBase):
 
         # Sort actors by appearances
         actors = dict(sorted(actors.items(), key=lambda item: item[1], reverse=True))
-        logger.info("Actors appearances: %s", actors)        
+        logger.info("Actors appearances: %s", actors)
+        '''    
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

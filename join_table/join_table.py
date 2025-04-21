@@ -62,6 +62,7 @@ def load_config():
 
 def setup_rabbitmq_connection(rabbitmq_host):
     # Establish a connection to RabbitMQ
+    delay = 2  # Seconds
     while True:
         try:
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
@@ -70,7 +71,34 @@ def setup_rabbitmq_connection(rabbitmq_host):
             return connection, channel
         except pika.exceptions.AMQPConnectionError:
             logger.error("RabbitMQ connection error. Retrying in 5 seconds...")
-            time.sleep(5)
+            time.sleep(2)
+            delay *= 2 # Exponential backoff
+
+def receive_movies_table(channel, input_queue):
+    movies_table = []
+    done = False
+
+    def callback(ch, method, properties, body):
+        nonlocal done
+        message = json.loads(body.decode('utf-8'))
+        if message:
+            movies_table.append(message)
+        else:
+            logger.info("Received stop signal, stopping consumption.")
+            done = True
+            channel.stop_consuming()
+
+    channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
+    logger.info("Waiting for movies table...")
+
+    while not done:
+        try:
+            channel.start_consuming()
+        except Exception as e:
+            logger.error(f"Error during consuming: {e}")
+            break
+
+    return movies_table
 
 def main():
     config = load_config()
@@ -84,12 +112,15 @@ def main():
     # Declare a queue for the input data
     channel.queue_declare(queue=input_queue)
 
+    movies_table = receive_movies_table(channel, input_queue)
+    logger.info("Received movies table: %s", movies_table)
+
     # Send the movies table to the join batch nodes
     logger.info("Sending movies table to join batch nodes...")
     
     # Publish a message to the exchange
     data = {
-        "movies": movies,
+        "movies": movies_table,
         "last": True,
     }
     channel.basic_publish(
