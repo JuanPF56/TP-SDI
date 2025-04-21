@@ -65,8 +65,8 @@ class ProductionFilter(FilterBase):
 
         def callback(ch, method, properties, body):
             """
-            Callback function to process messages from the input queue.
-            Filters movies by production countries and sends them to the appropriate queues.
+            Callback function to process batched messages from the input queue.
+            Filters movies by production countries and sends them in batches to the appropriate queues.
             """
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
@@ -75,27 +75,65 @@ class ProductionFilter(FilterBase):
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            movie = json.loads(body)
-            country_dicts = movie.get("production_countries", [])
-            country_names = [c.get("name") for c in country_dicts if "name" in c]
+            try:
+                movies_batch = json.loads(body)
+                if not isinstance(movies_batch, list):
+                    logger.warning("Expected a list of movies (batch), skipping.")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    return
 
-            logger.debug(f"Processing movie: {movie.get('original_title')}")
-            logger.debug(f"Production countries: {country_names}")
+                # Batches for each category
+                batch_arg = []
+                batch_solo = []
+                batch_arg_spain = []
 
-            if "Argentina" in country_names:
-                channel.basic_publish(exchange='', routing_key=output_queues["movies_argentina"], body=body)
-                logger.debug(f"Sent to {output_queues['movies_argentina']}")
+                for movie in movies_batch:
+                    country_dicts = movie.get("production_countries", [])
+                    country_names = [c.get("name") for c in country_dicts if "name" in c]
 
-            if len(country_names) == 1:
-                channel.basic_publish(exchange='', routing_key=output_queues["movies_solo"], body=body)
-                logger.debug(f"Sent to {output_queues['movies_solo']}")
+                    logger.debug(f"Processing movie: {movie.get('original_title')}")
+                    logger.debug(f"Production countries: {country_names}")
 
-            if "Argentina" in country_names and "Spain" in country_names:
-                channel.basic_publish(exchange='', routing_key=output_queues["movies_arg_spain"], body=body)
-                logger.debug(f"Sent to {output_queues['movies_arg_spain']}")
+                    if "Argentina" in country_names:
+                        batch_arg.append(movie)
 
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+                    if len(country_names) == 1:
+                        batch_solo.append(movie)
 
+                    if "Argentina" in country_names and "Spain" in country_names:
+                        batch_arg_spain.append(movie)
+
+                # Publish non-empty batches
+                if batch_arg:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["movies_argentina"],
+                        body=json.dumps(batch_arg)
+                    )
+                    logger.debug(f"Sent batch to {output_queues['movies_argentina']}")
+
+                if batch_solo:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["movies_solo"],
+                        body=json.dumps(batch_solo)
+                    )
+                    logger.debug(f"Sent batch to {output_queues['movies_solo']}")
+
+                if batch_arg_spain:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["movies_arg_spain"],
+                        body=json.dumps(batch_arg_spain)
+                    )
+                    logger.debug(f"Sent batch to {output_queues['movies_arg_spain']}")
+
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+
+            except Exception as e:
+                logger.error(f"Failed to process batch: {e}")
+                ch.basic_ack(delivery_tag=method.delivery_tag)        
+        
         logger.info(f"Waiting for messages from '{input_queue}'...")
         channel.basic_consume(queue=input_queue, on_message_callback=callback)
 

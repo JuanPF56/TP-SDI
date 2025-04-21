@@ -151,53 +151,68 @@ class CleanupFilter(FilterBase):
                 )
                 logger.info(f"EOS sent to target queue: {targets}")
 
-
     def callback(self, ch, method, properties, body, queue_name):
         """
         Callback function to handle incoming messages from RabbitMQ.
+        Handles EOS and batch message processing/publishing.
         """
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             logger.debug(f"Received message from {queue_name}, type: {msg_type}")
             
-            # Check for EOS marker
+            # Handle EOS signal
             if msg_type == "EOS":
                 logger.info(f"Received EOS from {queue_name}")
                 self._mark_eos_received(queue_name, msg_type)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            data = json.loads(body)
-            cleaned = None
+            # Decode and validate input
+            data_batch = json.loads(body)
+            if not isinstance(data_batch, list):
+                logger.warning(f"Expected a batch (list), got {type(data_batch)}. Skipping.")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
 
+            # Select correct cleanup function
             if queue_name == self.source_queues[0]:
-                cleaned = self.clean_movie(data)
+                cleaned_batch = [self.clean_movie(d) for d in data_batch]
             elif queue_name == self.source_queues[1]:
-                cleaned = self.clean_rating(data)
+                cleaned_batch = [self.clean_rating(d) for d in data_batch]
             elif queue_name == self.source_queues[2]:
-                cleaned = self.clean_credit(data)
+                cleaned_batch = [self.clean_credit(d) for d in data_batch]
+            else:
+                logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
 
-            if cleaned:
-                if isinstance(self.target_queues[queue_name], list):  # Multiple target queues
-                    for target_queue in self.target_queues[queue_name]:
-                        self.channel.basic_publish(
-                            exchange='',
-                            routing_key=target_queue,
-                            body=json.dumps(cleaned)
-                        )
-                else:  # Single target queue
+            # Filter out failed cleans
+            cleaned_batch = [c for c in cleaned_batch if c]
+
+            if cleaned_batch:
+                # Support single or multiple target queues
+                target_queues = self.target_queues[queue_name]
+                if not isinstance(target_queues, list):
+                    target_queues = [target_queues]
+
+                for target_queue in target_queues:
                     self.channel.basic_publish(
                         exchange='',
-                        routing_key=self.target_queues[queue_name],
-                        body=json.dumps(cleaned)
+                        routing_key=target_queue,
+                        body=json.dumps(cleaned_batch)
                     )
+
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in message from {queue_name}: {e}")
-            logger.error(f"Raw message: {body[:100]}...") 
+            logger.error(f"Raw message: {body[:100]}...")
         except Exception as e:
             logger.error(f"Error processing message from {queue_name}: {e}")
 
+
     def process(self):
+
         """
         Main processing loop for the CleanupFilter. 
         This function sets up the RabbitMQ connection and starts consuming messages.
@@ -219,7 +234,7 @@ class CleanupFilter(FilterBase):
             self.channel.basic_consume(
                 queue=queue,
                 on_message_callback=lambda ch, method, props, body, q=queue: self.callback(ch, method, props, body, q),
-                auto_ack=True
+                auto_ack=False
             )
 
         logger.info("All consumers set up. Waiting for messages...")

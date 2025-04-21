@@ -19,8 +19,8 @@ class SoloCountryBudgetQuery:
         rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
         input_queue = self.config["DEFAULT"].get("movies_solo_queue", "movies_solo")
 
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
-        self.channel = connection.channel()
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
+        self.channel = self.connection.channel()
 
         self.channel.queue_declare(queue=input_queue)
         self.channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
@@ -70,18 +70,29 @@ class SoloCountryBudgetQuery:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
 
-                movie = json.loads(body)
+                movies_batch = json.loads(body)
+                if not isinstance(movies_batch, list):
+                    logger.warning("❌ Expected a list (batch) of movies, skipping.")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    return
+
+                for movie in movies_batch:
+                    production_countries = movie.get("production_countries", [])
+                    if not production_countries:
+                        continue
+
+                    country = production_countries[0].get("name")
+                    if not country:
+                        continue
+
+                    budget = movie.get("budget", 0)
+                    self.budget_by_country[country] += budget
+
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+
             except json.JSONDecodeError:
                 logger.warning("❌ Skipping invalid JSON")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
-                return
-
-            production_countries = movie.get("production_countries", [])
-            country = production_countries[0]["name"]
-            budget = movie.get("budget", 0)
-            self.budget_by_country[country] += budget
-
-            ch.basic_ack(delivery_tag=method.delivery_tag)
 
         self.channel.basic_consume(queue=self.config["DEFAULT"]["movies_solo_queue"], on_message_callback=callback)
 

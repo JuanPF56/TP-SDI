@@ -106,7 +106,7 @@ class Gateway():
                 if not payload or len(payload) != payload_len:
                     logger.error("Failed to receive full payload")
                     break
-                
+
                 processed_data = protocol_gateway.process_payload(message_code, payload)
                 if processed_data is None:
                     if message_code == "BATCH_CREDITS":
@@ -114,7 +114,6 @@ class Gateway():
                         continue
                     else:
                         logger.error("Failed to process payload")
-                        # protocol_gateway.send_confirmation(ERROR)
                         break
 
                 try:
@@ -127,13 +126,16 @@ class Gateway():
                         queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
 
                     if queue_key:
-                        for item in processed_data:
-                            self.rabbitmq_channel.basic_publish(
-                                exchange='',
-                                routing_key=queue_key,
-                                body=json.dumps(asdict(item)),
-                                properties=pika.BasicProperties(type=message_code)
-                            )
+                        # 🆕 Send the entire batch as a single message (JSON array)
+                        batch_payload = json.dumps([asdict(item) for item in processed_data])
+                        self.rabbitmq_channel.basic_publish(
+                            exchange='',
+                            routing_key=queue_key,
+                            body=batch_payload,
+                            properties=pika.BasicProperties(type=message_code)
+                        )
+
+                        # 🧊 End-of-stream marker only if it's the last batch
                         if is_last_batch == IS_LAST_BATCH_FLAG:
                             self.rabbitmq_channel.basic_publish(
                                 exchange='',
@@ -141,14 +143,13 @@ class Gateway():
                                 body=b'',
                                 properties=pika.BasicProperties(type="EOS")
                             )
+
                 except (TypeError, ValueError) as e:
                     logger.error(f"Error serializing data to JSON: {e}")
                     logger.error(processed_data)
-                    # protocol_gateway.send_confirmation(ERROR)
                     break
 
                 if is_last_batch == IS_LAST_BATCH_FLAG:
-                    # protocol_gateway.send_confirmation(SUCCESS)
                     if message_code == "BATCH_MOVIES":
                         total_lines = protocol_gateway._decoder.get_decoded_movies()
                         dataset_name = "movies"
@@ -176,7 +177,7 @@ class Gateway():
             logger.error(f"Error handling client connection: {e}")
             logger.error("Client socket is not connected")
             return
-        
+
     def _stop_server(self, signum, frame):
         logger.info("Stopping server...")
         self._was_closed = True
