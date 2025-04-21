@@ -42,10 +42,10 @@ class SentimentAnalyzer:
             label = result["label"].lower()
 
             if label in {"positive", "negative"}:
-                logger.debug(f"Sentiment analysis result: {label} for text: {text[:50]}...")
+                logger.info(f"Sentiment analysis result: {label} for text: {text[:50]}...")
                 return label
             else:
-                logger.debug(f"Unexpected sentiment label '{label}' for text: {text[:50]}...")
+                logger.info(f"Unexpected sentiment label '{label}' for text: {text[:50]}...")
                 return "neutral"
         except Exception as e:
             logger.error(f"Error during sentiment analysis: {e}")
@@ -81,7 +81,7 @@ class SentimentAnalyzer:
 
 
             if sentiment == "neutral":
-                logger.info(f"Ignoring neutral/empty overview for '{movie_dict['original_title']}'")
+                logger.debug(f"Ignoring neutral/empty overview for '{movie_dict['original_title']}'")
                 return
 
             target_queue = self.positive_queue if sentiment == 'positive' else self.negative_queue

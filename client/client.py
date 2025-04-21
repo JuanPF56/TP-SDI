@@ -90,6 +90,7 @@ class Client:
                 logger.info("Datasets sent successfully.")
 
                 self._results_thread.join()
+                break
 
             except OSError as e:
                 if self._was_closed:

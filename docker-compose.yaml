@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 5
     logging:
-      driver: "none"
+      driver: none
   gateway:
     container_name: gateway
     image: gateway:latest
