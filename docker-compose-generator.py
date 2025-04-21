@@ -16,7 +16,7 @@ def generate_compose(filename, short_test=False):
     jb_ratings = config["DEFAULT"].getint("join_batch_ratings_nodes", 1)
 
     services = {}
-
+    
     # RabbitMQ node
     services["rabbitmq"] = {
         "image": "rabbitmq:3-management",
