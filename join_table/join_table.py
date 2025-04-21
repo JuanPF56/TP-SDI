@@ -89,11 +89,9 @@ def main():
     channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout')
     channel.queue_declare(queue=input_queue)
 
-    batch_size = 100  # Set desired batch size
-    logger.info(f"Processing incoming movies in batches of {batch_size}")
 
     # Process and send batches
-    for batch in receive_movie_batches(channel, input_queue, batch_size=batch_size):
+    for batch in receive_movie_batches(channel, input_queue):
         data = {
             "movies": batch,
             "last": False

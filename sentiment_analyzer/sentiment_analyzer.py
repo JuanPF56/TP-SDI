@@ -1,7 +1,6 @@
-# sentiment_analyzer.py
-
 import json
 import pika
+import time
 from configparser import ConfigParser
 from dataclasses import asdict
 from transformers import pipeline
@@ -26,11 +25,20 @@ class SentimentAnalyzer:
         self.negative_queue = config["QUEUES"]["negative_movies_queue"]
 
     def _connect_to_rabbitmq(self):
-        connection = pika.BlockingConnection(pika.ConnectionParameters(self.rabbitmq_host))
-        self.channel = connection.channel()
-        self.channel.queue_declare(queue=self.source_queue)
-        self.channel.queue_declare(queue=self.positive_queue)
-        self.channel.queue_declare(queue=self.negative_queue)
+        for i in range(10):
+            try:
+                connection = pika.BlockingConnection(pika.ConnectionParameters(self.rabbitmq_host))
+                self.channel = connection.channel()
+                self.channel.queue_declare(queue=self.source_queue)
+                self.channel.queue_declare(queue=self.positive_queue)
+                self.channel.queue_declare(queue=self.negative_queue)
+                logger.info("Connected to RabbitMQ successfully.")
+                return
+            except pika.exceptions.AMQPConnectionError as e:
+                logger.warning(f"Connection to RabbitMQ failed ({i+1}/10): {e}")
+                time.sleep(5)
+        logger.error("Failed to connect to RabbitMQ after multiple attempts.")
+        raise pika.exceptions.AMQPConnectionError
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
@@ -42,8 +50,10 @@ class SentimentAnalyzer:
             label = result["label"].lower()
 
             if label in {"positive", "negative"}:
+                logger.debug(f"Sentiment analysis result: {label} for text: {text[:50]}...")
                 return label
             else:
+                logger.debug(f"Unexpected sentiment label '{label}' for text: {text[:50]}...")
                 return "neutral"
         except Exception as e:
             logger.error(f"Error during sentiment analysis: {e}")
