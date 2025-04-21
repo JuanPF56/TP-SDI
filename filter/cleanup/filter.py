@@ -96,7 +96,7 @@ class CleanupFilter(FilterBase):
         """
         Callback function to process rating data to clean it.
         """
-        required_fields = ["id", "movieId", "rating"]
+        required_fields = ["userId", "movieId", "rating"]
         if not all(data.get(field) is not None for field in required_fields):
             logger.debug(f"Skipping invalid rating data: {data}")
             return None
