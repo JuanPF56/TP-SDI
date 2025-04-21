@@ -31,6 +31,9 @@ def generate_compose(filename, short_test=False):
             "interval": "5s",
             "timeout": "5s",
             "retries": 5
+        },
+        "logging": {
+            "driver": "none"
         }
     }
 
