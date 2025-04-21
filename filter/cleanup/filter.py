@@ -96,13 +96,12 @@ class CleanupFilter(FilterBase):
         """
         Callback function to process rating data to clean it.
         """
-        required_fields = ["id", "movie_id", "rating"]
+        required_fields = ["id", "movieId", "rating"]
         if not all(data.get(field) is not None for field in required_fields):
             logger.debug(f"Skipping invalid rating data: {data}")
             return None
         return {
-            "id": data["id"],
-            "movie_id": data["movie_id"],
+            "movie_id": data["movieId"],
             "rating": data["rating"]
         }
 
@@ -110,14 +109,20 @@ class CleanupFilter(FilterBase):
         """
         Callback function to process credit data to clean it.
         """
-        required_fields = ["id", "cast", "crew"]
+        required_fields = ["id", "cast"]
         if not all(data.get(field) is not None for field in required_fields):
             logger.debug(f"Skipping invalid credit data: {data}")
             return None
+        
+        cast = []
+        if data["cast"]:
+            for actor in data["cast"]:
+                if actor.get("name"):
+                    cast.append(actor["name"])
+
         return {
             "id": data["id"],
-            "cast": data["cast"],
-            "crew": data.get("crew", [])
+            "cast": cast,
         }
 
     def _mark_eos_received(self, queue_name, msg_type):
