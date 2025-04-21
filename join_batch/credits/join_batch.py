@@ -25,9 +25,7 @@ class JoinBatchCredits(JoinBatchBase):
             return
         
         # Data is a single movie rating, not a batch
-        # TODO: Handle batches vs single messages?
-        data = [data]
-        
+        # TODO: Handle batches vs single messages?        
         # Perform the join operation (only keep cast for movies in the movies table)
         joined_data = []
         for movie in data:

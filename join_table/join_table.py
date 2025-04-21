@@ -33,8 +33,7 @@ def load_config():
     }
 
 def setup_rabbitmq_connection(rabbitmq_host):
-    # Establish a connection to RabbitMQ
-    delay = 2  # Seconds
+    delay = 2  # Initial delay
     while True:
         try:
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
@@ -43,36 +42,41 @@ def setup_rabbitmq_connection(rabbitmq_host):
             return connection, channel
         except pika.exceptions.AMQPConnectionError:
             logger.error("RabbitMQ connection error. Retrying in 5 seconds...")
-            time.sleep(2)
-            delay *= 2 # Exponential backoff
+            time.sleep(delay)
+            delay = min(delay * 2, 30)  # Exponential backoff with cap
 
-def receive_movies_table(channel, input_queue):
-    movies_table = []
+def receive_movie_batches(channel, input_queue, batch_size=100):
+    batch = []
     done = False
 
     def callback(ch, method, properties, body):
-        nonlocal done
+        nonlocal done, batch
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
         if msg_type == EOS_TYPE:
-            logger.info("Received EOS message, stopping consumption.")    
+            logger.info("Received EOS message.")
+            if batch:
+                yield_batch = batch[:]
+                batch.clear()
+                yield yield_batch
             done = True
             channel.stop_consuming()
         else:
             message = json.loads(body)
             logger.debug(f"Received message: {message}")
-            movies_table.append(message)
-
-    channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
-    logger.info("Waiting for movies table...")
+            batch.append(message)
+            if len(batch) >= batch_size:
+                yield_batch = batch[:]
+                batch.clear()
+                yield yield_batch
 
     while not done:
         try:
+            channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
             channel.start_consuming()
         except Exception as e:
             logger.error(f"Error during consuming: {e}")
             break
-
-    return movies_table
 
 def main():
     config = load_config()
@@ -81,29 +85,38 @@ def main():
     broadcast_exchange = config["broadcast_exchange"]
     input_queue = config["input_queue"]
 
-    # Declare a fanout exchange
+    # Declare exchange and queue
     channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout')
-    # Declare a queue for the input data
     channel.queue_declare(queue=input_queue)
 
-    movies_table = receive_movies_table(channel, input_queue)
-    logger.debug("Received movies table: %s", movies_table)
+    batch_size = 100  # Set desired batch size
+    logger.info(f"Processing incoming movies in batches of {batch_size}")
 
-    # Send the movies table to the join batch nodes
-    logger.info("Sending movies table to join batch nodes...")
-    
-    # Publish a message to the exchange
-    data = {
-        "movies": movies_table,
-        "last": True,
+    # Process and send batches
+    for batch in receive_movie_batches(channel, input_queue, batch_size=batch_size):
+        data = {
+            "movies": batch,
+            "last": False
+        }
+        logger.info(f"Publishing batch of {len(batch)} movies")
+        channel.basic_publish(
+            exchange=broadcast_exchange,
+            routing_key='',
+            body=json.dumps(data).encode('utf-8')
+        )
+
+    # Send final 'last' message
+    final_msg = {
+        "movies": [],
+        "last": True
     }
     channel.basic_publish(
         exchange=broadcast_exchange,
         routing_key='',
-        body=json.dumps(data).encode('utf-8')
+        body=json.dumps(final_msg).encode('utf-8')
     )
+    logger.info("All movie batches sent. Sent final 'last=True' message.")
 
-    logger.info(" [x] Sent broadcast")
     connection.close()
 
 if __name__ == "__main__":
