@@ -128,6 +128,8 @@ def pretty_print_income_ratio_by_sentiment(result: dict):
         lines.append(f"No se encontraron resultados para la consulta {query_id}")
     else:
         positive_ratio, negative_ratio = rows
+        positive_ratio = float(positive_ratio)
+        negative_ratio = float(negative_ratio)
 
         lines.append(f"Resultados de la consulta {query_id}: Average de la tasa ingreso/presupuesto de peliculas con overview de sentimiento positivo vs. sentimiento negativo")
         lines.append("-" * 58)
