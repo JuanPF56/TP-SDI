@@ -28,7 +28,7 @@ class JoinBatchCredits(JoinBatchBase):
             # Data is a single movie rating, not a batch
             # TODO: Handle batches vs single messages?
             data = [data]
-            logger.info(f"Received movie credits: {data}")
+            logger.debug(f"Received movie credits: {data}")
             
             # Perform the join operation (only keep cast for movies in the movies table)
             joined_data = []
@@ -43,7 +43,7 @@ class JoinBatchCredits(JoinBatchBase):
                 logger.debug("No matching movies found in the movies table.")
                 return
             else:
-                logger.debug("Joined data: %s", joined_data)
+                logger.info("Joined data: %s", joined_data)
             
             self.channel.basic_publish(
                 exchange='',
