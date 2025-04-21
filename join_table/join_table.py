@@ -6,10 +6,10 @@ import configparser
 from common.logger import get_logger
 
 logger = get_logger("Join-Table")
-EOS_TYPE = "EOS" 
+EOS_TYPE = "EOS"
+BATCH_SIZE = 100
 
 def load_config():
-    # Load the config file
     config = configparser.ConfigParser()
     try:
         config.read("config.ini")
@@ -17,10 +17,7 @@ def load_config():
         logger.error("Error: config.ini not found.")
         raise
 
-    # Get RabbitMQ host from the config file
     rabbitmq_host = config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
-
-    # Get queue names from the config file
     input_queue = config["DEFAULT"].get("movies_arg_post_2000_queue", "movies_arg_post_2000")
     broadcast_exchange = config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
     jb_ready_queue = config["DEFAULT"].get("join_batch_ready_queue", "join_batch_ready")
@@ -33,7 +30,7 @@ def load_config():
     }
 
 def setup_rabbitmq_connection(rabbitmq_host):
-    delay = 2  # Initial delay
+    delay = 2
     while True:
         try:
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
@@ -41,81 +38,71 @@ def setup_rabbitmq_connection(rabbitmq_host):
             logger.info("Connected to RabbitMQ")
             return connection, channel
         except pika.exceptions.AMQPConnectionError:
-            logger.error("RabbitMQ connection error. Retrying in 5 seconds...")
+            logger.error("RabbitMQ connection error. Retrying in %d seconds...", delay)
             time.sleep(delay)
-            delay = min(delay * 2, 30)  # Exponential backoff with cap
-
-def receive_movie_batches(channel, input_queue, batch_size=100):
-    batch = []
-    done = False
-
-    def callback(ch, method, properties, body):
-        nonlocal done, batch
-        msg_type = properties.type if properties and properties.type else "UNKNOWN"
-
-        if msg_type == EOS_TYPE:
-            logger.info("Received EOS message.")
-            if batch:
-                yield_batch = batch[:]
-                batch.clear()
-                yield yield_batch
-            done = True
-            channel.stop_consuming()
-        else:
-            message = json.loads(body)
-            logger.debug(f"Received message: {message}")
-            batch.append(message)
-            if len(batch) >= batch_size:
-                yield_batch = batch[:]
-                batch.clear()
-                yield yield_batch
-
-    while not done:
-        try:
-            channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
-            channel.start_consuming()
-        except Exception as e:
-            logger.error(f"Error during consuming: {e}")
-            break
+            delay = min(delay * 2, 30)
 
 def main():
     config = load_config()
     connection, channel = setup_rabbitmq_connection(config["rabbitmq_host"])
 
-    broadcast_exchange = config["broadcast_exchange"]
     input_queue = config["input_queue"]
+    broadcast_exchange = config["broadcast_exchange"]
 
-    # Declare exchange and queue
     channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout')
     channel.queue_declare(queue=input_queue)
 
+    batch = []
 
-    # Process and send batches
-    for batch in receive_movie_batches(channel, input_queue):
-        data = {
-            "movies": batch,
-            "last": False
-        }
-        logger.info(f"Publishing batch of {len(batch)} movies")
-        channel.basic_publish(
-            exchange=broadcast_exchange,
-            routing_key='',
-            body=json.dumps(data).encode('utf-8')
-        )
+    def callback(ch, method, properties, body):
+        nonlocal batch
+        msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
-    # Send final 'last' message
-    final_msg = {
-        "movies": [],
-        "last": True
-    }
-    channel.basic_publish(
-        exchange=broadcast_exchange,
-        routing_key='',
-        body=json.dumps(final_msg).encode('utf-8')
-    )
-    logger.info("All movie batches sent. Sent final 'last=True' message.")
+        if msg_type == EOS_TYPE:
+            logger.info("Received EOS message.")
+            if batch:
+                channel.basic_publish(
+                    exchange=broadcast_exchange,
+                    routing_key='',
+                    body=json.dumps({"movies": batch, "last": False}).encode('utf-8')
+                )
+                logger.info("Sent final batch of %d movies", len(batch))
+                batch.clear()
 
-    connection.close()
+            # Send final 'last' signal
+            final_msg = {"movies": [], "last": True}
+            channel.basic_publish(
+                exchange=broadcast_exchange,
+                routing_key='',
+                body=json.dumps(final_msg).encode('utf-8')
+            )
+            logger.info("Sent final 'last=True' message.")
+            ch.stop_consuming()
+
+        else:
+            message = json.loads(body)
+            logger.debug(f"Received message: {message}")
+            batch.append(message)
+
+            if len(batch) >= BATCH_SIZE:
+                channel.basic_publish(
+                    exchange=broadcast_exchange,
+                    routing_key='',
+                    body=json.dumps({"movies": batch, "last": False}).encode('utf-8')
+                )
+                logger.info("Sent batch of %d movies", len(batch))
+                batch.clear()
+
+    logger.info("Consuming from queue: %s", input_queue)
+    channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
+
+    try:
+        channel.start_consuming()
+    except KeyboardInterrupt:
+        logger.warning("Interrupted manually")
+    finally:
+        connection.close()
+        logger.info("Connection closed")
 
 if __name__ == "__main__":
     main()

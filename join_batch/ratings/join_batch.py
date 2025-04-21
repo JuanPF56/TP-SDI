@@ -54,6 +54,7 @@ class JoinBatchRatings(JoinBatchBase):
                     body=json.dumps(joined_data).encode('utf-8'),
                     properties=pika.BasicProperties(type=msg_type)
                 )
+                self.channel.basic_ack(delivery_tag=method.delivery_tag)
 
         except pika.exceptions.StreamLostError as e:
             # Handle the connection loss and reconnect
