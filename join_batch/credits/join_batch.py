@@ -32,7 +32,7 @@ class JoinBatchCredits(JoinBatchBase):
         joined_data = []
         for movie in data:
             for movie_tab in self.movies_table:
-                if movie["movie_id"] == movie_tab["id"]:
+                if movie["id"] == movie_tab["id"]:
                     joined_data.append(movie)
                     break
 

@@ -33,7 +33,13 @@ class JoinBatchRatings(JoinBatchBase):
         for movie in data:
             for movie_tab in self.movies_table:
                 if movie["movie_id"] == movie_tab["id"]:
-                    joined_data.append(movie)
+                    # Add the movie rating to the movie data
+                    joined_movie = {
+                        "id": movie_tab["id"],
+                        "original_title": movie_tab["original_title"],
+                        "rating": movie["rating"],
+                    }
+                    joined_data.append(joined_movie)
                     break
 
         if not joined_data:
