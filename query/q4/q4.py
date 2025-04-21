@@ -66,24 +66,25 @@ class ArgProdActorsQuery:
                 return
 
             try:
-                movie = json.loads(body)
+                movies = json.loads(body)
             except json.JSONDecodeError:
                 logger.warning("❌ Skipping invalid JSON")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
             
-            if movie.get("cast") is None:
-                logger.warning("❌ Skipping movie without cast")
-                ch.basic_ack(delivery_tag=method.delivery_tag)
-                return
-            
-            for actor in movie["cast"]:
-                if actor not in self.actor_participations:
-                    self.actor_participations[actor] = {
-                        "name": actor,
-                        "count": 0
-                    }
-                self.actor_participations[actor]["count"] += 1
+            for movie in movies:
+                if movie.get("cast") is None:
+                    logger.warning("❌ Skipping movie without cast")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    return
+                
+                for actor in movie["cast"]:
+                    if actor not in self.actor_participations:
+                        self.actor_participations[actor] = {
+                            "name": actor,
+                            "count": 0
+                        }
+                    self.actor_participations[actor]["count"] += 1
 
             ch.basic_ack(delivery_tag=method.delivery_tag)
 

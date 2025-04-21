@@ -87,20 +87,21 @@ class ArgProdRatingsQuery:
                 return
 
             try:
-                movie = json.loads(body)
+                movies = json.loads(body)
             except json.JSONDecodeError:
                 logger.warning("❌ Skipping invalid JSON")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
             
-            if movie.get("id") not in self.movie_ratings:
-                self.movie_ratings[movie["id"]] = {
-                    "original_title": movie["original_title"],
-                    "rating_sum": 0,
-                    "rating_count": 0,
-                }
-            self.movie_ratings[movie["id"]]["rating_sum"] += movie["rating"]
-            self.movie_ratings[movie["id"]]["rating_count"] += 1
+            for movie in movies:
+                if movie.get("id") not in self.movie_ratings:
+                    self.movie_ratings[movie["id"]] = {
+                        "original_title": movie["original_title"],
+                        "rating_sum": 0,
+                        "rating_count": 0,
+                    }
+                self.movie_ratings[movie["id"]]["rating_sum"] += movie["rating"]
+                self.movie_ratings[movie["id"]]["rating_count"] += 1
            
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
