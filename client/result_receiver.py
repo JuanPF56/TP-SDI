@@ -85,14 +85,16 @@ def pretty_print_top_spenders(result: dict):
 
 def pretty_print_rating_extremes(result: dict):
     query_id = result.get("query", "Q?")
-    rows = result.get("results", [])
+    res = result.get("results", {})
 
     lines = []
-    if not rows or len(rows) != 2:
+    if not res or not isinstance(res, dict) or "highest" not in res or "lowest" not in res:
         lines.append(f"No se encontraron resultados para la consulta {query_id}")
     else:
-        max_movie, max_rating = rows[0]
-        min_movie, min_rating = rows[1]
+        max_movie = res["highest"].get("title", "N/A")
+        max_rating = res["highest"].get("rating", 0)
+        min_movie = res["lowest"].get("title", "N/A")
+        min_rating = res["lowest"].get("rating", 0)
 
         lines.append(f"Resultados de la consulta {query_id}: Película de producción Argentina estrenada a partir del 2000, con mayor y con menor promedio de rating.")
         lines.append("-" * 72)
@@ -104,11 +106,21 @@ def pretty_print_rating_extremes(result: dict):
 
 
 def pretty_print_top_actors(result: dict):
+    '''
+    sorted_actors = sorted(self.actor_participations.values(), key=lambda x: x["count"], reverse=True)[:10]        
+
+        results_msg = {
+            "query": "Q4",
+            "results": {
+                "actors": sorted_actors
+            }
+        }
+    '''
     query_id = result.get("query", "Q?")
-    rows = result.get("results", [])
+    res = result.get("results", {})
 
     lines = []
-    if not rows:
+    if not res or not isinstance(res, dict) or "actors" not in res:
         lines.append(f"No se encontraron resultados para la consulta {query_id}")
     else:
         lines.append(f"Resultados de la consulta {query_id}: Top 10 de actores con mayor participación en películas de producción Argentina con fecha de estreno posterior al 2000")
@@ -116,8 +128,8 @@ def pretty_print_top_actors(result: dict):
         lines.append(f"{'Pos.':<5} {'Actor':40} Participaciones")
         lines.append("-" * 65)
 
-        for idx, (actor, count) in enumerate(rows, start=1):
-            lines.append(f"{idx:<5} {actor:40} {count}")
+        for idx, actor_data in enumerate(res["actors"], start=1):
+            lines.append(f"{idx:<5} {actor_data.name:40} {actor_data.count}")
         lines.append("-" * 65)
 
     print_ascii_box(lines)
