@@ -82,7 +82,7 @@ def main():
         else:
             message = json.loads(body)
             logger.debug(f"Received message: {message}")
-            batch.append(message)
+            batch.extend(message)
 
             if len(batch) >= BATCH_SIZE:
                 channel.basic_publish(

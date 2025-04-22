@@ -199,7 +199,7 @@ class CleanupFilter(FilterBase):
                 target_queues = self.target_queues[queue_name]
                 if not isinstance(target_queues, list):
                     target_queues = [target_queues]
-
+            
                 for target_queue in target_queues:
                     self.channel.basic_publish(
                         exchange='',

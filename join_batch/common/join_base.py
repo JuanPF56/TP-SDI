@@ -115,6 +115,7 @@ class JoinBatchBase:
         def callback(ch, method, properties, body):
             try:
                 movies_table = json.loads(body.decode('utf-8'))
+                self.log_info(f"Received movies table: {movies_table}")
                 self.movies_table.extend(movies_table["movies"])
                 self.log_info(f"Received movies table: {len(movies_table['movies'])} movies")
                 self.movies_table_ready.set()

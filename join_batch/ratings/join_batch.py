@@ -11,7 +11,7 @@ class JoinBatchRatings(JoinBatchBase):
     def process_batch(self, ch, method, properties, body):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
-
+            logger.info(f"Received message of type: {msg_type}")
             if msg_type == "EOS":
                 logger.info("Received EOS message, stopping consumption.")
                 self.channel.basic_publish(

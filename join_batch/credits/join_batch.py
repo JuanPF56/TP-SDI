@@ -14,6 +14,7 @@ class JoinBatchCredits(JoinBatchBase):
 
             if msg_type == "EOS":
                 logger.info("Received EOS message, stopping consumption.")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
                 ch.stop_consuming()
                 return
 
@@ -35,28 +36,17 @@ class JoinBatchCredits(JoinBatchBase):
                 logger.error(f"Error decoding JSON: {e}")
                 return
 
-            # Flatten movies_table if it’s a nested list
-            if self.movies_table and isinstance(self.movies_table, list) and isinstance(self.movies_table[0], list):
-                self.movies_table = [item for sublist in self.movies_table for item in sublist]
-                logger.warning("Flattened nested movies_table structure.")
-
-            # Build a set of movie IDs for fast lookup
-            movie_ids = {movie["id"] for movie in self.movies_table if isinstance(movie, dict) and "id" in movie}
-
+            movies_by_id = {movie["id"]: movie for movie in self.movies_table}
+            logger.info(f"movies_by_id: {len(movies_by_id)} movies")
             joined_data = []
-
             for movie in data:
+                logger.info(f"Processing movie: {movie}")
                 movie_id = movie.get("id")
-                if movie_id in movie_ids:
+                if movie_id in movies_by_id:
                     joined_data.append(movie)
                     logger.info(f"Joined movie: {movie}")
-
             if not joined_data:
-                logger.debug("No matching movies found in the movies table.")
                 return
-            else:
-                logger.info("Joined data: %s", joined_data)
-
             self.channel.basic_publish(
                 exchange='',
                 routing_key=self.output_queue,
