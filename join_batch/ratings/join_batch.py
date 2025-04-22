@@ -14,6 +14,12 @@ class JoinBatchRatings(JoinBatchBase):
 
             if msg_type == "EOS":
                 logger.info("Received EOS message, stopping consumption.")
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.output_queue,
+                    body='b',
+                    properties=pika.BasicProperties(type=msg_type)
+                )   
                 ch.stop_consuming()
                 return
 

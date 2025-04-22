@@ -82,6 +82,7 @@ class ArgProdRatingsQuery:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
+                logger.info("Received EOS message, stopping consumption.")
                 self._calculate_and_publish_results()
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
@@ -94,6 +95,7 @@ class ArgProdRatingsQuery:
                 return
             
             for movie in movies:
+                logger.info(f"Received movie: {movie}")
                 if movie.get("id") not in self.movie_ratings:
                     self.movie_ratings[movie["id"]] = {
                         "original_title": movie["original_title"],
