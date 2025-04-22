@@ -52,7 +52,7 @@ class JoinBatchCredits(JoinBatchBase):
                     logger.info(f"Joined movie: {movie}")
 
             if not joined_data:
-                logger.debug("No matching movies found in the movies table.")
+                logger.info("No matching movies found in the movies table.")
                 return
             else:
                 logger.info("Joined data: %s", joined_data)
