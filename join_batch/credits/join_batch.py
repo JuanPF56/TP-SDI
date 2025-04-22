@@ -19,18 +19,37 @@ class JoinBatchCredits(JoinBatchBase):
 
             # Load the data from the incoming message
             try:
-                data = json.loads(body)
+                decoded = json.loads(body)
+
+                if isinstance(decoded, dict):
+                    data = decoded.get("movies", [])
+                    is_last = decoded.get("last", False)
+                elif isinstance(decoded, list):
+                    data = decoded
+                    is_last = False
+                else:
+                    logger.warning(f"Unexpected JSON format: {decoded}")
+                    return
+
             except json.JSONDecodeError as e:
                 logger.error(f"Error decoding JSON: {e}")
                 return
 
-            # Perform the join operation (only keep cast for movies in the movies table)
+            # Flatten movies_table if it’s a nested list
+            if self.movies_table and isinstance(self.movies_table, list) and isinstance(self.movies_table[0], list):
+                self.movies_table = [item for sublist in self.movies_table for item in sublist]
+                logger.warning("Flattened nested movies_table structure.")
+
+            # Build a set of movie IDs for fast lookup
+            movie_ids = {movie["id"] for movie in self.movies_table if isinstance(movie, dict) and "id" in movie}
+
             joined_data = []
+
             for movie in data:
-                for movie_tab in self.movies_table:
-                    if movie["id"] == movie_tab["id"]:
-                        joined_data.append(movie)
-                        break
+                movie_id = movie.get("id")
+                if movie_id in movie_ids:
+                    joined_data.append(movie)
+                    logger.info(f"Joined movie: {movie}")
 
             if not joined_data:
                 logger.debug("No matching movies found in the movies table.")
@@ -51,6 +70,9 @@ class JoinBatchCredits(JoinBatchBase):
             self.channel.stop_consuming()
             self.connection, self.channel = self.__connect_to_rabbitmq()
             self.receive_batch()
+
+        except Exception as e:
+            logger.error(f"[ERROR] Unexpected error in process_batch: {e}")
 
     def log_info(self, message):
         logger.info(message)
