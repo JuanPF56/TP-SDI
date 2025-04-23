@@ -114,8 +114,8 @@ class JoinBatchBase:
         # Callback function to handle incoming messages
         def callback(ch, method, properties, body):
             try:
-                movies = json.loads(body.decode('utf-8'))
-                self.movies_table = movies
+                movies = json.loads(body)
+                self.movies_table.extend(movies)
                 self.movies_table_ready.set()
                 ch.stop_consuming()
             except Exception as e:
@@ -133,8 +133,6 @@ class JoinBatchBase:
         self.movies_table_ready.wait()
 
         self.log_info("Movies table is ready. Starting to receive batches...")
-        msg = f"Movies table received: {self.movies_table}"
-        self.log_info(msg)
 
         while True:
             try:
