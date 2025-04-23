@@ -1,12 +1,13 @@
 import json
 import pika
 import time
+import os
 from configparser import ConfigParser
-from dataclasses import asdict
 from transformers import pipeline
 from common.logger import get_logger
-EOS_TYPE = "EOS" 
 
+EOS_TYPE = "EOS"
+SECONDS_TO_HEARTBEAT = 600
 logger = get_logger("SentimentAnalyzer")
 
 
@@ -14,9 +15,11 @@ class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
         self._load_config(config_path)
         self.sentiment_pipeline = pipeline("sentiment-analysis")
-        self._connect_to_rabbitmq()
         self.batch_negative = []
         self.batch_positive = []
+        self.connection = None
+        self.channel = None
+        self._connect_to_rabbitmq()
 
     def _load_config(self, path: str):
         config = ConfigParser()
@@ -27,28 +30,40 @@ class SentimentAnalyzer:
         self.negative_queue = config["QUEUES"]["negative_movies_queue"]
         self.batch_size = int(config["DEFAULT"].get("batch_size", 200))
 
-
     def _connect_to_rabbitmq(self):
-        for i in range(10):
+        delay = 2
+        while True:
             try:
-                connection = pika.BlockingConnection(pika.ConnectionParameters(self.rabbitmq_host))
-                self.channel = connection.channel()
-                self.channel.queue_declare(queue=self.source_queue)
-                self.channel.queue_declare(queue=self.positive_queue)
-                self.channel.queue_declare(queue=self.negative_queue)
-                logger.info("Connected to RabbitMQ successfully.")
-                return
+                self.connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=self.rabbitmq_host,
+                        heartbeat=SECONDS_TO_HEARTBEAT
+                    )
+                )
+                self.channel = self.connection.channel()
+                self._declare_queues()
+                logger.info(f"Process {os.getpid()} connected to RabbitMQ at {self.rabbitmq_host}")
+                break
+
             except pika.exceptions.AMQPConnectionError as e:
-                logger.warning(f"Connection to RabbitMQ failed ({i+1}/10): {e}")
-                time.sleep(5)
-        logger.error("Failed to connect to RabbitMQ after multiple attempts.")
-        raise pika.exceptions.AMQPConnectionError
+                logger.warning(f"Process {os.getpid()} RabbitMQ connection error. Retrying in {delay} seconds...")
+
+            except Exception as e:
+                logger.warning(f"Unexpected connection error: {e}")
+
+            logger.info(f"Retrying in {delay} seconds...")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+
+    def _declare_queues(self):
+        self.channel.queue_declare(queue=self.source_queue)
+        self.channel.queue_declare(queue=self.positive_queue)
+        self.channel.queue_declare(queue=self.negative_queue)
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
             logger.debug("Received empty or whitespace-only text for sentiment analysis.")
             return "neutral"
-        
         try:
             result = self.sentiment_pipeline(text, truncation=True)[0]
             label = result["label"].lower()
@@ -122,8 +137,8 @@ class SentimentAnalyzer:
                     routing_key=self.positive_queue,
                     body=json.dumps(self.batch_positive)
                 )
+                logger.debug(f"Sent batch of {len(self.batch_positive)} positive movies.")
                 self.batch_positive = []
-                logger.debug(f"Sent {len(self.batch_positive)} positive movies to {self.positive_queue}")
 
             if len(self.batch_negative) >= self.batch_size:
                 self.channel.basic_publish(
@@ -131,18 +146,43 @@ class SentimentAnalyzer:
                     routing_key=self.negative_queue,
                     body=json.dumps(self.batch_negative)
                 )
+                logger.debug(f"Sent batch of {len(self.batch_negative)} negative movies.")
                 self.batch_negative = []
-    
 
-            self.channel.basic_ack(delivery_tag=method.delivery_tag)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+
+        except pika.exceptions.StreamLostError as e:
+            logger.error(f"Stream lost, reconnecting: {e}")
+            self._reconnect_and_restart()
+
+        except pika.exceptions.AMQPConnectionError as e:
+            logger.error(f"AMQP connection lost, reconnecting: {e}")
+            self._reconnect_and_restart()
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
 
+    def _reconnect_and_restart(self):
+        try:
+            if self.connection and not self.connection.is_closed:
+                self.connection.close()
+        except Exception as e:
+            logger.warning(f"Error closing connection: {e}")
+        self._connect_to_rabbitmq()
+        self.run()
+
     def run(self):
         logger.info("Waiting for clean movies...")
-        self.channel.basic_consume(queue=self.source_queue, on_message_callback=self.callback)
-        self.channel.start_consuming()
+        self.channel.basic_consume(
+            queue=self.source_queue,
+            on_message_callback=self.callback,
+            auto_ack=False
+        )
+        try:
+            self.channel.start_consuming()
+        except pika.exceptions.AMQPConnectionError as e:
+            logger.error(f"Connection lost during consuming: {e}")
+            self._reconnect_and_restart()
 
 
 if __name__ == "__main__":
