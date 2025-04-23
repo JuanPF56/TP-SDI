@@ -14,7 +14,14 @@ class JoinBatchCredits(JoinBatchBase):
 
             if msg_type == "EOS":
                 logger.info("Received EOS message, stopping consumption.")
-                ch.basic_ack(delivery_tag=method.delivery_tag)
+                if len(self.batch) > 0:
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.output_queue,
+                        body=json.dumps(self.batch).encode('utf-8'),
+                        properties=pika.BasicProperties(type=msg_type)
+                    )
+                    self.batch.clear()
                 ch.stop_consuming()
                 return
 
@@ -37,22 +44,25 @@ class JoinBatchCredits(JoinBatchBase):
                 return
 
             movies_by_id = {movie["id"]: movie for movie in self.movies_table}
-            logger.info(f"movies_by_id: {len(movies_by_id)} movies")
             joined_data = []
             for movie in data:
-                logger.info(f"Processing movie: {movie}")
                 movie_id = movie.get("id")
                 if movie_id in movies_by_id:
                     joined_data.append(movie)
-                    logger.info(f"Joined movie: {movie}")
             if not joined_data:
                 return
-            self.channel.basic_publish(
-                exchange='',
-                routing_key=self.output_queue,
-                body=json.dumps(joined_data).encode('utf-8'),
-                properties=pika.BasicProperties(type=msg_type)
-            )
+            
+            self.batch.extend(joined_data)
+
+            if len(self.batch) >= self.batch_size or is_last:
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.output_queue,
+                    body=json.dumps(joined_data).encode('utf-8'),
+                    properties=pika.BasicProperties(type=msg_type)
+                )
+                logger.debug(f"Sent {len(joined_data)} movies to {self.output_queue}")
+                self.batch.clear()
 
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")

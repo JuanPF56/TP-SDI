@@ -11,15 +11,8 @@ class JoinBatchRatings(JoinBatchBase):
     def process_batch(self, ch, method, properties, body):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
-            logger.info(f"Received message of type: {msg_type}")
             if msg_type == "EOS":
                 logger.info("Received EOS message, stopping consumption.")
-                self.channel.basic_publish(
-                    exchange='',
-                    routing_key=self.output_queue,
-                    body='b',
-                    properties=pika.BasicProperties(type=msg_type)
-                )   
                 ch.stop_consuming()
                 return
 
@@ -64,16 +57,17 @@ class JoinBatchRatings(JoinBatchBase):
             if not joined_data:
                 logger.debug("No matching movies found in the movies table.")
                 return
-            else:
-                logger.info("Joined data: %s", joined_data)
-
+            self.batch.extend(joined_data)
             # Publish y ACK
-            self.channel.basic_publish(
-                exchange='',
-                routing_key=self.output_queue,
-                body=json.dumps(joined_data).encode('utf-8'),
-                properties=pika.BasicProperties(type=msg_type)
-            )
+
+            if len(self.batch) >= self.batch_size or is_last:
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.output_queue,
+                    body=json.dumps(joined_data).encode('utf-8'),
+                    properties=pika.BasicProperties(type=msg_type)
+                )
+                self.batch.clear()
 
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")

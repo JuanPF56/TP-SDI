@@ -59,7 +59,6 @@ class ArgProdActorsQuery:
 
         def callback(ch, method, properties, body):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
-            logger.info(f"Received message of type: {msg_type}")
             if msg_type == EOS_TYPE:
                 logger.info("Received EOS message, stopping consumption.")
                 self._calculate_and_publish_results()
@@ -72,7 +71,6 @@ class ArgProdActorsQuery:
                 logger.warning("❌ Skipping invalid JSON")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
-            logger.info(f"Received {len(movies)} movies")
             for movie in movies:
                 if movie.get("cast") is None:
                     logger.warning("❌ Skipping movie without cast")

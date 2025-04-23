@@ -14,6 +14,10 @@ class ProductionFilter(FilterBase):
         super().__init__(config)
         self.config = config
         self._eos_flags = {}
+        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
+        self.batch_arg = []
+        self.batch_solo = []
+        self.batch_arg_spain = []
 
     def _mark_eos_received(self, msg_type, output_queues, channel):
         """
@@ -71,6 +75,27 @@ class ProductionFilter(FilterBase):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
+                if len(self.batch_arg) > 0:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["movies_argentina"],
+                        body=json.dumps(self.batch_arg)
+                    )
+                    self.batch_arg.clear()
+                if len(self.batch_solo) > 0:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["movies_solo"],
+                        body=json.dumps(self.batch_solo)
+                    )
+                    self.batch_solo.clear()
+                if len(self.batch_arg_spain) > 0:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["movies_arg_spain"],
+                        body=json.dumps(self.batch_arg_spain)
+                    )
+                    self.batch_arg_spain.clear()
                 self._mark_eos_received(msg_type, output_queues, channel)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
@@ -81,12 +106,6 @@ class ProductionFilter(FilterBase):
                     logger.warning("Expected a list of movies (batch), skipping.")
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
-
-                # Batches for each category
-                batch_arg = []
-                batch_solo = []
-                batch_arg_spain = []
-
                 for movie in movies_batch:
                     country_dicts = movie.get("production_countries", [])
                     country_names = [c.get("name") for c in country_dicts if "name" in c]
@@ -95,37 +114,40 @@ class ProductionFilter(FilterBase):
                     logger.debug(f"Production countries: {country_names}")
 
                     if "Argentina" in country_names:
-                        batch_arg.append(movie)
+                        self.batch_arg.append(movie)
 
                     if len(country_names) == 1:
-                        batch_solo.append(movie)
+                        self.batch_solo.append(movie)
 
                     if "Argentina" in country_names and "Spain" in country_names:
-                        batch_arg_spain.append(movie)
+                        self.batch_arg_spain.append(movie)
 
                 # Publish non-empty batches
-                if batch_arg:
+                if self.batch_arg and len(self.batch_arg) >= self.batch_size:
                     channel.basic_publish(
                         exchange='',
                         routing_key=output_queues["movies_argentina"],
-                        body=json.dumps(batch_arg)
+                        body=json.dumps(self.batch_arg)
                     )
+                    self.batch_arg.clear()
                     logger.debug(f"Sent batch to {output_queues['movies_argentina']}")
 
-                if batch_solo:
+                if self.batch_solo and len(self.batch_solo) >= self.batch_size:
                     channel.basic_publish(
                         exchange='',
                         routing_key=output_queues["movies_solo"],
-                        body=json.dumps(batch_solo)
+                        body=json.dumps(self.batch_solo)
                     )
+                    self.batch_solo.clear()
                     logger.debug(f"Sent batch to {output_queues['movies_solo']}")
 
-                if batch_arg_spain:
+                if self.batch_arg_spain and len(self.batch_arg_spain) >= self.batch_size:
                     channel.basic_publish(
                         exchange='',
                         routing_key=output_queues["movies_arg_spain"],
-                        body=json.dumps(batch_arg_spain)
+                        body=json.dumps(self.batch_arg_spain)
                     )
+                    self.batch_arg_spain.clear()
                     logger.debug(f"Sent batch to {output_queues['movies_arg_spain']}")
 
                 ch.basic_ack(delivery_tag=method.delivery_tag)

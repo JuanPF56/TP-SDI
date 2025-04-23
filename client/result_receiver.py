@@ -104,18 +104,7 @@ def pretty_print_rating_extremes(result: dict):
 
     print_ascii_box(lines)
 
-
 def pretty_print_top_actors(result: dict):
-    '''
-    sorted_actors = sorted(self.actor_participations.values(), key=lambda x: x["count"], reverse=True)[:10]        
-
-        results_msg = {
-            "query": "Q4",
-            "results": {
-                "actors": sorted_actors
-            }
-        }
-    '''
     query_id = result.get("query", "Q?")
     res = result.get("results", {})
 
@@ -129,10 +118,13 @@ def pretty_print_top_actors(result: dict):
         lines.append("-" * 65)
 
         for idx, actor_data in enumerate(res["actors"], start=1):
-            lines.append(f"{idx:<5} {actor_data.name:40} {actor_data.count}")
+            actor_name = actor_data.get("name", "N/A")
+            actor_count = actor_data.get("count", 0)
+            lines.append(f"{idx:<5} {actor_name:40} {actor_count}")
         lines.append("-" * 65)
 
     print_ascii_box(lines)
+
 
 
 def pretty_print_income_ratio_by_sentiment(result: dict):

@@ -95,7 +95,6 @@ class ArgProdRatingsQuery:
                 return
             
             for movie in movies:
-                logger.info(f"Received movie: {movie}")
                 if movie.get("id") not in self.movie_ratings:
                     self.movie_ratings[movie["id"]] = {
                         "original_title": movie["original_title"],

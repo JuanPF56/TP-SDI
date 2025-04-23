@@ -15,6 +15,8 @@ class SentimentAnalyzer:
         self._load_config(config_path)
         self.sentiment_pipeline = pipeline("sentiment-analysis")
         self._connect_to_rabbitmq()
+        self.batch_negative = []
+        self.batch_positive = []
 
     def _load_config(self, path: str):
         config = ConfigParser()
@@ -23,6 +25,8 @@ class SentimentAnalyzer:
         self.source_queue = config["QUEUES"]["movies_clean_queue"]
         self.positive_queue = config["QUEUES"]["positive_movies_queue"]
         self.negative_queue = config["QUEUES"]["negative_movies_queue"]
+        self.batch_size = int(config["DEFAULT"].get("batch_size", 200))
+
 
     def _connect_to_rabbitmq(self):
         for i in range(10):
@@ -80,13 +84,26 @@ class SentimentAnalyzer:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
+                if len(self.batch_positive) > 0:
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.positive_queue,
+                        body=json.dumps(self.batch_positive)
+                    )
+                    logger.debug(f"Sent {len(self.batch_positive)} positive movies to {self.positive_queue}")
+                    self.batch_positive = []
+                if len(self.batch_negative) > 0:
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.negative_queue,
+                        body=json.dumps(self.batch_negative)
+                    )
+                    logger.debug(f"Sent {len(self.batch_negative)} negative movies to {self.negative_queue}")
+                    self.batch_negative = []
                 self._mark_eos_received(msg_type)
                 return
 
             movies_batch = json.loads(body)
-            positive_movies = []
-            negative_movies = []
-
             for movie in movies_batch:
                 sentiment = self.analyze_sentiment(movie.get("overview"))
 
@@ -95,24 +112,26 @@ class SentimentAnalyzer:
                     continue
 
                 if sentiment == "positive":
-                    positive_movies.append(movie)
+                    self.batch_positive.append(movie)
                 elif sentiment == "negative":
-                    negative_movies.append(movie)
+                    self.batch_negative.append(movie)
 
-            if positive_movies:
+            if len(self.batch_positive) >= self.batch_size:
                 self.channel.basic_publish(
                     exchange='',
                     routing_key=self.positive_queue,
-                    body=json.dumps(positive_movies)
+                    body=json.dumps(self.batch_positive)
                 )
-                logger.debug(f"Sent {len(positive_movies)} positive movies to {self.positive_queue}")
+                self.batch_positive = []
+                logger.debug(f"Sent {len(self.batch_positive)} positive movies to {self.positive_queue}")
 
-            if negative_movies:
+            if len(self.batch_negative) >= self.batch_size:
                 self.channel.basic_publish(
                     exchange='',
                     routing_key=self.negative_queue,
-                    body=json.dumps(negative_movies)
+                    body=json.dumps(self.batch_negative)
                 )
+                self.batch_negative = []
     
 
             self.channel.basic_ack(delivery_tag=method.delivery_tag)
