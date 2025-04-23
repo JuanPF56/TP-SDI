@@ -7,7 +7,6 @@ from common.logger import get_logger
 
 logger = get_logger("Join-Table")
 EOS_TYPE = "EOS"
-BATCH_SIZE = 100
 
 def load_config():
     config = configparser.ConfigParser()
@@ -20,13 +19,11 @@ def load_config():
     rabbitmq_host = config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
     input_queue = config["DEFAULT"].get("movies_arg_post_2000_queue", "movies_arg_post_2000")
     broadcast_exchange = config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
-    jb_ready_queue = config["DEFAULT"].get("join_batch_ready_queue", "join_batch_ready")
 
     return {
         "rabbitmq_host": rabbitmq_host,
         "input_queue": input_queue,
         "broadcast_exchange": broadcast_exchange,
-        "jb_ready_queue": jb_ready_queue
     }
 
 def setup_rabbitmq_connection(rabbitmq_host):
@@ -52,46 +49,26 @@ def main():
     channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout')
     channel.queue_declare(queue=input_queue)
 
-    batch = []
+    movies = []
 
     def callback(ch, method, properties, body):
-        nonlocal batch
+        nonlocal movies
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
         if msg_type == EOS_TYPE:
             logger.info("Received EOS message.")
-            if batch:
+            if len(movies) > 0:            
                 channel.basic_publish(
                     exchange=broadcast_exchange,
                     routing_key='',
-                    body=json.dumps({"movies": batch, "last": False}).encode('utf-8')
+                    body=json.dumps(movies).encode('utf-8')
                 )
-                logger.info("Sent final batch of %d movies", len(batch))
-                batch.clear()
-
-            # Send final 'last' signal
-            final_msg = {"movies": [], "last": True}
-            channel.basic_publish(
-                exchange=broadcast_exchange,
-                routing_key='',
-                body=json.dumps(final_msg).encode('utf-8')
-            )
-            logger.info("Sent final 'last=True' message.")
+                logger.info("Sent table of %d movies", len(movies))
             ch.stop_consuming()
-
         else:
             message = json.loads(body)
-            logger.debug(f"Received message: {message}")
-            batch.extend(message)
-
-            if len(batch) >= BATCH_SIZE:
-                channel.basic_publish(
-                    exchange=broadcast_exchange,
-                    routing_key='',
-                    body=json.dumps({"movies": batch, "last": False}).encode('utf-8')
-                )
-                logger.info("Sent batch of %d movies", len(batch))
-                batch.clear()
+            logger.info(f"Received message: {message}")
+            movies.extend(message)
 
     logger.info("Consuming from queue: %s", input_queue)
     channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)

@@ -31,8 +31,6 @@ class JoinBatchBase:
 
         self.table_receiver = multiprocessing.Process(target=self.receive_movies_table)
 
-        self.batch = []
-        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -116,8 +114,8 @@ class JoinBatchBase:
         # Callback function to handle incoming messages
         def callback(ch, method, properties, body):
             try:
-                movies_table = json.loads(body.decode('utf-8'))
-                self.movies_table.extend(movies_table["movies"])
+                movies = json.loads(body.decode('utf-8'))
+                self.movies_table = movies
                 self.movies_table_ready.set()
                 ch.stop_consuming()
             except Exception as e:
@@ -135,6 +133,8 @@ class JoinBatchBase:
         self.movies_table_ready.wait()
 
         self.log_info("Movies table is ready. Starting to receive batches...")
+        msg = f"Movies table received: {self.movies_table}"
+        self.log_info(msg)
 
         while True:
             try:

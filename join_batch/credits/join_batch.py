@@ -14,14 +14,12 @@ class JoinBatchCredits(JoinBatchBase):
 
             if msg_type == "EOS":
                 logger.info("Received EOS message, stopping consumption.")
-                if len(self.batch) > 0:
-                    self.channel.basic_publish(
-                        exchange='',
-                        routing_key=self.output_queue,
-                        body=json.dumps(self.batch).encode('utf-8'),
-                        properties=pika.BasicProperties(type=msg_type)
-                    )
-                    self.batch.clear()
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.output_queue,
+                    body=b'',
+                    properties=pika.BasicProperties(type=msg_type)
+                )                
                 ch.stop_consuming()
                 return
 
@@ -29,12 +27,12 @@ class JoinBatchCredits(JoinBatchBase):
             try:
                 decoded = json.loads(body)
 
-                if isinstance(decoded, dict):
-                    data = decoded.get("movies", [])
-                    is_last = decoded.get("last", False)
-                elif isinstance(decoded, list):
+                if isinstance(decoded, list):
+                    logger.debug(f"Received list: {decoded}")
                     data = decoded
-                    is_last = False
+                elif isinstance(decoded, dict):
+                    logger.debug(f"Received dict: {decoded}")
+                    data = [decoded]
                 else:
                     logger.warning(f"Unexpected JSON format: {decoded}")
                     return
@@ -52,17 +50,13 @@ class JoinBatchCredits(JoinBatchBase):
             if not joined_data:
                 return
             
-            self.batch.extend(joined_data)
-
-            if len(self.batch) >= self.batch_size or is_last:
-                self.channel.basic_publish(
-                    exchange='',
-                    routing_key=self.output_queue,
-                    body=json.dumps(joined_data).encode('utf-8'),
-                    properties=pika.BasicProperties(type=msg_type)
-                )
-                logger.debug(f"Sent {len(joined_data)} movies to {self.output_queue}")
-                self.batch.clear()
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.output_queue,
+                body=json.dumps(joined_data).encode('utf-8'),
+                properties=pika.BasicProperties(type=msg_type)
+            )
+            logger.debug(f"Sent {len(joined_data)} movies to {self.output_queue}")
 
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")

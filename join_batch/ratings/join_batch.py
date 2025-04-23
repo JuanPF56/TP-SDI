@@ -13,18 +13,23 @@ class JoinBatchRatings(JoinBatchBase):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             if msg_type == "EOS":
                 logger.info("Received EOS message, stopping consumption.")
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.output_queue,
+                    body=b'',
+                    properties=pika.BasicProperties(type=msg_type)
+                )
                 ch.stop_consuming()
                 return
-
             try:
                 decoded = json.loads(body)
 
-                if isinstance(decoded, dict):
-                    data = decoded.get("movies", [])
-                    is_last = decoded.get("last", False)
-                elif isinstance(decoded, list):
+                if isinstance(decoded, list):
+                    logger.debug(f"Received list: {decoded}")
                     data = decoded
-                    is_last = False
+                elif isinstance(decoded, dict):
+                    logger.debug(f"Received dict: {decoded}")
+                    data = [decoded]
                 else:
                     logger.warning(f"Unexpected JSON format: {decoded}")
                     return
@@ -33,7 +38,6 @@ class JoinBatchRatings(JoinBatchBase):
                 logger.error(f"Error decoding JSON: {e}")
                 return
 
-            # Flatten movies_table if it’s a nested list
             if self.movies_table and isinstance(self.movies_table[0], list):
                 self.movies_table = [movie for sublist in self.movies_table for movie in sublist]
                 logger.warning("Flattened nested movies_table structure.")
@@ -57,17 +61,13 @@ class JoinBatchRatings(JoinBatchBase):
             if not joined_data:
                 logger.debug("No matching movies found in the movies table.")
                 return
-            self.batch.extend(joined_data)
-            # Publish y ACK
-
-            if len(self.batch) >= self.batch_size or is_last:
-                self.channel.basic_publish(
-                    exchange='',
-                    routing_key=self.output_queue,
-                    body=json.dumps(joined_data).encode('utf-8'),
-                    properties=pika.BasicProperties(type=msg_type)
-                )
-                self.batch.clear()
+            
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.output_queue,
+                body=json.dumps(joined_data).encode('utf-8'),
+                properties=pika.BasicProperties(type=msg_type)
+            )
 
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
