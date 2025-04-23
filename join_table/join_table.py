@@ -61,15 +61,21 @@ def main():
                 channel.basic_publish(
                     exchange=broadcast_exchange,
                     routing_key='',
-                    body=json.dumps(movies).encode('utf-8')
+                    body=json.dumps(movies)
                 )
                 logger.info("Sent table of %d movies", len(movies))
             ch.stop_consuming()
         else:
             message = json.loads(body)
-            logger.info(f"Received message: {message}")
-            movies.extend(message)
-
+            logger.debug(f"Received message: {message}")
+            for movie in message:
+                new_movie = {
+                    "id" : str(movie["id"]),
+                    "original_title": movie["original_title"],
+                }
+                movies.append(new_movie)
+            logger.debug(f"Received {len(movies)} movies so far.")
+            
     logger.info("Consuming from queue: %s", input_queue)
     channel.basic_consume(queue=input_queue, on_message_callback=callback, auto_ack=True)
 
