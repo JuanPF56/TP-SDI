@@ -34,10 +34,10 @@ class JoinBatchRatings(JoinBatchBase):
             for movie in data:
                 movie_id = movie.get("movie_id")
                 if str(movie_id) in movies_by_id:
-                    logger.info(f"Found matching movie_id: {movie_id}")
+                    movie_title = movies_by_id[str(movie_id)]["original_title"]
                     joined_movie = {
                         "id": movie_id,
-                        "original_title": movie["original_title"],
+                        "original_title": movie_title,
                         "rating": movie["rating"],
                     }
                     joined_data.append(joined_movie)
