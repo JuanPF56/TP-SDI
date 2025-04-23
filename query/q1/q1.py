@@ -43,6 +43,7 @@ class ArgSpainGenreQuery:
         """
         Process a batch of movies.
         """
+        logger.debug(f"Processing batch of {len(movies_batch)} movies...")
         for movie in movies_batch:
             title = movie.get("original_title")
             genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]

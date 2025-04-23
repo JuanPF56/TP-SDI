@@ -30,6 +30,7 @@ class ArgProdActorsQuery:
         logger.info("Calculating results...")
 
         if not self.actor_participations:
+            # TODO: Send empty result to client
             logger.info("No actor participations received.")
             return
 

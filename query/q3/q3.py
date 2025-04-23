@@ -29,6 +29,7 @@ class ArgProdRatingsQuery:
     def _calculate_and_publish_results(self):
         logger.info("Calculating results...")
         if not self.movie_ratings:
+            # TODO: Send empty result to client
             logger.info("No movie ratings received.")
             return
         

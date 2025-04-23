@@ -23,6 +23,9 @@ class YearFilter(FilterBase):
         """
         Mark the end of stream (EOS) for the given message type and propagate to target queues.
         """
+        # TODO: Chequear la lógica de mandar EOS
+        # Puede ser que se este mandando el EOS de Q2 a Q1 antes de que 
+        # Q1 haya terminado de procesar sus películas.
         if msg_type in self._eos_flags:
             logger.info(f"EOS already received for {msg_type}")
             return

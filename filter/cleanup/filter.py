@@ -203,7 +203,11 @@ class CleanupFilter(FilterBase):
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            if self.batch and len(self.batch) >= self.batch_size:
+            # TODO: Use a constant for batch size and assign different values for
+            # different queues
+            batch_sz = 10000 if queue_name == self.source_queues[1] else self.batch_size
+
+            if self.batch and len(self.batch) >= batch_sz:
                 # Support single or multiple target queues
                 target_queues = self.target_queues[queue_name]
                 if not isinstance(target_queues, list):
