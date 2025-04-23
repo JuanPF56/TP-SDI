@@ -38,7 +38,7 @@ services:
       - /tmp/gateway_ready
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
   filter_cleanup:
     container_name: filter_cleanup
     image: filter_cleanup:latest

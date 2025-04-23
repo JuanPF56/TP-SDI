@@ -50,12 +50,25 @@ docker-compose-logs:
 
 
 # Logs dividided in multiple terminals
-docker-compose-logs-split:
-	@echo "📺 Opening logs dividided in multiple terminals..."
+docker-compose-logs-to-file:
+	@echo "🧹 Limpiando logs anteriores..."
+	@rm -rf logs && mkdir -p logs
 
-	# List of services that you want to track
-	services="gateway client join_table join_batch_credits join_batch_ratings filter_cleanup filter_year filter_production sentiment_analyzer query_q1 query_q2 query_q3 query_q4 query_q5"; \
+	@echo "📜 Guardando logs actuales de servicios en archivos dentro de ./logs/... "
+	@services="gateway client join_table join_batch_credits join_batch_ratings filter_cleanup filter_year filter_production sentiment_analyzer query_q1 query_q2 query_q3 query_q4 query_q5"; \
 	for svc in $$services; do \
-		gnome-terminal -- bash -c "echo 🧩 Logs for $$svc; docker compose -f docker-compose.yaml logs -f $$svc; exec bash"; \
+		echo "📝 Guardando logs para $$svc en logs/$$svc.log"; \
+		if docker compose -f docker-compose.yaml logs --no-log-prefix $$svc | tee logs/$$svc.log; then \
+			echo "✅ Logs de $$svc guardados con éxito."; \
+		else \
+			echo "⚠️  Servicio $$svc no encontrado o no está corriendo, se saltea."; \
+		fi; \
 	done
-.PHONY: docker-compose-logs-split
+.PHONY: docker-compose-logs-to-file
+
+# Clean up previous logs
+clean-logs:
+	@echo "🧽 Borrando todos los logs en ./logs/..."
+	@rm -rf logs
+	@echo "✅ Logs eliminados."
+.PHONY: clean-logs
