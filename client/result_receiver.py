@@ -50,17 +50,21 @@ def pretty_print_movies_with_genres(result: dict):
     rows = result.get("results", [])
 
     lines = []
+    lines.append(f"                                   {query_id}")
+    lines.append("Películas y sus géneros de los años 2000 con producción Argentina y Española.")
+
     if not rows:
-        lines.append(f"No se encontraron resultados para la consulta {query_id}")
+        lines.append("-" * 77)
+        lines.append("No se encontraron resultados para la consulta")
+        lines.append("-" * 77)
     else:
-        lines.append(f"Resultados de la consulta {query_id}: Películas y sus géneros de los años 2000 con producción Argentina y Española")
-        lines.append("-" * 75)
+        lines.append("-" * 77)
         lines.append(f"{'#':<3} {'Película':35} | Géneros")
-        lines.append("-" * 75)
+        lines.append("-" * 77)
         for idx, (title, genres) in enumerate(rows, start=1):
             genre_str = ", ".join(genres)
             lines.append(f"{idx:<3} {title:35} | {genre_str}")
-        lines.append("-" * 75)
+        lines.append("-" * 77)
 
     print_ascii_box(lines)
 
@@ -70,14 +74,21 @@ def pretty_print_top_spenders(result: dict):
     rows = result.get("results", [])
 
     lines = []
+    lines.append(f"                             {query_id}")
+    lines.append("Top 5 de países que más dinero han invertido en producciones sin")
+    lines.append("colaborar con otros países.")
+
     if not rows:
-        lines.append(f"No se encontraron resultados para la consulta {query_id}")
+        lines.append("-" * 69)
+        lines.append(f"No se encontraron resultados para la consulta")
+        lines.append("-" * 69)
     else:
-        lines.append(f"Resultados de la consulta {query_id}: Top 5 de países que más dinero han invertido en producciones sin colaborar con otros países.")
+        lines.append("-" * 69)
+        lines.append(f"{'#':<3} {'País':28} | Dinero invertido")
         lines.append("-" * 69)
         for idx, (country, amount) in enumerate(rows, start=1):
-            formatted_amount = f"${amount:,.0f}".replace(",", ".")
-            lines.append(f"{idx}. {country:<28} - {formatted_amount}")
+            formatted_amount = f"$ {amount:,.0f}".replace(",", ".")
+            lines.append(f"{idx}. {country:<29} | {formatted_amount}")
         lines.append("-" * 69)
 
     print_ascii_box(lines)
@@ -88,7 +99,13 @@ def pretty_print_rating_extremes(result: dict):
     res = result.get("results", {})
 
     lines = []
+    lines.append(f"                             {query_id}")
+    lines.append("-" * 72)
+    lines.append("Película de producción Argentina estrenada a partir del 2000,")
+    lines.append(" con mayor y con menor promedio de rating.")
+
     if not res or not isinstance(res, dict) or "highest" not in res or "lowest" not in res:
+        lines.append("-" * 72)
         lines.append(f"No se encontraron resultados para la consulta {query_id}")
     else:
         max_movie = res["highest"].get("title", "N/A")
@@ -96,7 +113,6 @@ def pretty_print_rating_extremes(result: dict):
         min_movie = res["lowest"].get("title", "N/A")
         min_rating = res["lowest"].get("rating", 0)
 
-        lines.append(f"Resultados de la consulta {query_id}: Película de producción Argentina estrenada a partir del 2000, con mayor y con menor promedio de rating.")
         lines.append("-" * 72)
         lines.append(f"🎬 Película con mayor rating promedio: {max_movie} ({max_rating:.2f})")
         lines.append(f"🎬 Película con menor rating promedio: {min_movie} ({min_rating:.2f})")
@@ -109,19 +125,24 @@ def pretty_print_top_actors(result: dict):
     res = result.get("results", {})
 
     lines = []
+    lines.append(f"                            {query_id}")
+    lines.append("Top 10 de actores con mayor participación en películas de producción")
+    lines.append("-" * 70)
+    lines.append("Argentina con fecha de estreno posterior al 2000.")
+
     if not res or not isinstance(res, dict) or "actors" not in res:
-        lines.append(f"No se encontraron resultados para la consulta {query_id}")
+        lines.append("-" * 70)
+        lines.append(f"No se encontraron resultados para la consulta")
     else:
-        lines.append(f"Resultados de la consulta {query_id}: Top 10 de actores con mayor participación en películas de producción Argentina con fecha de estreno posterior al 2000")
-        lines.append("-" * 65)
-        lines.append(f"{'Pos.':<5} {'Actor':40} Participaciones")
-        lines.append("-" * 65)
+        lines.append("-" * 70)
+        lines.append(f"{'Pos.':<5} {'Actor':30} Participaciones")
+        lines.append("-" * 70)
 
         for idx, actor_data in enumerate(res["actors"], start=1):
             actor_name = actor_data.get("name", "N/A")
             actor_count = actor_data.get("count", 0)
-            lines.append(f"{idx:<5} {actor_name:40} {actor_count}")
-        lines.append("-" * 65)
+            lines.append(f"{idx:<5} {actor_name:30} {actor_count}")
+        lines.append("-" * 70)
 
     print_ascii_box(lines)
 
@@ -132,18 +153,21 @@ def pretty_print_income_ratio_by_sentiment(result: dict):
     ratios = result.get("results", {})
 
     lines = []
+    lines.append(f"                                              {query_id}")
+    lines.append("-" * 62)
+    lines.append("Average de la tasa ingreso/presupuesto de peliculas con overview de sentimiento positivo vs. sentimiento negativo.")
+
     if not ratios or not isinstance(ratios, dict):
+        lines.append("-" * 62)
         lines.append(f"No se encontraron resultados para la consulta {query_id}")
     else:
         try:
             positive_ratio = float(ratios.get("average_positive_rate", 0))
             negative_ratio = float(ratios.get("average_negative_rate", 0))
-
-            lines.append(f"Resultados de la consulta {query_id}: Average de la tasa ingreso/presupuesto de peliculas con overview de sentimiento positivo vs. sentimiento negativo")
-            lines.append("-" * 58)
+            lines.append("-" * 62)
             lines.append(f"😊 Sentimiento positivo - Tasa ingreso/presupuesto: {positive_ratio:.2f}")
             lines.append(f"☹️  Sentimiento negativo - Tasa ingreso/presupuesto: {negative_ratio:.2f}")
-            lines.append("-" * 58)
+            lines.append("-" * 62)
         except (ValueError, TypeError) as e:
             lines.append(f"Error al procesar los resultados para la consulta {query_id}: {e}")
 

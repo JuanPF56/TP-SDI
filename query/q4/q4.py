@@ -30,21 +30,30 @@ class ArgProdActorsQuery:
         logger.info("Calculating results...")
 
         if not self.actor_participations:
-            # TODO: Send empty result to client
-            logger.info("No actor participations received.")
-            return
+            logger.info("No actors participations found in the requested movies.")
 
-        # Sort actors by participation count in descending order
-        # and get the top 10
-
-        sorted_actors = sorted(self.actor_participations.values(), key=lambda x: x["count"], reverse=True)[:10]        
-
-        results_msg = {
-            "query": "Q4",
-            "results": {
-                "actors": sorted_actors
+            # Send empty results to client
+            results_msg = {
+                "query": "Q4",
+                "results": {
+                    "actors": []
+                }
             }
-        }
+            
+        else:
+            # Sort actors by participation count in descending order and get the top 10
+            sorted_actors = sorted(
+                self.actor_participations.values(),
+                key=lambda x: x["count"],
+                reverse=True
+            )[:10]
+
+            results_msg = {
+                "query": "Q4",
+                "results": {
+                    "actors": sorted_actors
+                }
+            }
 
         logger.info("RESULTS:" + str(results_msg))
 
@@ -53,7 +62,6 @@ class ArgProdActorsQuery:
             routing_key=self.config["DEFAULT"]["results_queue"],
             body=json.dumps(results_msg),
         )
-
 
     def process(self):
         logger.info("Node is online")

@@ -28,11 +28,7 @@ class ArgProdRatingsQuery:
 
     def _calculate_and_publish_results(self):
         logger.info("Calculating results...")
-        if not self.movie_ratings:
-            # TODO: Send empty result to client
-            logger.info("No movie ratings received.")
-            return
-        
+
         results = {
             "highest": {
                 "title": None,
@@ -43,8 +39,12 @@ class ArgProdRatingsQuery:
                 "rating": float('inf')
             }
         }
+
+        found_valid_ratings = False
+
         for movie_id, movie_data in self.movie_ratings.items():
             if movie_data["rating_count"] > 0:
+                found_valid_ratings = True
                 average_rating = movie_data["rating_sum"] / movie_data["rating_count"]
                 if average_rating > results["highest"]["rating"]:
                     results["highest"]["rating"] = average_rating
@@ -53,20 +53,28 @@ class ArgProdRatingsQuery:
                     results["lowest"]["rating"] = average_rating
                     results["lowest"]["title"] = movie_data["original_title"]
 
-
-        results_msg = { 
-            "query": "Q3",
-            "results": {
-                "highest": {
-                    "title": results["highest"]["title"],
-                    "rating": results["highest"]["rating"]
-                },
-                "lowest": {
-                    "title": results["lowest"]["title"],
-                    "rating": results["lowest"]["rating"]
+        if not found_valid_ratings:
+            logger.info("No ratings found for the requested movies.")
+            # Send empty results to client
+            results_msg = {
+                "query": "Q3",
+                "results": {}
+            }
+        else:
+            results_msg = {
+                "query": "Q3",
+                "results": {
+                    "highest": {
+                        "title": results["highest"]["title"],
+                        "rating": results["highest"]["rating"]
+                    },
+                    "lowest": {
+                        "title": results["lowest"]["title"],
+                        "rating": results["lowest"]["rating"]
+                    }
                 }
             }
-        }
+
         logger.info("RESULTS:" + str(results_msg))
 
         self.channel.basic_publish(
@@ -74,7 +82,6 @@ class ArgProdRatingsQuery:
             routing_key=self.config["DEFAULT"]["results_queue"],
             body=json.dumps(results_msg),
         )
-
 
     def process(self):
         logger.info("Node is online")
