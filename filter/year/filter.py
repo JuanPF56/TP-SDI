@@ -19,24 +19,26 @@ class YearFilter(FilterBase):
             "arg_spain_2000s": []
         }
 
-    def _mark_eos_received(self, msg_type, output_queues, channel):
+    def _mark_eos_received(self, input_queue):
         """
-        Mark the end of stream (EOS) for the given message type and propagate to target queues.
+        Mark the end of stream (EOS) for the given input queue.
         """
-        # TODO: Chequear la lógica de mandar EOS
-        # Puede ser que se este mandando el EOS de Q2 a Q1 antes de que 
-        # Q1 haya terminado de procesar sus películas.
-        if msg_type in self._eos_flags:
-            logger.info(f"EOS already received for {msg_type}")
+        if input_queue in self._eos_flags:
+            logger.info(f"EOS already received for {input_queue}")
             return
-        self._eos_flags[msg_type] = True
+        self._eos_flags[input_queue] = True
 
+    def _send_eos(self, output_queues, channel):
+        """
+        Propagate the end of stream (EOS) to all output queues.
+        """
+        logger.info("Sending EOS to output queues")
         for queue in output_queues.values():
             channel.basic_publish(
                 exchange='',
                 routing_key=queue,
                 body=b'',
-                properties=pika.BasicProperties(type=msg_type)
+                properties=pika.BasicProperties(type=EOS_TYPE)
             )
             logger.info(f"EOS message sent to {queue}")
 
@@ -77,23 +79,30 @@ class YearFilter(FilterBase):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
-                if len(self.processed_batch["arg_post_2000"]) > 0:
-                    channel.basic_publish(
-                        exchange='',
-                        routing_key=output_queues["arg_post_2000"],
-                        body=json.dumps(self.processed_batch["arg_post_2000"]),
-                        properties=pika.BasicProperties(type="batch")
-                    )
-                    self.processed_batch["arg_post_2000"] = []
-                if len(self.processed_batch["arg_spain_2000s"]) > 0:
-                    channel.basic_publish(
-                        exchange='',
-                        routing_key=output_queues["arg_spain_2000s"],
-                        body=json.dumps(self.processed_batch["arg_spain_2000s"]),
-                        properties=pika.BasicProperties(type="batch")
-                    )
-                    self.processed_batch["arg_spain_2000s"] = []
-                self._mark_eos_received(msg_type, output_queues, channel)
+                input_queue = method.routing_key
+                self._mark_eos_received(input_queue)
+                if input_queue == input_queues["argentina"]:
+                    if len(self.processed_batch["arg_post_2000"]) > 0:
+                        channel.basic_publish(
+                            exchange='',
+                            routing_key=output_queues["arg_post_2000"],
+                            body=json.dumps(self.processed_batch["arg_post_2000"]),
+                            properties=pika.BasicProperties(type="batch")
+                        )
+                        self.processed_batch["arg_post_2000"] = []
+                elif input_queue == input_queues["arg_spain"]:
+                    if len(self.processed_batch["arg_spain_2000s"]) > 0:
+                        channel.basic_publish(
+                            exchange='',
+                            routing_key=output_queues["arg_spain_2000s"],
+                            body=json.dumps(self.processed_batch["arg_spain_2000s"]),
+                            properties=pika.BasicProperties(type="batch")
+                        )
+                        self.processed_batch["arg_spain_2000s"] = []
+                if self._eos_flags.get(input_queues["argentina"]) and self._eos_flags.get(input_queues["arg_spain"]):
+                    self._send_eos(output_queues, channel)
+                else:
+                    logger.info(f"EOS received for {input_queue}, but not all input queues have sent EOS yet.")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
