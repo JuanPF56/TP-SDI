@@ -22,38 +22,22 @@ class JoinBatchRatings(JoinBatchBase):
                 ch.stop_consuming()
                 return
             try:
-                decoded = json.loads(body)
-
-                if isinstance(decoded, list):
-                    logger.debug(f"Received list: {decoded}")
-                    data = decoded
-                elif isinstance(decoded, dict):
-                    logger.debug(f"Received dict: {decoded}")
-                    data = [decoded]
-                else:
-                    logger.warning(f"Unexpected JSON format: {decoded}")
-                    return
-
+                data = json.loads(body)
             except json.JSONDecodeError as e:
                 logger.error(f"Error decoding JSON: {e}")
                 return
 
-            if self.movies_table and isinstance(self.movies_table[0], list):
-                self.movies_table = [movie for sublist in self.movies_table for movie in sublist]
-                logger.warning("Flattened nested movies_table structure.")
-
             # Build a set of movie IDs for fast lookup
-            movie_lookup = {movie["id"]: movie for movie in self.movies_table if isinstance(movie, dict) and "id" in movie}
-
+            movies_by_id = {movie["id"]: movie for movie in self.movies_table}
             joined_data = []
 
             for movie in data:
                 movie_id = movie.get("movie_id")
-                if movie_id in movie_lookup:
-                    movie_tab = movie_lookup[movie_id]
+                if str(movie_id) in movies_by_id:
+                    logger.info(f"Found matching movie_id: {movie_id}")
                     joined_movie = {
-                        "id": movie_tab["id"],
-                        "original_title": movie_tab["original_title"],
+                        "id": movie_id,
+                        "original_title": movie["original_title"],
                         "rating": movie["rating"],
                     }
                     joined_data.append(joined_movie)
