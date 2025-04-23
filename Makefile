@@ -30,6 +30,11 @@ docker-compose-up: docker-image
 	docker compose -f docker-compose.yaml up -d --build
 .PHONY: docker-compose-up
 
+docker-compose-up-nobuild:
+	@echo "🚀 Starting containers with docker-compose (no build)..."
+	docker compose -f docker-compose.yaml up -d --no-build
+.PHONY: docker-compose-up-nobuild
+
 # Shut down the whole system
 docker-compose-down:
 	@echo "🛑 Stopping and removing containers..."

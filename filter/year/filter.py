@@ -13,11 +13,19 @@ class YearFilter(FilterBase):
         super().__init__(config)
         self.config = config
         self._eos_flags = {}
+        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
+        self.processed_batch = {
+            "arg_post_2000": [],
+            "arg_spain_2000s": []
+        }
 
     def _mark_eos_received(self, msg_type, output_queues, channel):
         """
         Mark the end of stream (EOS) for the given message type and propagate to target queues.
         """
+        # TODO: Chequear la lógica de mandar EOS
+        # Puede ser que se este mandando el EOS de Q2 a Q1 antes de que 
+        # Q1 haya terminado de procesar sus películas.
         if msg_type in self._eos_flags:
             logger.info(f"EOS already received for {msg_type}")
             return
@@ -69,6 +77,22 @@ class YearFilter(FilterBase):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
+                if len(self.processed_batch["arg_post_2000"]) > 0:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["arg_post_2000"],
+                        body=json.dumps(self.processed_batch["arg_post_2000"]),
+                        properties=pika.BasicProperties(type="batch")
+                    )
+                    self.processed_batch["arg_post_2000"] = []
+                if len(self.processed_batch["arg_spain_2000s"]) > 0:
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=output_queues["arg_spain_2000s"],
+                        body=json.dumps(self.processed_batch["arg_spain_2000s"]),
+                        properties=pika.BasicProperties(type="batch")
+                    )
+                    self.processed_batch["arg_spain_2000s"] = []
                 self._mark_eos_received(msg_type, output_queues, channel)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
@@ -80,12 +104,6 @@ class YearFilter(FilterBase):
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
 
-                # Batch processing
-                processed_batch = {
-                    "arg_post_2000": [],
-                    "arg_spain_2000s": []
-                }
-
                 for movie in movies_batch:
                     title = movie.get("original_title")
                     date_str = movie.get("release_date", "")
@@ -95,34 +113,37 @@ class YearFilter(FilterBase):
 
                     if method.routing_key == input_queues["argentina"]:
                         if release_year and release_year > 2000:
-                            processed_batch["arg_post_2000"].append(movie)
+                            self.processed_batch["arg_post_2000"].append(movie)
                             logger.debug(f"Prepared for {output_queues['arg_post_2000']}")
                     elif method.routing_key == input_queues["arg_spain"]:
                         if release_year and 2000 <= release_year <= 2009:
-                            processed_batch["arg_spain_2000s"].append(movie)
+                            self.processed_batch["arg_spain_2000s"].append(movie)
                             logger.debug(f"Prepared for {output_queues['arg_spain_2000s']}")
                     else:
                         logger.warning("Unknown source queue")
 
+                logger.info(f"Processed {len(movies_batch)} movies from queue '{method.routing_key}'")
                 # Publish the processed batch to the output queues
-                if processed_batch["arg_post_2000"]:
+                if self.processed_batch["arg_post_2000"] and len(self.processed_batch["arg_post_2000"]) >= self.batch_size:
                     # Publish the whole batch as a single message
                     channel.basic_publish(
                         exchange='',
                         routing_key=output_queues["arg_post_2000"],
-                        body=json.dumps(processed_batch["arg_post_2000"]),
-                        properties=pika.BasicProperties(type="batch")
+                        body=json.dumps(self.processed_batch["arg_post_2000"]),
+                        properties=pika.BasicProperties(type=msg_type)
                     )
+                    self.processed_batch["arg_post_2000"] = []  # Clear the batch after sending
                     logger.debug(f"Sent entire batch to {output_queues['arg_post_2000']}")
 
-                if processed_batch["arg_spain_2000s"]:
+                if self.processed_batch["arg_spain_2000s"] and len(self.processed_batch["arg_spain_2000s"]) >= self.batch_size:
                     # Publish the whole batch as a single message
                     channel.basic_publish(
                         exchange='',
                         routing_key=output_queues["arg_spain_2000s"],
-                        body=json.dumps(processed_batch["arg_spain_2000s"]),
-                        properties=pika.BasicProperties(type="batch")
+                        body=json.dumps(self.processed_batch["arg_spain_2000s"]),
+                        properties=pika.BasicProperties(type=msg_type)
                     )
+                    self.processed_batch["arg_spain_2000s"] = []  # Clear the batch after sending
                     logger.debug(f"Sent entire batch to {output_queues['arg_spain_2000s']}")
 
                 ch.basic_ack(delivery_tag=method.delivery_tag)

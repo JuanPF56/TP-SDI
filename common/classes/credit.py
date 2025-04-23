@@ -14,16 +14,14 @@ def fix_double_quotes_inside_json(raw: str) -> str:
 
 @dataclass
 class CastMember:
-    def __init__(self, cast_id: int, character: str, credit_id: str, gender: Optional[int],
-                 id: int, name: str, order: int, profile_path: Optional[str]):
-        self.cast_id = cast_id
-        self.character = character
-        self.credit_id = credit_id
-        self.gender = gender
-        self.id = id
-        self.name = name
-        self.order = order
-        self.profile_path = profile_path
+    cast_id: int
+    character: str
+    credit_id: str
+    gender: Optional[int]
+    id: int
+    name: str
+    order: int
+    profile_path: Optional[str]
 
     def log_cast_member_info(self) -> None:
         logger.debug("Cast Member Information:")

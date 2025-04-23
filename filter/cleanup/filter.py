@@ -43,6 +43,8 @@ class CleanupFilter(FilterBase):
         self.connection = None
         self.channel = None
         self._eos_flags = {q: False for q in self.source_queues}
+        self.batch = []
+        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
 
         
     def connect_to_rabbitmq(self):
@@ -96,13 +98,12 @@ class CleanupFilter(FilterBase):
         """
         Callback function to process rating data to clean it.
         """
-        required_fields = ["id", "movie_id", "rating"]
+        required_fields = ["userId", "movieId", "rating"]
         if not all(data.get(field) is not None for field in required_fields):
             logger.debug(f"Skipping invalid rating data: {data}")
             return None
         return {
-            "id": data["id"],
-            "movie_id": data["movie_id"],
+            "movie_id": data["movieId"],
             "rating": data["rating"]
         }
 
@@ -110,14 +111,20 @@ class CleanupFilter(FilterBase):
         """
         Callback function to process credit data to clean it.
         """
-        required_fields = ["id", "cast", "crew"]
+        required_fields = ["id", "cast"]
         if not all(data.get(field) is not None for field in required_fields):
             logger.debug(f"Skipping invalid credit data: {data}")
             return None
+        
+        cast = []
+        if data["cast"]:
+            for actor in data["cast"]:
+                if actor.get("name"):
+                    cast.append(actor["name"])
+
         return {
             "id": data["id"],
-            "cast": data["cast"],
-            "crew": data.get("crew", [])
+            "cast": cast,
         }
 
     def _mark_eos_received(self, queue_name, msg_type):
@@ -158,11 +165,21 @@ class CleanupFilter(FilterBase):
         """
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
-            logger.debug(f"Received message from {queue_name}, type: {msg_type}")
             
             # Handle EOS signal
             if msg_type == "EOS":
                 logger.info(f"Received EOS from {queue_name}")
+                if len(self.batch) > 0:
+                    logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
+                    target_queues = self.target_queues[queue_name]
+                    if not isinstance(target_queues, list):
+                        target_queues = [target_queues]
+                    for target_queue in target_queues:
+                        self.channel.basic_publish(
+                            exchange='',
+                            routing_key=target_queue,
+                            body=json.dumps(self.batch)
+                        )
                 self._mark_eos_received(queue_name, msg_type)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
@@ -176,32 +193,33 @@ class CleanupFilter(FilterBase):
 
             # Select correct cleanup function
             if queue_name == self.source_queues[0]:
-                cleaned_batch = [self.clean_movie(d) for d in data_batch]
+                self.batch.extend([self.clean_movie(d) for d in data_batch])
             elif queue_name == self.source_queues[1]:
-                cleaned_batch = [self.clean_rating(d) for d in data_batch]
+                self.batch.extend([self.clean_rating(d) for d in data_batch])
             elif queue_name == self.source_queues[2]:
-                cleaned_batch = [self.clean_credit(d) for d in data_batch]
+                self.batch.extend([self.clean_credit(d) for d in data_batch])
             else:
                 logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            # Filter out failed cleans
-            cleaned_batch = [c for c in cleaned_batch if c]
+            # TODO: Use a constant for batch size and assign different values for
+            # different queues
+            batch_sz = 10000 if queue_name == self.source_queues[1] else self.batch_size
 
-            if cleaned_batch:
+            if self.batch and len(self.batch) >= batch_sz:
                 # Support single or multiple target queues
                 target_queues = self.target_queues[queue_name]
                 if not isinstance(target_queues, list):
                     target_queues = [target_queues]
-
+            
                 for target_queue in target_queues:
                     self.channel.basic_publish(
                         exchange='',
                         routing_key=target_queue,
-                        body=json.dumps(cleaned_batch)
+                        body=json.dumps(self.batch)
                     )
-
+                self.batch.clear()
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except json.JSONDecodeError as e:

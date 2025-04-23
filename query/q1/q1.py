@@ -43,6 +43,7 @@ class ArgSpainGenreQuery:
         """
         Process a batch of movies.
         """
+        logger.debug(f"Processing batch of {len(movies_batch)} movies...")
         for movie in movies_batch:
             title = movie.get("original_title")
             genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
@@ -64,8 +65,8 @@ class ArgSpainGenreQuery:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
-                if self.results:
-                    self._calculate_and_publish_results()  # Publish remaining results
+                logger.info("Received EOS message, processing remaining results...")
+                self._calculate_and_publish_results()  # Publish remaining results
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 

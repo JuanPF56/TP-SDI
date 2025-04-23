@@ -72,10 +72,9 @@ class SoloCountryBudgetQuery:
 
                 movies_batch = json.loads(body)
                 if not isinstance(movies_batch, list):
-                    logger.warning("❌ Expected a list (batch) of movies, skipping.")
+                    logger.info("❌ Expected a list (batch) of movies, skipping.")
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
-
                 for movie in movies_batch:
                     production_countries = movie.get("production_countries", [])
                     if not production_countries:

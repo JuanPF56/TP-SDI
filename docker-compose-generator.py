@@ -92,6 +92,12 @@ def generate_compose(filename, short_test=False):
         "networks": ["testing_net"]
     }
 
+    jb_nodes = []
+    for i in range(1, jb_credits + 1):
+        jb_nodes.append(f"join_batch_credits_{i}")
+    for i in range(1, jb_ratings + 1):
+        jb_nodes.append(f"join_batch_ratings_{i}")
+
     # Join table node
     services["join_table"] = {
         "container_name": "join_table",
@@ -107,7 +113,8 @@ def generate_compose(filename, short_test=False):
         "depends_on": {
             "gateway": {
                 "condition": "service_healthy"
-            }
+            },
+            **{node: {"condition": "service_started"} for node in jb_nodes}
         },
         "networks": ["testing_net"]
     }
