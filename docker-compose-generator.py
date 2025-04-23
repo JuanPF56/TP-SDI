@@ -11,7 +11,11 @@ def generate_compose(filename, short_test=False):
     except FileNotFoundError:
         print("Error: global_config.ini not found.")
         sys.exit(1)
-    # TODO: Add rest of node amounts
+        
+    cleanup = config["DEFAULT"].getint("cleanup_nodes", 1)
+    year = config["DEFAULT"].getint("year_nodes", 1)
+    production = config["DEFAULT"].getint("production_nodes", 1)
+    sentiment_analyzer = config["DEFAULT"].getint("sentiment_analyzer_nodes", 1)
     jb_credits = config["DEFAULT"].getint("join_batch_credits_nodes", 1)
     jb_ratings = config["DEFAULT"].getint("join_batch_ratings_nodes", 1)
 
@@ -61,13 +65,50 @@ def generate_compose(filename, short_test=False):
 
     # Filter nodes
     for subtype in ["cleanup", "year", "production"]:
-        services[f"filter_{subtype}"] = {
-            "container_name": f"filter_{subtype}",
-            "image": f"filter_{subtype}:latest",
-            "entrypoint": "python3 /app/filter.py",
+        if subtype == "cleanup":
+            num_nodes = cleanup
+            nodes_to_await = 1
+        elif subtype == "year":
+            num_nodes = year
+            nodes_to_await = production
+        elif subtype == "production":
+            num_nodes = production
+            nodes_to_await = cleanup
+        for i in range(1, num_nodes + 1):
+            services[f"filter_{subtype}_{i}"] = {
+                "container_name": f"filter_{subtype}_{i}",
+                "image": f"filter_{subtype}:latest",
+                "entrypoint": "python3 /app/filter.py",
+                "volumes": [
+                    f"./filter/{subtype}/config.ini:/app/config.ini"
+                ],
+                "environment": {
+                    "NODE_ID": str(i),
+                    "NODE_TYPE": subtype,
+                    "NODES_TO_AWAIT": str(nodes_to_await)
+                },
+                "depends_on": {
+                    "gateway": {
+                        "condition": "service_healthy"
+                    }
+                },
+                "networks": ["testing_net"]
+            }
+
+    # Sentiment analyzer node
+    for i in range(1, sentiment_analyzer + 1):
+        services[f"sentiment_analyzer_{i}"] = {
+            "container_name": f"sentiment_analyzer_{i}",
+            "image": "sentiment_analyzer:latest",
+            "entrypoint": "python3 /app/sentiment_analyzer.py",
             "volumes": [
-                f"./filter/{subtype}/config.ini:/app/config.ini"
+                "./sentiment_analyzer/config.ini:/app/config.ini"
             ],
+            "environment": {
+                "NODE_ID": str(i),
+                "NODE_TYPE": "sentiment_analyzer",
+                "NODES_TO_AWAIT": str(cleanup)
+            },
             "depends_on": {
                 "gateway": {
                     "condition": "service_healthy"
@@ -75,22 +116,6 @@ def generate_compose(filename, short_test=False):
             },
             "networks": ["testing_net"]
         }
-
-    # Sentiment analyzer node
-    services["sentiment_analyzer"] = {
-        "container_name": "sentiment_analyzer",
-        "image": "sentiment_analyzer:latest",
-        "entrypoint": "python3 /app/sentiment_analyzer.py",
-        "volumes": [
-            "./sentiment_analyzer/config.ini:/app/config.ini"
-        ],
-        "depends_on": {
-            "gateway": {
-                "condition": "service_healthy"
-            }
-        },
-        "networks": ["testing_net"]
-    }
 
     jb_nodes = []
     for i in range(1, jb_credits + 1):
@@ -107,8 +132,7 @@ def generate_compose(filename, short_test=False):
             "./join_table/config.ini:/app/config.ini"
         ],
         "environment": {
-            "JB_CREDITS_NODES": str(jb_credits),
-            "JB_RATINGS_NODES": str(jb_ratings)
+            "NODES_TO_AWAIT": str(year)
         },
         "depends_on": {
             "gateway": {
@@ -126,7 +150,9 @@ def generate_compose(filename, short_test=False):
             "image": f"join_batch_credits:latest",
             "entrypoint": "python3 /app/join_batch.py",
             "environment": {
-                "NODE_ID": str(i)
+                "NODE_ID": str(i),
+                "NODE_TYPE": "join_batch_credits",
+                "NODES_TO_AWAIT": str(cleanup)
             },
             "volumes": [
                 f"./join_batch/credits/config.ini:/app/config.ini"
@@ -144,7 +170,9 @@ def generate_compose(filename, short_test=False):
             "image": f"join_batch_ratings:latest",
             "entrypoint": "python3 /app/join_batch.py",
             "environment": {
-                "NODE_ID": str(i)
+                "NODE_ID": str(i),
+                "NODE_TYPE": "join_batch_ratings",
+                "NODES_TO_AWAIT": str(cleanup)
             },
             "volumes": [
                 f"./join_batch/ratings/config.ini:/app/config.ini"
@@ -157,6 +185,15 @@ def generate_compose(filename, short_test=False):
             "networks": ["testing_net"]
         }
 
+    # Nodes to await by query
+    nodes_to_await = {
+        "q1": year,
+        "q2": production,
+        "q3": jb_ratings,
+        "q4": jb_credits,
+        "q5": sentiment_analyzer
+    }
+
     # Query nodes Q1 to Q5
     for i in range(1, 6):
         qname = f"q{i}"
@@ -167,6 +204,10 @@ def generate_compose(filename, short_test=False):
             "volumes": [
                 f"./query/{qname}/config.ini:/app/config.ini"
             ],
+            "environment": {
+                "NODE_TYPE": qname,
+                "NODES_TO_AWAIT": str(nodes_to_await[qname])
+            },
             "depends_on": {
                 "gateway": {
                     "condition": "service_healthy"
