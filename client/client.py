@@ -47,7 +47,7 @@ class Client:
                 else:
                     logger.error("Max connection attempts reached. Check if server is up.")
 
-    def _stop_client(self):
+    def _stop_client(self, signum=None, frame=None):
         try:
             if self._results_thread:
                 self._results_thread.stop()
