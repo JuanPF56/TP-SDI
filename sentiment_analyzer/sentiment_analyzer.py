@@ -12,6 +12,7 @@ EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 logger = get_logger("SentimentAnalyzer")
 
+MAX_WORKERS = os.cpu_count() or 4
 
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
@@ -153,7 +154,7 @@ class SentimentAnalyzer:
                 return
 
             movies_batch = json.loads(body)
-            with ThreadPoolExecutor(max_workers=4) as executor:
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_movie = {
                     executor.submit(self.analyze_sentiment, movie.get("overview")): movie
                     for movie in movies_batch

@@ -26,6 +26,25 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
 ## Comandos
 
+### ⚙️ Configurar cantidad de nodos
+
+Antes de generar el archivo docker-compose.yaml, podés editar el archivo global_config.ini para ajustar la cantidad de nodos que tendrá cada componente del sistema:
+
+```ini
+[DEFAULT]
+
+cleanup_filter_nodes = 2
+production_filter_nodes = 2
+year_filter_nodes = 2
+sentiment_analyzer_nodes = 5
+join_batch_credits_nodes = 2
+join_batch_ratings_nodes = 3
+```
+
+🔁 Una vez configurado, ejecutá el generador de docker-compose para que los cambios se reflejen en la definición del sistema.
+
+---
+
 ### 🔧 Generar el `docker-compose.yaml`
 
 ```bash
@@ -33,6 +52,7 @@ python3 docker-compose-generator.py <output_file.yml> [-short_test]
 ```
 
 - El flag `-short_test` monta el volumen `./datasets_for_test:/datasets` para correr el sistema con datasets reducidos (útil para pruebas rápidas).
+- Ej de uso: `python3 docker-compose-generator.py docker-compose.yaml`
 
 ---
 
@@ -66,7 +86,7 @@ make docker-compose-down       # Detiene y elimina contenedores
 
 ---
 
-### 📊 Monitoreo de las colas (RabbitMQ)
+## 📊 Monitoreo de las colas (RabbitMQ)
 
 Podés visualizar el estado de las **queues** y monitorear la actividad del sistema accediendo al panel de administración de **RabbitMQ** desde tu navegador:
 
