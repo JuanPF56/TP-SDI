@@ -71,6 +71,8 @@ class SentimentStats:
                     except json.JSONDecodeError:
                         logger.error("Failed to decode EOS message")
                         return
+                    if not self.received_eos.get(sentiment):
+                        self.received_eos[sentiment] = {}
                     self.received_eos[sentiment][node_id] = True
                     logger.info(f"EOS received for node {node_id} in {sentiment} queue.")
                     eos_received = len(self.received_eos.get("positive", {})) + \
