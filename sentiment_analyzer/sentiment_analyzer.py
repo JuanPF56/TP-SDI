@@ -222,7 +222,7 @@ class SentimentAnalyzer:
 
     def run(self):
         logger.info("Waiting for clean movies...")
-        self.channel.basic_qos(prefetch_count=2)
+        self.channel.basic_qos(prefetch_count=10)
         self.channel.basic_consume(
             queue=self.source_queue,
             on_message_callback=self.callback,
