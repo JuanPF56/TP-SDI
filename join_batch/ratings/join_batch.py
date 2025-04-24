@@ -24,6 +24,13 @@ class JoinBatchRatings(JoinBatchBase):
                 else:
                     logger.warning(f"EOS message for node {node_id} already received. Ignoring duplicate.")
                     return
+                # Put the EOS message back to the queue for other nodes
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.input_queue,
+                    body=json.dumps({"node_id": node_id}),
+                    properties=pika.BasicProperties(type=msg_type)
+                )
                 if len(self._eos_flags) == int(self.eos_to_await):
                     logger.info("All nodes have sent EOS. Sending EOS to output queue.")
                     self.channel.basic_publish(
