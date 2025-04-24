@@ -93,9 +93,9 @@ class SentimentAnalyzer:
         if node_id not in self._eos_flags:
             count += 1
             self._eos_flags[node_id] = True
-            logger.info(f"EOS received for node {node_id}.")
+            logger.debug(f"EOS received for node {node_id}.")
 
-        logger.info(f"EOS count for node {node_id}: {count}")
+        logger.debug(f"EOS count for node {node_id}: {count}")
         # If this isn't the last node, send the EOS message back to the source queue
         if count < self.nodes_of_type:
             # Send EOS back to the source queue for other sentiment analyzers
@@ -121,7 +121,7 @@ class SentimentAnalyzer:
                 body=json.dumps({"node_id": self.node_id}),
                 properties=pika.BasicProperties(type=msg_type)
             )
-            logger.info("Sent EOS message to both queues.")
+            logger.debug("Sent EOS message to both queues.")
             self.channel.stop_consuming()
 
     def callback(self, ch, method, properties, body):
