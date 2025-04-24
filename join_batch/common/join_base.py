@@ -23,6 +23,12 @@ class JoinBatchBase:
         self.channel.queue_declare(queue=self.input_queue)
         # Declare the output queue
         self.channel.queue_declare(queue=self.output_queue)
+
+        # Get the EOS to await
+        self.node_id = int(os.getenv("NODE_ID", "1"))
+        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+
+        self._eos_flags = {}
         
         # Create a shared list to store the movies table
         self.manager = multiprocessing.Manager()
@@ -78,15 +84,6 @@ class JoinBatchBase:
 
         # Start the loop to receive the batches
         self.receive_batch()
-
-        # Send the EOS message to the output queue
-        self.log_info("Sending EOS message to output queue...")
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=self.output_queue,
-            body=b'',
-            properties=pika.BasicProperties(type=EOS_TYPE)
-        )
 
         self.table_receiver.join()
 

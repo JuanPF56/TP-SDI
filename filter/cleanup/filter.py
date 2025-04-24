@@ -1,5 +1,6 @@
 import configparser
 import json
+import os
 import pika
 import time
 
@@ -38,6 +39,8 @@ class CleanupFilter(FilterBase):
             self.source_queues[1]: self.config["DEFAULT"].get("ratings_clean_queue", "ratings_clean"),
             self.source_queues[2]: self.config["DEFAULT"].get("credits_clean_queue", "credits_clean"),
         }
+
+        self.node_id = int(os.getenv("NODE_ID", "1"))
 
         self.rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
         self.connection = None
@@ -145,7 +148,7 @@ class CleanupFilter(FilterBase):
                     self.channel.basic_publish(
                         exchange='',
                         routing_key=target,
-                        body=b'',
+                        body=json.dumps({"node_id": self.node_id}),
                         properties=pika.BasicProperties(type=msg_type)
                     )
                     logger.info(f"EOS sent to target queue: {target}")
@@ -153,7 +156,7 @@ class CleanupFilter(FilterBase):
                 self.channel.basic_publish(
                     exchange='',
                     routing_key=targets,
-                    body=b'',
+                    body=json.dumps({"node_id": self.node_id}),
                     properties=pika.BasicProperties(type=msg_type)
                 )
                 logger.info(f"EOS sent to target queue: {targets}")

@@ -20,6 +20,8 @@ class SentimentAnalyzer:
         self.connection = None
         self.channel = None
         self._connect_to_rabbitmq()
+        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self._eos_flags = {}
 
     def _load_config(self, path: str):
         config = ConfigParser()
@@ -78,27 +80,45 @@ class SentimentAnalyzer:
             logger.error(f"Error during sentiment analysis: {e}")
             return "neutral"
 
-    def _mark_eos_received(self, msg_type):
-        logger.info(f"Received EOS message of type '{msg_type}'.")
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=self.positive_queue,
-            body=b'',
-            properties=pika.BasicProperties(type=msg_type)
-        )
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=self.negative_queue,
-            body=b'',
-            properties=pika.BasicProperties(type=msg_type)
-        )
-        logger.info("Sent EOS message to both queues.")
+    def _mark_eos_received(self, body, msg_type):
+
+        try:
+            data = json.loads(body)
+            node_id = data.get("node_id")
+        except json.JSONDecodeError:
+            logger.error("Failed to decode EOS message")
+            return
+        
+        if node_id not in self._eos_flags:
+            self._eos_flags[node_id] = True
+            logger.info(f"EOS received for node {node_id}.")
+        else:
+            logger.warning(f"EOS message for node {node_id} already received. Ignoring duplicate.")
+            return
+        
+    def _send_eos(self, msg_type):
+        if len(self._eos_flags) == int(self.eos_to_await):
+            logger.info("All nodes have sent EOS. Sending EOS to both queues.")
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.positive_queue,
+                body=json.dumps({"node_id": self.node_id}),
+                properties=pika.BasicProperties(type=msg_type)
+            )
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.negative_queue,
+                body=json.dumps({"node_id": self.node_id}),
+                properties=pika.BasicProperties(type=msg_type)
+            )
+            logger.info("Sent EOS message to both queues.")
 
     def callback(self, ch, method, properties, body):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
+                self._mark_eos_received(body, msg_type)
                 if len(self.batch_positive) > 0:
                     self.channel.basic_publish(
                         exchange='',
@@ -115,7 +135,7 @@ class SentimentAnalyzer:
                     )
                     logger.debug(f"Sent {len(self.batch_negative)} negative movies to {self.negative_queue}")
                     self.batch_negative = []
-                self._mark_eos_received(msg_type)
+                self._send_eos(msg_type)
                 return
 
             movies_batch = json.loads(body)

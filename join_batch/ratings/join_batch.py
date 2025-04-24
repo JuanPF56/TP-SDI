@@ -12,14 +12,27 @@ class JoinBatchRatings(JoinBatchBase):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             if msg_type == "EOS":
-                logger.info("Received EOS message, stopping consumption.")
-                self.channel.basic_publish(
-                    exchange='',
-                    routing_key=self.output_queue,
-                    body=b'',
-                    properties=pika.BasicProperties(type=msg_type)
-                )
-                ch.stop_consuming()
+                try:
+                    data = json.loads(body)
+                    node_id = data.get("node_id")
+                except json.JSONDecodeError:
+                    logger.error("Failed to decode EOS message")
+                    return
+                if node_id not in self._eos_flags:
+                    self._eos_flags[node_id] = True
+                    logger.info(f"EOS received for node {node_id}.")
+                else:
+                    logger.warning(f"EOS message for node {node_id} already received. Ignoring duplicate.")
+                    return
+                if len(self._eos_flags) == int(self.eos_to_await):
+                    logger.info("All nodes have sent EOS. Sending EOS to output queue.")
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.output_queue,
+                        body=json.dumps({"node_id": self.node_id}),
+                        properties=pika.BasicProperties(type=msg_type)
+                    )
+                    ch.stop_consuming()
                 return
             try:
                 data = json.loads(body)

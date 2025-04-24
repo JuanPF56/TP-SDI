@@ -1,5 +1,6 @@
 import configparser
 import json
+import os
 import pika
 
 from collections import defaultdict
@@ -21,6 +22,9 @@ class SoloCountryBudgetQuery:
 
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
         self.channel = self.connection.channel()
+
+        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self.eos_flags = {}
 
         self.channel.queue_declare(queue=input_queue)
         self.channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
@@ -65,8 +69,21 @@ class SoloCountryBudgetQuery:
                 msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
                 if msg_type == EOS_TYPE:
-                    logger.info("End of stream received")
-                    self._calculate_and_publish_results()
+                    try:
+                        data = json.loads(body)
+                        node_id = data.get("node_id")
+                    except json.JSONDecodeError:
+                        logger.error("Failed to decode EOS message")
+                        return
+                    if node_id not in self.eos_flags:
+                        self.eos_flags[node_id] = True
+                        logger.info(f"EOS received for node {node_id}.")
+                    else:
+                        logger.warning(f"EOS message for node {node_id} already received. Ignoring duplicate.")
+                        return
+                    if len(self.eos_flags) == int(self.eos_to_await):
+                        logger.info("All nodes have sent EOS. Calculating results...")
+                        self._calculate_and_publish_results()
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
 
