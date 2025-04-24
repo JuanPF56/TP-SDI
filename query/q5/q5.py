@@ -1,5 +1,6 @@
 import configparser
 import json
+import os
 import pika
 from common.logger import get_logger
 
@@ -13,7 +14,11 @@ class SentimentStats:
         self.config = config
         self.positive_rates = []
         self.negative_rates = []
-        self.received_eos = {"positive": False, "negative": False}
+        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1")) * 2 # Two queues to await EOS from
+        self.received_eos = {
+            "positive": {},
+            "negative": {}
+        }
 
     def _connect(self):
         rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
@@ -63,12 +68,21 @@ class SentimentStats:
                 msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
                 if msg_type == EOS_TYPE:
-                    if sentiment == "positive":
-                        self.received_eos["positive"] = True
-                    else:
-                        self.received_eos["negative"] = True
-                    logger.info("End of stream received")
-                    self._calculate_and_publish_results()
+                    try:
+                        data = json.loads(body)
+                        node_id = data.get("node_id")
+                    except json.JSONDecodeError:
+                        logger.error("Failed to decode EOS message")
+                        return
+                    self.received_eos[sentiment][node_id] = True
+                    logger.info(f"EOS received for node {node_id} in {sentiment} queue.")
+                    eos_received = len(self.received_eos.get("positive", {})) + \
+                        len(self.received_eos.get("negative", {}))
+                    all_eos_received = all(self.received_eos[sent].get(node) for sent in \
+                                           ["positive","negative"] for node in self.received_eos[sent])
+                    if eos_received == int(self.eos_to_await) and all_eos_received:
+                        logger.info("All nodes have sent EOS.")
+                        self._calculate_and_publish_results()
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
 

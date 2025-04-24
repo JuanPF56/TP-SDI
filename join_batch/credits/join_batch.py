@@ -13,16 +13,40 @@ class JoinBatchCredits(JoinBatchBase):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == "EOS":
-                logger.info("Received EOS message, stopping consumption.")
-                self.channel.basic_publish(
-                    exchange='',
-                    routing_key=self.output_queue,
-                    body=b'',
-                    properties=pika.BasicProperties(type=msg_type)
-                )                
-                ch.stop_consuming()
+                try:
+                    data = json.loads(body)
+                    node_id = data.get("node_id")
+                    count = data.get("count")
+                except json.JSONDecodeError:
+                    logger.error("Failed to decode EOS message")
+                    return
+                logger.debug(f"EOS message received: {data}")
+                if node_id not in self._eos_flags:
+                    count += 1
+                    self._eos_flags[node_id] = True
+                    logger.debug(f"EOS received for node {node_id}.")
+                if len(self._eos_flags) == int(self.eos_to_await):
+                    logger.info("All nodes have sent EOS. Sending EOS to output queue.")
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.output_queue,
+                        body=json.dumps({"node_id": self.node_id, "count": 0}),
+                        properties=pika.BasicProperties(type=msg_type)
+                    )
+                    ch.stop_consuming()
+                logger.debug(f"EOS count for node {node_id}: {count}")
+                logger.debug(f"Nodes of type: {self.nodes_of_type}")
+                # If this isn't the last node, put the EOS message back to the queue for other nodes
+                if count < self.nodes_of_type:
+                    logger.debug(f"Sending EOS back to input queue for node {node_id}.")
+                    # Put the EOS message back to the queue for other nodes
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.input_queue,
+                        body=json.dumps({"node_id": node_id, "count": count}),
+                        properties=pika.BasicProperties(type=msg_type)
+                    )
                 return
-
             # Load the data from the incoming message
             try:
                 decoded = json.loads(body)

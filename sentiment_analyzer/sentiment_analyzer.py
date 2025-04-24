@@ -5,11 +5,14 @@ import os
 from configparser import ConfigParser
 from transformers import pipeline
 from common.logger import get_logger
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 logger = get_logger("SentimentAnalyzer")
 
+MAX_WORKERS = os.cpu_count() or 4
 
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
@@ -20,6 +23,11 @@ class SentimentAnalyzer:
         self.connection = None
         self.channel = None
         self._connect_to_rabbitmq()
+        self.lock = threading.Lock()
+        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self._eos_flags = {}
+        self.node_id = int(os.getenv("NODE_ID", "1"))
+        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
     def _load_config(self, path: str):
         config = ConfigParser()
@@ -78,34 +86,61 @@ class SentimentAnalyzer:
             logger.error(f"Error during sentiment analysis: {e}")
             return "neutral"
 
-    def _mark_eos_received(self, msg_type):
-        logger.info(f"Received EOS message of type '{msg_type}'.")
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=self.positive_queue,
-            body=b'',
-            properties=pika.BasicProperties(type=msg_type)
-        )
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=self.negative_queue,
-            body=b'',
-            properties=pika.BasicProperties(type=msg_type)
-        )
-        logger.info("Sent EOS message to both queues.")
+    def _mark_eos_received(self, body, channel):
+        try:
+            data = json.loads(body)
+            node_id = data.get("node_id")
+            count = data.get("count", 0)
+        except json.JSONDecodeError:
+            logger.error("Failed to decode EOS message")
+            return      
+        if node_id not in self._eos_flags:
+            count += 1
+            self._eos_flags[node_id] = True
+            logger.debug(f"EOS received for node {node_id}.")
+
+        logger.debug(f"EOS count for node {node_id}: {count}")
+        # If this isn't the last node, send the EOS message back to the source queue
+        if count < self.nodes_of_type:
+            # Send EOS back to the source queue for other sentiment analyzers
+            channel.basic_publish(
+                exchange='',
+                routing_key=self.source_queue,
+                body=json.dumps({"node_id": node_id, "count": count}),
+                properties=pika.BasicProperties(type=EOS_TYPE)
+            )
+        
+    def _send_eos(self, msg_type):
+        if len(self._eos_flags) == int(self.eos_to_await):
+            logger.info("All nodes have sent EOS. Sending EOS to both queues.")
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.positive_queue,
+                body=json.dumps({"node_id": self.node_id}),
+                properties=pika.BasicProperties(type=msg_type)
+            )
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.negative_queue,
+                body=json.dumps({"node_id": self.node_id}),
+                properties=pika.BasicProperties(type=msg_type)
+            )
+            logger.debug("Sent EOS message to both queues.")
+            self.channel.stop_consuming()
 
     def callback(self, ch, method, properties, body):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
+                self._mark_eos_received(body, ch)
                 if len(self.batch_positive) > 0:
                     self.channel.basic_publish(
                         exchange='',
                         routing_key=self.positive_queue,
                         body=json.dumps(self.batch_positive)
                     )
-                    logger.debug(f"Sent {len(self.batch_positive)} positive movies to {self.positive_queue}")
+                    logger.info(f"Sent {len(self.batch_positive)} positive movies to {self.positive_queue}")
                     self.batch_positive = []
                 if len(self.batch_negative) > 0:
                     self.channel.basic_publish(
@@ -113,23 +148,40 @@ class SentimentAnalyzer:
                         routing_key=self.negative_queue,
                         body=json.dumps(self.batch_negative)
                     )
-                    logger.debug(f"Sent {len(self.batch_negative)} negative movies to {self.negative_queue}")
+                    logger.info(f"Sent {len(self.batch_negative)} negative movies to {self.negative_queue}")
                     self.batch_negative = []
-                self._mark_eos_received(msg_type)
+                self._send_eos(msg_type)
                 return
 
             movies_batch = json.loads(body)
-            for movie in movies_batch:
-                sentiment = self.analyze_sentiment(movie.get("overview"))
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                future_to_movie = {
+                    executor.submit(self.analyze_sentiment, movie.get("overview")): movie
+                    for movie in movies_batch
+                }
 
-                if sentiment == "neutral":
-                    logger.debug(f"Ignoring neutral/empty overview for '{movie.get('original_title')}'")
-                    continue
+                for future in as_completed(future_to_movie):
+                    movie = future_to_movie[future]
+                    try:
+                        sentiment = future.result()
+                        logger.debug(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
 
-                if sentiment == "positive":
-                    self.batch_positive.append(movie)
-                elif sentiment == "negative":
-                    self.batch_negative.append(movie)
+                        if sentiment == "neutral":
+                            logger.debug(f"Movie '{movie.get('original_title')}' is neutral, skipping.")
+                            continue
+                        elif sentiment == "positive":
+                            logger.debug(f"Movie '{movie.get('original_title')}' is positive.")
+                            with self.lock:
+                                self.batch_positive.append(movie)
+                        elif sentiment == "negative":
+                            logger.debug(f"Movie '{movie.get('original_title')}' is negative.")
+                            with self.lock:
+                                self.batch_negative.append(movie)
+
+                    except Exception as e:
+                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
+                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
+
 
             if len(self.batch_positive) >= self.batch_size:
                 self.channel.basic_publish(
@@ -137,7 +189,7 @@ class SentimentAnalyzer:
                     routing_key=self.positive_queue,
                     body=json.dumps(self.batch_positive)
                 )
-                logger.debug(f"Sent batch of {len(self.batch_positive)} positive movies.")
+                logger.info(f"Sent batch of {len(self.batch_positive)} positive movies.")
                 self.batch_positive = []
 
             if len(self.batch_negative) >= self.batch_size:
@@ -146,10 +198,8 @@ class SentimentAnalyzer:
                     routing_key=self.negative_queue,
                     body=json.dumps(self.batch_negative)
                 )
-                logger.debug(f"Sent batch of {len(self.batch_negative)} negative movies.")
+                logger.info(f"Sent batch of {len(self.batch_negative)} negative movies.")
                 self.batch_negative = []
-
-            ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except pika.exceptions.StreamLostError as e:
             logger.error(f"Stream lost, reconnecting: {e}")
@@ -161,6 +211,9 @@ class SentimentAnalyzer:
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
+        
+        finally:
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def _reconnect_and_restart(self):
         try:
@@ -173,6 +226,7 @@ class SentimentAnalyzer:
 
     def run(self):
         logger.info("Waiting for clean movies...")
+        self.channel.basic_qos(prefetch_count=5)
         self.channel.basic_consume(
             queue=self.source_queue,
             on_message_callback=self.callback,

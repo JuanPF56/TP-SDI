@@ -46,6 +46,9 @@ def main():
     input_queue = config["input_queue"]
     broadcast_exchange = config["broadcast_exchange"]
 
+    eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+    eos_flags = {}
+
     channel.exchange_declare(exchange=broadcast_exchange, exchange_type='fanout')
     channel.queue_declare(queue=input_queue)
 
@@ -56,15 +59,24 @@ def main():
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
         if msg_type == EOS_TYPE:
-            logger.info("Received EOS message.")
-            if len(movies) > 0:            
+            try:
+                data = json.loads(body)
+                node_id = data.get("node_id")
+            except json.JSONDecodeError:
+                logger.error("Failed to decode EOS message")
+                return
+            if node_id not in eos_flags:
+                eos_flags[node_id] = True
+                logger.debug(f"EOS received for node {node_id}.")
+            if len(eos_flags) == int(eos_to_await):
+                logger.info("All nodes have sent EOS. Sending movies table to broadcast exchange.")    
                 channel.basic_publish(
                     exchange=broadcast_exchange,
                     routing_key='',
                     body=json.dumps(movies)
                 )
                 logger.info("Sent table of %d movies", len(movies))
-            ch.stop_consuming()
+                ch.stop_consuming()
         else:
             message = json.loads(body)
             logger.debug(f"Received message: {message}")

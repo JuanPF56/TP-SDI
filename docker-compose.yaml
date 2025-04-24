@@ -7,6 +7,7 @@ services:
     - 15672:15672
     volumes:
     - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
+    - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
     networks:
     - testing_net
     healthcheck:
@@ -39,45 +40,177 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-  filter_cleanup:
-    container_name: filter_cleanup
+  filter_cleanup_1:
+    container_name: filter_cleanup_1
     image: filter_cleanup:latest
     entrypoint: python3 /app/filter.py
     volumes:
     - ./filter/cleanup/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '1'
+      NODE_TYPE: cleanup
+      NODES_TO_AWAIT: '1'
+      NODES_OF_TYPE: 2
     depends_on:
       gateway:
         condition: service_healthy
     networks:
     - testing_net
-  filter_year:
-    container_name: filter_year
+  filter_cleanup_2:
+    container_name: filter_cleanup_2
+    image: filter_cleanup:latest
+    entrypoint: python3 /app/filter.py
+    volumes:
+    - ./filter/cleanup/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '2'
+      NODE_TYPE: cleanup
+      NODES_TO_AWAIT: '1'
+      NODES_OF_TYPE: 2
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  filter_year_1:
+    container_name: filter_year_1
     image: filter_year:latest
     entrypoint: python3 /app/filter.py
     volumes:
     - ./filter/year/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '1'
+      NODE_TYPE: year
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 2
     depends_on:
       gateway:
         condition: service_healthy
     networks:
     - testing_net
-  filter_production:
-    container_name: filter_production
+  filter_year_2:
+    container_name: filter_year_2
+    image: filter_year:latest
+    entrypoint: python3 /app/filter.py
+    volumes:
+    - ./filter/year/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '2'
+      NODE_TYPE: year
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 2
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  filter_production_1:
+    container_name: filter_production_1
     image: filter_production:latest
     entrypoint: python3 /app/filter.py
     volumes:
     - ./filter/production/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '1'
+      NODE_TYPE: production
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 2
     depends_on:
       gateway:
         condition: service_healthy
     networks:
     - testing_net
-  sentiment_analyzer:
-    container_name: sentiment_analyzer
+  filter_production_2:
+    container_name: filter_production_2
+    image: filter_production:latest
+    entrypoint: python3 /app/filter.py
+    volumes:
+    - ./filter/production/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '2'
+      NODE_TYPE: production
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 2
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  sentiment_analyzer_1:
+    container_name: sentiment_analyzer_1
     image: sentiment_analyzer:latest
     entrypoint: python3 /app/sentiment_analyzer.py
     volumes:
     - ./sentiment_analyzer/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '1'
+      NODE_TYPE: sentiment_analyzer
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 5
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  sentiment_analyzer_2:
+    container_name: sentiment_analyzer_2
+    image: sentiment_analyzer:latest
+    entrypoint: python3 /app/sentiment_analyzer.py
+    volumes:
+    - ./sentiment_analyzer/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '2'
+      NODE_TYPE: sentiment_analyzer
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 5
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  sentiment_analyzer_3:
+    container_name: sentiment_analyzer_3
+    image: sentiment_analyzer:latest
+    entrypoint: python3 /app/sentiment_analyzer.py
+    volumes:
+    - ./sentiment_analyzer/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '3'
+      NODE_TYPE: sentiment_analyzer
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 5
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  sentiment_analyzer_4:
+    container_name: sentiment_analyzer_4
+    image: sentiment_analyzer:latest
+    entrypoint: python3 /app/sentiment_analyzer.py
+    volumes:
+    - ./sentiment_analyzer/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '4'
+      NODE_TYPE: sentiment_analyzer
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 5
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  sentiment_analyzer_5:
+    container_name: sentiment_analyzer_5
+    image: sentiment_analyzer:latest
+    entrypoint: python3 /app/sentiment_analyzer.py
+    volumes:
+    - ./sentiment_analyzer/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '5'
+      NODE_TYPE: sentiment_analyzer
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 5
     depends_on:
       gateway:
         condition: service_healthy
@@ -90,14 +223,19 @@ services:
     volumes:
     - ./join_table/config.ini:/app/config.ini
     environment:
-      JB_CREDITS_NODES: '1'
-      JB_RATINGS_NODES: '1'
+      NODES_TO_AWAIT: '2'
     depends_on:
       gateway:
         condition: service_healthy
       join_batch_credits_1:
         condition: service_started
+      join_batch_credits_2:
+        condition: service_started
       join_batch_ratings_1:
+        condition: service_started
+      join_batch_ratings_2:
+        condition: service_started
+      join_batch_ratings_3:
         condition: service_started
     networks:
     - testing_net
@@ -107,6 +245,25 @@ services:
     entrypoint: python3 /app/join_batch.py
     environment:
       NODE_ID: '1'
+      NODE_TYPE: join_batch_credits
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 2
+    volumes:
+    - ./join_batch/credits/config.ini:/app/config.ini
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  join_batch_credits_2:
+    container_name: join_batch_credits_2
+    image: join_batch_credits:latest
+    entrypoint: python3 /app/join_batch.py
+    environment:
+      NODE_ID: '2'
+      NODE_TYPE: join_batch_credits
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 2
     volumes:
     - ./join_batch/credits/config.ini:/app/config.ini
     depends_on:
@@ -120,6 +277,41 @@ services:
     entrypoint: python3 /app/join_batch.py
     environment:
       NODE_ID: '1'
+      NODE_TYPE: join_batch_ratings
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 3
+    volumes:
+    - ./join_batch/ratings/config.ini:/app/config.ini
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  join_batch_ratings_2:
+    container_name: join_batch_ratings_2
+    image: join_batch_ratings:latest
+    entrypoint: python3 /app/join_batch.py
+    environment:
+      NODE_ID: '2'
+      NODE_TYPE: join_batch_ratings
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 3
+    volumes:
+    - ./join_batch/ratings/config.ini:/app/config.ini
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  join_batch_ratings_3:
+    container_name: join_batch_ratings_3
+    image: join_batch_ratings:latest
+    entrypoint: python3 /app/join_batch.py
+    environment:
+      NODE_ID: '3'
+      NODE_TYPE: join_batch_ratings
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 3
     volumes:
     - ./join_batch/ratings/config.ini:/app/config.ini
     depends_on:
@@ -133,6 +325,9 @@ services:
     entrypoint: python3 /app/q1.py
     volumes:
     - ./query/q1/config.ini:/app/config.ini
+    environment:
+      NODE_TYPE: q1
+      NODES_TO_AWAIT: '2'
     depends_on:
       gateway:
         condition: service_healthy
@@ -144,6 +339,9 @@ services:
     entrypoint: python3 /app/q2.py
     volumes:
     - ./query/q2/config.ini:/app/config.ini
+    environment:
+      NODE_TYPE: q2
+      NODES_TO_AWAIT: '2'
     depends_on:
       gateway:
         condition: service_healthy
@@ -155,6 +353,9 @@ services:
     entrypoint: python3 /app/q3.py
     volumes:
     - ./query/q3/config.ini:/app/config.ini
+    environment:
+      NODE_TYPE: q3
+      NODES_TO_AWAIT: '3'
     depends_on:
       gateway:
         condition: service_healthy
@@ -166,6 +367,9 @@ services:
     entrypoint: python3 /app/q4.py
     volumes:
     - ./query/q4/config.ini:/app/config.ini
+    environment:
+      NODE_TYPE: q4
+      NODES_TO_AWAIT: '2'
     depends_on:
       gateway:
         condition: service_healthy
@@ -177,6 +381,9 @@ services:
     entrypoint: python3 /app/q5.py
     volumes:
     - ./query/q5/config.ini:/app/config.ini
+    environment:
+      NODE_TYPE: q5
+      NODES_TO_AWAIT: '5'
     depends_on:
       gateway:
         condition: service_healthy
