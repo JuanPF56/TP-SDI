@@ -81,14 +81,20 @@ class SentimentAnalyzer:
             logger.error(f"Error during sentiment analysis: {e}")
             return "neutral"
 
-    def _mark_eos_received(self, body, msg_type):
-
+    def _mark_eos_received(self, body, channel):
         try:
             data = json.loads(body)
             node_id = data.get("node_id")
         except json.JSONDecodeError:
             logger.error("Failed to decode EOS message")
             return
+        # Send EOS back to the source queue for other sentiment analyzers
+        channel.basic_publish(
+            exchange='',
+            routing_key=self.source_queue,
+            body=json.dumps({"node_id": node_id}),
+            properties=pika.BasicProperties(type=EOS_TYPE)
+        )
         
         if node_id not in self._eos_flags:
             self._eos_flags[node_id] = True
@@ -119,7 +125,7 @@ class SentimentAnalyzer:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
 
             if msg_type == EOS_TYPE:
-                self._mark_eos_received(body, msg_type)
+                self._mark_eos_received(body, ch)
                 if len(self.batch_positive) > 0:
                     self.channel.basic_publish(
                         exchange='',

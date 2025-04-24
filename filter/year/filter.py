@@ -22,7 +22,7 @@ class YearFilter(FilterBase):
             "arg_spain_2000s": []
         }
 
-    def _mark_eos_received(self, body, input_queue):
+    def _mark_eos_received(self, body, channel, input_queue):
         """
         Mark the end of stream (EOS) for the given input queue
         for the given node.
@@ -37,6 +37,14 @@ class YearFilter(FilterBase):
             self._eos_flags[input_queue] = {}
         logger.info(f"EOS received for node {node_id} from input queue {input_queue}")
         self._eos_flags[input_queue][node_id] = True
+        # Send EOS back to input queue for other year nodes
+        channel.basic_publish(
+            exchange='',
+            routing_key=input_queue,
+            body=json.dumps({"node_id": node_id}),
+            properties=pika.BasicProperties(type=EOS_TYPE)
+        )
+
     
     def _check_eos_flags(self, input_queues, output_queues, channel):
         """
@@ -111,7 +119,7 @@ class YearFilter(FilterBase):
 
             if msg_type == EOS_TYPE:
                 input_queue = method.routing_key
-                self._mark_eos_received(body, input_queue)
+                self._mark_eos_received(body, channel, input_queue)
                 if input_queue == input_queues["argentina"]:
                     if len(self.processed_batch["arg_post_2000"]) > 0:
                         channel.basic_publish(

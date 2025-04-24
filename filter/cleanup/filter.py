@@ -138,6 +138,10 @@ class CleanupFilter(FilterBase):
             queue_name (str): The name of the source queue that received EOS.
             msg_type (str): The type of message received (should be "EOS").
         """
+        if self._eos_flags.get(queue_name):
+            logger.warning(f"EOS already marked for source queue: {queue_name}. Ignoring duplicate.")
+            return
+
         self._eos_flags[queue_name] = True
         logger.info(f"EOS marked for source queue: {queue_name}")
 
@@ -183,6 +187,14 @@ class CleanupFilter(FilterBase):
                             routing_key=target_queue,
                             body=json.dumps(self.batch)
                         )
+                # Send EOS back to the input queue for other cleanup nodes
+                ch.basic_publish(
+                    exchange='',
+                    routing_key=queue_name,
+                    body=b'',
+                    properties=pika.BasicProperties(type=msg_type)
+                )
+                logger.info(f"EOS sent back to input queue: {queue_name}")
                 self._mark_eos_received(queue_name, msg_type)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
