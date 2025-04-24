@@ -39,7 +39,7 @@ services:
       - /tmp/gateway_ready
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
   filter_cleanup_1:
     container_name: filter_cleanup_1
     image: filter_cleanup:latest
@@ -82,7 +82,23 @@ services:
       NODE_ID: '1'
       NODE_TYPE: year
       NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 1
+      NODES_OF_TYPE: 2
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  filter_year_2:
+    container_name: filter_year_2
+    image: filter_year:latest
+    entrypoint: python3 /app/filter.py
+    volumes:
+    - ./filter/year/config.ini:/app/config.ini
+    environment:
+      NODE_ID: '2'
+      NODE_TYPE: year
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 2
     depends_on:
       gateway:
         condition: service_healthy
@@ -130,39 +146,7 @@ services:
       NODE_ID: '1'
       NODE_TYPE: sentiment_analyzer
       NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 3
-    depends_on:
-      gateway:
-        condition: service_healthy
-    networks:
-    - testing_net
-  sentiment_analyzer_2:
-    container_name: sentiment_analyzer_2
-    image: sentiment_analyzer:latest
-    entrypoint: python3 /app/sentiment_analyzer.py
-    volumes:
-    - ./sentiment_analyzer/config.ini:/app/config.ini
-    environment:
-      NODE_ID: '2'
-      NODE_TYPE: sentiment_analyzer
-      NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 3
-    depends_on:
-      gateway:
-        condition: service_healthy
-    networks:
-    - testing_net
-  sentiment_analyzer_3:
-    container_name: sentiment_analyzer_3
-    image: sentiment_analyzer:latest
-    entrypoint: python3 /app/sentiment_analyzer.py
-    volumes:
-    - ./sentiment_analyzer/config.ini:/app/config.ini
-    environment:
-      NODE_ID: '3'
-      NODE_TYPE: sentiment_analyzer
-      NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 3
+      NODES_OF_TYPE: 1
     depends_on:
       gateway:
         condition: service_healthy
@@ -175,7 +159,7 @@ services:
     volumes:
     - ./join_table/config.ini:/app/config.ini
     environment:
-      NODES_TO_AWAIT: '1'
+      NODES_TO_AWAIT: '2'
     depends_on:
       gateway:
         condition: service_healthy
@@ -186,6 +170,8 @@ services:
       join_batch_ratings_1:
         condition: service_started
       join_batch_ratings_2:
+        condition: service_started
+      join_batch_ratings_3:
         condition: service_started
     networks:
     - testing_net
@@ -229,7 +215,7 @@ services:
       NODE_ID: '1'
       NODE_TYPE: join_batch_ratings
       NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 2
+      NODES_OF_TYPE: 3
     volumes:
     - ./join_batch/ratings/config.ini:/app/config.ini
     depends_on:
@@ -245,7 +231,23 @@ services:
       NODE_ID: '2'
       NODE_TYPE: join_batch_ratings
       NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 2
+      NODES_OF_TYPE: 3
+    volumes:
+    - ./join_batch/ratings/config.ini:/app/config.ini
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  join_batch_ratings_3:
+    container_name: join_batch_ratings_3
+    image: join_batch_ratings:latest
+    entrypoint: python3 /app/join_batch.py
+    environment:
+      NODE_ID: '3'
+      NODE_TYPE: join_batch_ratings
+      NODES_TO_AWAIT: '2'
+      NODES_OF_TYPE: 3
     volumes:
     - ./join_batch/ratings/config.ini:/app/config.ini
     depends_on:
@@ -261,7 +263,7 @@ services:
     - ./query/q1/config.ini:/app/config.ini
     environment:
       NODE_TYPE: q1
-      NODES_TO_AWAIT: '1'
+      NODES_TO_AWAIT: '2'
     depends_on:
       gateway:
         condition: service_healthy
@@ -289,7 +291,7 @@ services:
     - ./query/q3/config.ini:/app/config.ini
     environment:
       NODE_TYPE: q3
-      NODES_TO_AWAIT: '2'
+      NODES_TO_AWAIT: '3'
     depends_on:
       gateway:
         condition: service_healthy
@@ -317,7 +319,7 @@ services:
     - ./query/q5/config.ini:/app/config.ini
     environment:
       NODE_TYPE: q5
-      NODES_TO_AWAIT: '3'
+      NODES_TO_AWAIT: '1'
     depends_on:
       gateway:
         condition: service_healthy
@@ -330,9 +332,8 @@ services:
     volumes:
     - ./client/config.ini:/app/config.ini
     - ./resultados:/app/resultados
-    - ./datasets_for_test:/datasets
     environment:
-      USE_TEST_DATASET: '1'
+      USE_TEST_DATASET: '0'
     depends_on:
       gateway:
         condition: service_healthy

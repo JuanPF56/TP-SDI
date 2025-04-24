@@ -5,7 +5,7 @@ import os
 from configparser import ConfigParser
 from transformers import pipeline
 from common.logger import get_logger
-
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 EOS_TYPE = "EOS"
@@ -22,6 +22,7 @@ class SentimentAnalyzer:
         self.connection = None
         self.channel = None
         self._connect_to_rabbitmq()
+        self.lock = threading.Lock()
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self._eos_flags = {}
         self.node_id = int(os.getenv("NODE_ID", "1"))
@@ -152,8 +153,7 @@ class SentimentAnalyzer:
                 return
 
             movies_batch = json.loads(body)
-
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 future_to_movie = {
                     executor.submit(self.analyze_sentiment, movie.get("overview")): movie
                     for movie in movies_batch
@@ -170,12 +170,15 @@ class SentimentAnalyzer:
                             continue
                         elif sentiment == "positive":
                             logger.debug(f"Movie '{movie.get('original_title')}' is positive.")
-                            self.batch_positive.append(movie)
+                            with self.lock:
+                                self.batch_positive.append(movie)
                         elif sentiment == "negative":
                             logger.debug(f"Movie '{movie.get('original_title')}' is negative.")
-                            self.batch_negative.append(movie)
+                            with self.lock:
+                                self.batch_negative.append(movie)
 
                     except Exception as e:
+                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
                         logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
 
 
@@ -222,7 +225,7 @@ class SentimentAnalyzer:
 
     def run(self):
         logger.info("Waiting for clean movies...")
-        self.channel.basic_qos(prefetch_count=10)
+        self.channel.basic_qos(prefetch_count=5)
         self.channel.basic_consume(
             queue=self.source_queue,
             on_message_callback=self.callback,
