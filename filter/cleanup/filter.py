@@ -41,6 +41,7 @@ class CleanupFilter(FilterBase):
         }
 
         self.node_id = int(os.getenv("NODE_ID", "1"))
+        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
         self.rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
         self.connection = None
@@ -130,20 +131,42 @@ class CleanupFilter(FilterBase):
             "cast": cast,
         }
 
-    def _mark_eos_received(self, queue_name, msg_type):
+    def _mark_eos_received(self, body, queue_name, msg_type):
         """
         Mark the end-of-stream (EOS) flag for the specified queue.
+        Up the count of the EOS message, if it is not the last node of type put it back to the input queue.
         If all source queues have received EOS, forward the EOS to the target queues.
         Args:
+            body (str): The message body received from RabbitMQ.
             queue_name (str): The name of the source queue that received EOS.
             msg_type (str): The type of message received (should be "EOS").
         """
-        if self._eos_flags.get(queue_name):
-            logger.warning(f"EOS already marked for source queue: {queue_name}. Ignoring duplicate.")
+        try:
+            if body:
+                data = json.loads(body)
+                count = data.get("count", 0)
+            else:
+                count = 0
+        except json.JSONDecodeError:
+            logger.error("Failed to decode EOS message")
             return
-
-        self._eos_flags[queue_name] = True
-        logger.info(f"EOS marked for source queue: {queue_name}")
+        
+        # Send EOS back to the input queue for other cleanup nodes
+        # only if this is not the last node of type
+        if not self._eos_flags.get(queue_name):
+            logger.info(f"EOS marked for source queue: {queue_name}")
+            self._eos_flags[queue_name] = True
+            count += 1
+        
+        logger.info(f"EOS count for queue {queue_name}: {count}")
+        if count < self.nodes_of_type:
+            logger.debug(f"Sending EOS back to input queue: {queue_name}")
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=queue_name,
+                body=json.dumps({"node_id": self.node_id, "count": count}),
+                properties=pika.BasicProperties(type=msg_type)
+            )
 
         targets = self.target_queues.get(queue_name)
         if targets:
@@ -152,7 +175,7 @@ class CleanupFilter(FilterBase):
                     self.channel.basic_publish(
                         exchange='',
                         routing_key=target,
-                        body=json.dumps({"node_id": self.node_id}),
+                        body=json.dumps({"node_id": self.node_id, "count": 0}),
                         properties=pika.BasicProperties(type=msg_type)
                     )
                     logger.info(f"EOS sent to target queue: {target}")
@@ -160,10 +183,14 @@ class CleanupFilter(FilterBase):
                 self.channel.basic_publish(
                     exchange='',
                     routing_key=targets,
-                    body=json.dumps({"node_id": self.node_id}),
+                    body=json.dumps({"node_id": self.node_id, "count": 0}),
                     properties=pika.BasicProperties(type=msg_type)
                 )
                 logger.info(f"EOS sent to target queue: {targets}")
+        
+        if all(self._eos_flags.values()):
+            logger.info("All source queues have sent EOS. Sending EOS to target queues.")
+            self.channel.stop_consuming()
 
     def callback(self, ch, method, properties, body, queue_name):
         """
@@ -175,7 +202,7 @@ class CleanupFilter(FilterBase):
             
             # Handle EOS signal
             if msg_type == "EOS":
-                logger.info(f"Received EOS from {queue_name}")
+                logger.debug(f"Received EOS from {queue_name}")
                 if len(self.batch) > 0:
                     logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
                     target_queues = self.target_queues[queue_name]
@@ -187,15 +214,8 @@ class CleanupFilter(FilterBase):
                             routing_key=target_queue,
                             body=json.dumps(self.batch)
                         )
-                # Send EOS back to the input queue for other cleanup nodes
-                ch.basic_publish(
-                    exchange='',
-                    routing_key=queue_name,
-                    body=b'',
-                    properties=pika.BasicProperties(type=msg_type)
-                )
-                logger.info(f"EOS sent back to input queue: {queue_name}")
-                self._mark_eos_received(queue_name, msg_type)
+                    self.batch.clear()
+                self._mark_eos_received(body, queue_name, msg_type)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 

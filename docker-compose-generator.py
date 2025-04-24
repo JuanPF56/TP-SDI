@@ -12,9 +12,9 @@ def generate_compose(filename, short_test=False):
         print("Error: global_config.ini not found.")
         sys.exit(1)
         
-    cleanup = config["DEFAULT"].getint("cleanup_nodes", 1)
-    year = config["DEFAULT"].getint("year_nodes", 1)
-    production = config["DEFAULT"].getint("production_nodes", 1)
+    cleanup = config["DEFAULT"].getint("cleanup_filter_nodes", 1)
+    year = config["DEFAULT"].getint("year_filter_nodes", 1)
+    production = config["DEFAULT"].getint("production_filter_nodes", 1)
     sentiment_analyzer = config["DEFAULT"].getint("sentiment_analyzer_nodes", 1)
     jb_credits = config["DEFAULT"].getint("join_batch_credits_nodes", 1)
     jb_ratings = config["DEFAULT"].getint("join_batch_ratings_nodes", 1)
@@ -27,7 +27,8 @@ def generate_compose(filename, short_test=False):
         "container_name": "rabbitmq",
         "ports": ["5672:5672", "15672:15672"],
         "volumes": [
-            "./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json"
+            "./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json",
+            "./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf"
         ],
         "networks": ["testing_net"], 
         "healthcheck": {
@@ -85,7 +86,8 @@ def generate_compose(filename, short_test=False):
                 "environment": {
                     "NODE_ID": str(i),
                     "NODE_TYPE": subtype,
-                    "NODES_TO_AWAIT": str(nodes_to_await)
+                    "NODES_TO_AWAIT": str(nodes_to_await),
+                    "NODES_OF_TYPE": num_nodes,
                 },
                 "depends_on": {
                     "gateway": {
@@ -107,7 +109,8 @@ def generate_compose(filename, short_test=False):
             "environment": {
                 "NODE_ID": str(i),
                 "NODE_TYPE": "sentiment_analyzer",
-                "NODES_TO_AWAIT": str(cleanup)
+                "NODES_TO_AWAIT": str(cleanup),
+                "NODES_OF_TYPE": sentiment_analyzer,
             },
             "depends_on": {
                 "gateway": {
@@ -152,7 +155,8 @@ def generate_compose(filename, short_test=False):
             "environment": {
                 "NODE_ID": str(i),
                 "NODE_TYPE": "join_batch_credits",
-                "NODES_TO_AWAIT": str(cleanup)
+                "NODES_TO_AWAIT": str(cleanup),
+                "NODES_OF_TYPE": jb_credits,
             },
             "volumes": [
                 f"./join_batch/credits/config.ini:/app/config.ini"
@@ -172,7 +176,8 @@ def generate_compose(filename, short_test=False):
             "environment": {
                 "NODE_ID": str(i),
                 "NODE_TYPE": "join_batch_ratings",
-                "NODES_TO_AWAIT": str(cleanup)
+                "NODES_TO_AWAIT": str(cleanup),
+                "NODES_OF_TYPE": jb_ratings,
             },
             "volumes": [
                 f"./join_batch/ratings/config.ini:/app/config.ini"

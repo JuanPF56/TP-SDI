@@ -27,6 +27,7 @@ class JoinBatchBase:
         # Get the EOS to await
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
         self._eos_flags = {}
         
@@ -133,7 +134,6 @@ class JoinBatchBase:
 
         while True:
             try:
-                self.channel.basic_qos(prefetch_count=1)
                 self.channel.basic_consume(
                     queue=self.input_queue,
                     on_message_callback=self.process_batch,

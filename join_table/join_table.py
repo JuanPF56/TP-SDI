@@ -68,9 +68,6 @@ def main():
             if node_id not in eos_flags:
                 eos_flags[node_id] = True
                 logger.info(f"EOS received for node {node_id}.")
-            else:
-                logger.warning(f"EOS message for node {node_id} already received. Ignoring duplicate.")
-                return
             if len(eos_flags) == int(eos_to_await):
                 logger.info("All nodes have sent EOS. Sending movies table to broadcast exchange.")    
                 channel.basic_publish(
@@ -79,7 +76,7 @@ def main():
                     body=json.dumps(movies)
                 )
                 logger.info("Sent table of %d movies", len(movies))
-            ch.stop_consuming()
+                ch.stop_consuming()
         else:
             message = json.loads(body)
             logger.debug(f"Received message: {message}")

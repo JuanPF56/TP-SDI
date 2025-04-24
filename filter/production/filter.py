@@ -22,6 +22,7 @@ class ProductionFilter(FilterBase):
         
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
     def _mark_eos_received(self, body, channel, input_queue):
         """
@@ -30,17 +31,24 @@ class ProductionFilter(FilterBase):
         try:
             data = json.loads(body)
             node_id = data.get("node_id")
+            count = data.get("count", 0)
         except json.JSONDecodeError:
             logger.error("Failed to decode EOS message")
             return
+            
+        if node_id not in self._eos_flags:
+            count +=1
         
-        # Send EOS back to input queue for other production nodes
-        channel.basic_publish(
-            exchange='',
-            routing_key=input_queue,
-            body=json.dumps({"node_id": node_id}),
-            properties=pika.BasicProperties(type=EOS_TYPE)
-        )
+        logger.info(f"EOS count for node {node_id}: {count}")
+        # If this isn't the last node, send the EOS message back to the input queue
+        if count < self.nodes_of_type:
+            # Send EOS back to input queue for other production nodes
+            channel.basic_publish(
+                exchange='',
+                routing_key=input_queue,
+                body=json.dumps({"node_id": node_id, "count": count}),
+                properties=pika.BasicProperties(type=EOS_TYPE)
+            )
 
         logger.info(f"EOS received for Cleanup node {node_id}")
         self._eos_flags[node_id] = True
@@ -58,10 +66,11 @@ class ProductionFilter(FilterBase):
                 channel.basic_publish(
                     exchange='',
                     routing_key=queue,
-                    body=json.dumps({"node_id": self.node_id}),
+                    body=json.dumps({"node_id": self.node_id, "count": 0}),
                     properties=pika.BasicProperties(type=EOS_TYPE)
                 )
                 logger.info(f"EOS message sent to {queue}")
+            channel.stop_consuming()
 
     def process(self):
         """

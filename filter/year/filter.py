@@ -15,6 +15,7 @@ class YearFilter(FilterBase):
         self.config = config
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1")) * 2  # Two queues to await EOS from
+        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self._eos_flags = {}
         self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
         self.processed_batch = {
@@ -30,20 +31,26 @@ class YearFilter(FilterBase):
         try:
             data = json.loads(body)
             node_id = data.get("node_id")
+            count = data.get("count", 0)
         except json.JSONDecodeError:
             logger.error("Failed to decode EOS message")
             return
         if input_queue not in self._eos_flags:
             self._eos_flags[input_queue] = {}
+        if node_id not in self._eos_flags[input_queue]:
+            count += 1
         logger.info(f"EOS received for node {node_id} from input queue {input_queue}")
         self._eos_flags[input_queue][node_id] = True
-        # Send EOS back to input queue for other year nodes
-        channel.basic_publish(
-            exchange='',
-            routing_key=input_queue,
-            body=json.dumps({"node_id": node_id}),
-            properties=pika.BasicProperties(type=EOS_TYPE)
-        )
+        # If this isn't the last node, send the EOS message back to the input queue
+        logger.info(f"EOS count for node {node_id}: {count}")
+        if count < self.nodes_of_type: 
+            # Send EOS back to input queue for other year nodes
+            channel.basic_publish(
+                exchange='',
+                routing_key=input_queue,
+                body=json.dumps({"node_id": node_id, "count": count}),
+                properties=pika.BasicProperties(type=EOS_TYPE)
+            )
 
     
     def _check_eos_flags(self, input_queues, output_queues, channel):
@@ -59,6 +66,7 @@ class YearFilter(FilterBase):
         if all_eos_received and eos_nodes_len == int(self.eos_to_await):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
             self._send_eos(output_queues, channel)
+            channel.stop_consuming()
         else:
             logger.info("Not all nodes have sent EOS yet. Waiting...")
 
@@ -71,7 +79,7 @@ class YearFilter(FilterBase):
             channel.basic_publish(
                 exchange='',
                 routing_key=queue,
-                body=json.dumps({"node_id": self.node_id}),
+                body=json.dumps({"node_id": self.node_id, "count": 0}),
                 properties=pika.BasicProperties(type=EOS_TYPE)
             )
             logger.info(f"EOS message sent to {queue}")
