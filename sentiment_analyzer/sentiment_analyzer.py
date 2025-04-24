@@ -138,7 +138,7 @@ class SentimentAnalyzer:
                         routing_key=self.positive_queue,
                         body=json.dumps(self.batch_positive)
                     )
-                    logger.debug(f"Sent {len(self.batch_positive)} positive movies to {self.positive_queue}")
+                    logger.info(f"Sent {len(self.batch_positive)} positive movies to {self.positive_queue}")
                     self.batch_positive = []
                 if len(self.batch_negative) > 0:
                     self.channel.basic_publish(
@@ -146,7 +146,7 @@ class SentimentAnalyzer:
                         routing_key=self.negative_queue,
                         body=json.dumps(self.batch_negative)
                     )
-                    logger.debug(f"Sent {len(self.batch_negative)} negative movies to {self.negative_queue}")
+                    logger.info(f"Sent {len(self.batch_negative)} negative movies to {self.negative_queue}")
                     self.batch_negative = []
                 self._send_eos(msg_type)
                 return
@@ -163,7 +163,7 @@ class SentimentAnalyzer:
                     movie = future_to_movie[future]
                     try:
                         sentiment = future.result()
-                        logger.info(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
+                        logger.debug(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
 
                         if sentiment == "neutral":
                             logger.debug(f"Movie '{movie.get('original_title')}' is neutral, skipping.")
@@ -185,7 +185,7 @@ class SentimentAnalyzer:
                     routing_key=self.positive_queue,
                     body=json.dumps(self.batch_positive)
                 )
-                logger.debug(f"Sent batch of {len(self.batch_positive)} positive movies.")
+                logger.info(f"Sent batch of {len(self.batch_positive)} positive movies.")
                 self.batch_positive = []
 
             if len(self.batch_negative) >= self.batch_size:
@@ -194,10 +194,8 @@ class SentimentAnalyzer:
                     routing_key=self.negative_queue,
                     body=json.dumps(self.batch_negative)
                 )
-                logger.debug(f"Sent batch of {len(self.batch_negative)} negative movies.")
+                logger.info(f"Sent batch of {len(self.batch_negative)} negative movies.")
                 self.batch_negative = []
-
-            ch.basic_ack(delivery_tag=method.delivery_tag)
 
         except pika.exceptions.StreamLostError as e:
             logger.error(f"Stream lost, reconnecting: {e}")
@@ -209,6 +207,9 @@ class SentimentAnalyzer:
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
+        
+        finally:
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def _reconnect_and_restart(self):
         try:
@@ -221,7 +222,7 @@ class SentimentAnalyzer:
 
     def run(self):
         logger.info("Waiting for clean movies...")
-        self.channel.basic_qos(prefetch_count=1)
+        self.channel.basic_qos(prefetch_count=2)
         self.channel.basic_consume(
             queue=self.source_queue,
             on_message_callback=self.callback,

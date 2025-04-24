@@ -82,23 +82,7 @@ services:
       NODE_ID: '1'
       NODE_TYPE: year
       NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 2
-    depends_on:
-      gateway:
-        condition: service_healthy
-    networks:
-    - testing_net
-  filter_year_2:
-    container_name: filter_year_2
-    image: filter_year:latest
-    entrypoint: python3 /app/filter.py
-    volumes:
-    - ./filter/year/config.ini:/app/config.ini
-    environment:
-      NODE_ID: '2'
-      NODE_TYPE: year
-      NODES_TO_AWAIT: '2'
-      NODES_OF_TYPE: 2
+      NODES_OF_TYPE: 1
     depends_on:
       gateway:
         condition: service_healthy
@@ -191,7 +175,7 @@ services:
     volumes:
     - ./join_table/config.ini:/app/config.ini
     environment:
-      NODES_TO_AWAIT: '2'
+      NODES_TO_AWAIT: '1'
     depends_on:
       gateway:
         condition: service_healthy
@@ -277,7 +261,7 @@ services:
     - ./query/q1/config.ini:/app/config.ini
     environment:
       NODE_TYPE: q1
-      NODES_TO_AWAIT: '2'
+      NODES_TO_AWAIT: '1'
     depends_on:
       gateway:
         condition: service_healthy
