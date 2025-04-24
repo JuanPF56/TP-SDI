@@ -60,7 +60,7 @@ def generate_compose(filename, short_test=False):
             "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
             "interval": "5s",
             "timeout": "5s",
-            "retries": 5
+            "retries": 10
         }
     }
 
