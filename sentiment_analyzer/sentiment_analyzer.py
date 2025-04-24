@@ -6,6 +6,8 @@ from configparser import ConfigParser
 from transformers import pipeline
 from common.logger import get_logger
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 logger = get_logger("SentimentAnalyzer")
@@ -150,17 +152,32 @@ class SentimentAnalyzer:
                 return
 
             movies_batch = json.loads(body)
-            for movie in movies_batch:
-                sentiment = self.analyze_sentiment(movie.get("overview"))
 
-                if sentiment == "neutral":
-                    logger.debug(f"Ignoring neutral/empty overview for '{movie.get('original_title')}'")
-                    continue
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                future_to_movie = {
+                    executor.submit(self.analyze_sentiment, movie.get("overview")): movie
+                    for movie in movies_batch
+                }
 
-                if sentiment == "positive":
-                    self.batch_positive.append(movie)
-                elif sentiment == "negative":
-                    self.batch_negative.append(movie)
+                for future in as_completed(future_to_movie):
+                    movie = future_to_movie[future]
+                    try:
+                        sentiment = future.result()
+                        logger.info(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
+
+                        if sentiment == "neutral":
+                            logger.debug(f"Movie '{movie.get('original_title')}' is neutral, skipping.")
+                            continue
+                        elif sentiment == "positive":
+                            logger.debug(f"Movie '{movie.get('original_title')}' is positive.")
+                            self.batch_positive.append(movie)
+                        elif sentiment == "negative":
+                            logger.debug(f"Movie '{movie.get('original_title')}' is negative.")
+                            self.batch_negative.append(movie)
+
+                    except Exception as e:
+                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
+
 
             if len(self.batch_positive) >= self.batch_size:
                 self.channel.basic_publish(
@@ -204,6 +221,7 @@ class SentimentAnalyzer:
 
     def run(self):
         logger.info("Waiting for clean movies...")
+        self.channel.basic_qos(prefetch_count=1)
         self.channel.basic_consume(
             queue=self.source_queue,
             on_message_callback=self.callback,
