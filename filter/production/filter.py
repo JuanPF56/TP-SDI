@@ -39,7 +39,7 @@ class ProductionFilter(FilterBase):
         if node_id not in self._eos_flags:
             count +=1
         
-        logger.info(f"EOS count for node {node_id}: {count}")
+        logger.debug(f"EOS count for node {node_id}: {count}")
         # If this isn't the last node, send the EOS message back to the input queue
         if count < self.nodes_of_type:
             # Send EOS back to input queue for other production nodes
@@ -50,16 +50,16 @@ class ProductionFilter(FilterBase):
                 properties=pika.BasicProperties(type=EOS_TYPE)
             )
 
-        logger.info(f"EOS received for Cleanup node {node_id}")
+        logger.debug(f"EOS received for Cleanup node {node_id}")
         self._eos_flags[node_id] = True
 
     def _send_eos(self, output_queues, channel):
         """
         Propagate the end of stream (EOS) to all output queues if all nodes have sent EOS.
         """
-        logger.info(f"Checking EOS flags: {self._eos_flags}")
-        logger.info(f"EOS to await: {self.eos_to_await}")
-        logger.info(f"EOS flags length: {len(self._eos_flags)}")
+        logger.debug(f"Checking EOS flags: {self._eos_flags}")
+        logger.debug(f"EOS to await: {self.eos_to_await}")
+        logger.debug(f"EOS flags length: {len(self._eos_flags)}")
         if all(self._eos_flags.get(node) for node in self._eos_flags) and len(self._eos_flags) == int(self.eos_to_await):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
             for queue in output_queues.values():
@@ -69,7 +69,7 @@ class ProductionFilter(FilterBase):
                     body=json.dumps({"node_id": self.node_id, "count": 0}),
                     properties=pika.BasicProperties(type=EOS_TYPE)
                 )
-                logger.info(f"EOS message sent to {queue}")
+                logger.debug(f"EOS message sent to {queue}")
             channel.stop_consuming()
 
     def process(self):

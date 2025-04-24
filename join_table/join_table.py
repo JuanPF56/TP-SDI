@@ -67,7 +67,7 @@ def main():
                 return
             if node_id not in eos_flags:
                 eos_flags[node_id] = True
-                logger.info(f"EOS received for node {node_id}.")
+                logger.debug(f"EOS received for node {node_id}.")
             if len(eos_flags) == int(eos_to_await):
                 logger.info("All nodes have sent EOS. Sending movies table to broadcast exchange.")    
                 channel.basic_publish(

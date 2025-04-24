@@ -154,11 +154,11 @@ class CleanupFilter(FilterBase):
         # Send EOS back to the input queue for other cleanup nodes
         # only if this is not the last node of type
         if not self._eos_flags.get(queue_name):
-            logger.info(f"EOS marked for source queue: {queue_name}")
+            logger.debug(f"EOS marked for source queue: {queue_name}")
             self._eos_flags[queue_name] = True
             count += 1
         
-        logger.info(f"EOS count for queue {queue_name}: {count}")
+        logger.debug(f"EOS count for queue {queue_name}: {count}")
         if count < self.nodes_of_type:
             logger.debug(f"Sending EOS back to input queue: {queue_name}")
             self.channel.basic_publish(
@@ -178,7 +178,7 @@ class CleanupFilter(FilterBase):
                         body=json.dumps({"node_id": self.node_id, "count": 0}),
                         properties=pika.BasicProperties(type=msg_type)
                     )
-                    logger.info(f"EOS sent to target queue: {target}")
+                    logger.debug(f"EOS sent to target queue: {target}")
             else:
                 self.channel.basic_publish(
                     exchange='',
@@ -186,7 +186,7 @@ class CleanupFilter(FilterBase):
                     body=json.dumps({"node_id": self.node_id, "count": 0}),
                     properties=pika.BasicProperties(type=msg_type)
                 )
-                logger.info(f"EOS sent to target queue: {targets}")
+                logger.debug(f"EOS sent to target queue: {targets}")
         
         if all(self._eos_flags.values()):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
@@ -240,7 +240,8 @@ class CleanupFilter(FilterBase):
 
             # TODO: Use a constant for batch size and assign different values for
             # different queues
-            batch_sz = 10000 if queue_name == self.source_queues[1] else self.batch_size
+            batch_sz = 10000 if queue_name == self.source_queues[1] else \
+                50 if queue_name == self.source_queues[0] else self.batch_size
 
             if self.batch and len(self.batch) >= batch_sz:
                 # Support single or multiple target queues

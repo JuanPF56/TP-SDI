@@ -39,10 +39,10 @@ class YearFilter(FilterBase):
             self._eos_flags[input_queue] = {}
         if node_id not in self._eos_flags[input_queue]:
             count += 1
-        logger.info(f"EOS received for node {node_id} from input queue {input_queue}")
+        logger.debug(f"EOS received for node {node_id} from input queue {input_queue}")
         self._eos_flags[input_queue][node_id] = True
         # If this isn't the last node, send the EOS message back to the input queue
-        logger.info(f"EOS count for node {node_id}: {count}")
+        logger.debug(f"EOS count for node {node_id}: {count}")
         if count < self.nodes_of_type: 
             # Send EOS back to input queue for other year nodes
             channel.basic_publish(
@@ -59,22 +59,22 @@ class YearFilter(FilterBase):
         """
         eos_nodes_len = len(self._eos_flags[input_queues["argentina"]]) + len(self._eos_flags[input_queues["arg_spain"]])
         all_eos_received = all(self._eos_flags[input_queue].get(node) for input_queue in input_queues.values() for node in self._eos_flags[input_queue])
-        logger.info(f"EOS flags: {self._eos_flags}")
-        logger.info(f"EOS to await: {self.eos_to_await}")
-        logger.info(f"EOS nodes length: {eos_nodes_len}")
-        logger.info(f"EOS all received: {all_eos_received}")
+        logger.debug(f"EOS flags: {self._eos_flags}")
+        logger.debug(f"EOS to await: {self.eos_to_await}")
+        logger.debug(f"EOS nodes length: {eos_nodes_len}")
+        logger.debug(f"EOS all received: {all_eos_received}")
         if all_eos_received and eos_nodes_len == int(self.eos_to_await):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
             self._send_eos(output_queues, channel)
             channel.stop_consuming()
         else:
-            logger.info("Not all nodes have sent EOS yet. Waiting...")
+            logger.debug("Not all nodes have sent EOS yet. Waiting...")
 
     def _send_eos(self, output_queues, channel):
         """
         Propagate the end of stream (EOS) to all output queues.
         """
-        logger.info("Sending EOS to output queues")
+        logger.debug("Sending EOS to output queues")
         for queue in output_queues.values():
             channel.basic_publish(
                 exchange='',
@@ -82,7 +82,7 @@ class YearFilter(FilterBase):
                 body=json.dumps({"node_id": self.node_id, "count": 0}),
                 properties=pika.BasicProperties(type=EOS_TYPE)
             )
-            logger.info(f"EOS message sent to {queue}")
+            logger.debug(f"EOS message sent to {queue}")
 
     def process(self):
         """

@@ -19,11 +19,11 @@ class JoinBatchRatings(JoinBatchBase):
                 except json.JSONDecodeError:
                     logger.error("Failed to decode EOS message")
                     return
-                logger.info(f"EOS message received: {data}")
+                logger.debug(f"EOS message received: {data}")
                 if node_id not in self._eos_flags:
                     count += 1
                     self._eos_flags[node_id] = True
-                    logger.info(f"EOS received for node {node_id}.")
+                    logger.debug(f"EOS received for node {node_id}.")
                 if len(self._eos_flags) == int(self.eos_to_await):
                     logger.info("All nodes have sent EOS. Sending EOS to output queue.")
                     self.channel.basic_publish(
@@ -33,11 +33,11 @@ class JoinBatchRatings(JoinBatchBase):
                         properties=pika.BasicProperties(type=msg_type)
                     )
                     ch.stop_consuming()
-                logger.info(f"EOS count for node {node_id}: {count}")
-                logger.info(f"Nodes of type: {self.nodes_of_type}")
+                logger.debug(f"EOS count for node {node_id}: {count}")
+                logger.debug(f"Nodes of type: {self.nodes_of_type}")
                 # If this isn't the last node, put the EOS message back to the queue for other nodes
                 if count < self.nodes_of_type:
-                    logger.info(f"Sending EOS back to input queue for node {node_id}.")
+                    logger.debug(f"Sending EOS back to input queue for node {node_id}.")
                     # Put the EOS message back to the queue for other nodes
                     self.channel.basic_publish(
                         exchange='',
@@ -86,7 +86,7 @@ class JoinBatchRatings(JoinBatchBase):
             self.receive_batch()
 
         except Exception as e:
-            self.log_info(f"[ERROR] Unexpected error in process_batch: {e}")
+            logger.error(f"[ERROR] Unexpected error in process_batch: {e}")
 
     def log_info(self, message):
         logger.info(message)
