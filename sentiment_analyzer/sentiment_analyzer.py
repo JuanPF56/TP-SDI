@@ -22,6 +22,7 @@ class SentimentAnalyzer:
         self._connect_to_rabbitmq()
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self._eos_flags = {}
+        self.node_id = int(os.getenv("NODE_ID", "1"))
 
     def _load_config(self, path: str):
         config = ConfigParser()
