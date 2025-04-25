@@ -27,8 +27,8 @@ class Client:
         self._query_responses_expected = QUERYS_EXPECTED
         self._results_thread = None
 
-        signal.signal(signal.SIGTERM, self._stop_client)
-        signal.signal(signal.SIGINT, self._stop_client)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
 
     def _connect(self, retries=MAX_RETRIES, delay=DELAY_BETWEEN_RETRIES):
         attempt = 0
@@ -47,7 +47,11 @@ class Client:
                 else:
                     logger.error("Max connection attempts reached. Check if server is up.")
 
-    def _stop_client(self, signum=None, frame=None):
+    def _signal_handler(self, signum, frame):
+        logger.info("Signal received, stopping client...")
+        self._stop_client()
+
+    def _stop_client(self):
         try:
             if self._results_thread:
                 self._results_thread.stop()
@@ -55,9 +59,14 @@ class Client:
                 logger.info("Result receiver thread stopped.")
             if self._socket:
                 self._was_closed = True
-                self._socket.shutdown(socket.SHUT_RDWR)
-                self._socket.close()
-                logger.info("Connection closed")
+                try:
+                    self._socket.shutdown(socket.SHUT_RDWR)
+                except OSError as e:
+                    logger.error(f"Socket already shutted")
+                finally:
+                    if self._socket:
+                        self._socket.close()
+                        logger.info("Socket closed.")
         except Exception as e:
             logger.error(f"Failed to close connection properly: {e}")
 
