@@ -24,6 +24,27 @@ class ProtocolGateway:
         """
         return self._client_socket is not None
     
+    def _stop_client(self) -> None:
+        """
+        Close the client socket
+        """
+        try:
+            if self._client_socket:
+                try:
+                    self._client_socket.shutdown(socket.SHUT_RDWR)
+                    logger.info("Client socket shut down")
+                except OSError as e:
+                    logger.error(f"Socket already shut down")
+                finally:
+                    if self._client_socket:
+                        self._client_socket.close()
+                        logger.info("Client socket closed")
+                        self._client_socket = None
+
+        except Exception as e:
+            logger.error(f"Failed to close client socket: {e}")
+            self._client_socket = None
+
     def receive_header(self) -> tuple | None:
         try:
             header = receiver.receive_data(self._client_socket, SIZE_OF_HEADER)
