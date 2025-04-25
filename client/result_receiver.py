@@ -2,8 +2,9 @@ import threading
 import json
 
 from protocol_client_gateway import ProtocolClient
-from common.logger import get_logger
+import common.exceptions as exceptions
 
+from common.logger import get_logger
 logger = get_logger("Results Receiver")
 
 class ResultReceiver(threading.Thread):
@@ -20,26 +21,39 @@ class ResultReceiver(threading.Thread):
 
     def run(self):
         logger.info("Starting result receiver thread...")
-        while not self._stop_flag.is_set():
-            result = self.protocol.receive_query_response()
-            if result is not None:
-                if result:
-                    if result.get("query") == "Q1":
-                        pretty_print_movies_with_genres(result)
-                    if result.get("query") == "Q2":
-                        pretty_print_top_spenders(result)
-                    if result.get("query") == "Q3":
-                        pretty_print_rating_extremes(result)
-                    if result.get("query") == "Q4":
-                        pretty_print_top_actors(result)
-                    if result.get("query") == "Q5":
-                        pretty_print_income_ratio_by_sentiment(result)
-                append_raw_result(result)
-                self.answers_received += 1
-                if self.answers_received >= self.answers_expected:
-                    logger.info("All expected results received.")
+        try:
+            while not self._stop_flag.is_set():
+                result = self.protocol.receive_query_response()
+                if result is not None:
+                    if result:
+                        if result.get("query") == "Q1":
+                            pretty_print_movies_with_genres(result)
+                        if result.get("query") == "Q2":
+                            pretty_print_top_spenders(result)
+                        if result.get("query") == "Q3":
+                            pretty_print_rating_extremes(result)
+                        if result.get("query") == "Q4":
+                            pretty_print_top_actors(result)
+                        if result.get("query") == "Q5":
+                            pretty_print_income_ratio_by_sentiment(result)
+                    append_raw_result(result)
+                    self.answers_received += 1
+                    if self.answers_received >= self.answers_expected:
+                        logger.info("All expected results received.")
+                        self._stop_flag.set()
+                        break
+                else:
+                    logger.warning("Received None result, possibly due to server disconnection.")
                     self._stop_flag.set()
                     break
+
+        except exceptions.ServerNotConnectedError as e:
+            logger.error("Server not connected. Exiting thread.")
+            self._stop_flag.set()
+        
+        except Exception as e:
+            logger.error(f"An error occurred while receiving results: {e}")
+            self._stop_flag.set()
 
     def stop(self):
         self._stop_flag.set()

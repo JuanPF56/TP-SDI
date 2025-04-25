@@ -64,8 +64,8 @@ class Gateway():
         except Exception as e:
             logger.error(f"Failed to create healthcheck file: {e}")
 
-        signal.signal(signal.SIGTERM, self._stop_server)
-        signal.signal(signal.SIGINT, self._stop_server)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
 
     def run(self):
         while not self._was_closed:
@@ -179,30 +179,49 @@ class Gateway():
             logger.error("Client socket is not connected")
             return
 
-    def _stop_server(self, signum, frame):
-        logger.info("Stopping server...")
-        self._was_closed = True
-        self._close_connected_clients()
-        self.result_dispatcher.stop()
-        self.result_dispatcher.join()
+    def _signal_handler(self, signum, frame):
+        logger.info("Signal received, stopping server...")
+        self._stop_server()
+
+    def _stop_server(self):
         try:
-            self._gateway_socket.shutdown(socket.SHUT_RDWR)
-        except OSError as e:
-            logger.error(f"Error shutting down server socket: {e}")
-        finally:
-            self._gateway_socket.close()
-            self.rabbitmq_connection.close()
-            try:
-                os.remove("/tmp/gateway_ready")
-            except FileNotFoundError:
-                pass
-            logger.info("Server stopped.")
+            if self.result_dispatcher:
+                self.result_dispatcher.stop()
+                self.result_dispatcher.join()
+                logger.info("Result dispatcher thread stopped.")
+            
+            if self.rabbitmq_channel:
+                self.rabbitmq_channel.close()
+                logger.info("RabbitMQ channel closed.")
+
+            if self.rabbitmq_connection:
+                self.rabbitmq_connection.close()
+                logger.info("RabbitMQ connection closed.")
+
+            if self._gateway_socket:
+                self._was_closed = True
+                self._close_connected_clients()
+                try:
+                    self._gateway_socket.shutdown(socket.SHUT_RDWR)
+                except OSError as e:
+                    logger.error(f"Socket already shut down")
+                finally:
+                    if self._gateway_socket:
+                        self._gateway_socket.close()
+                        logger.info("Gateway socket closed.")
+                    try:
+                        os.remove("/tmp/gateway_ready")
+                    except FileNotFoundError:
+                        pass
+                    logger.info("Server stopped.")
+
+        except Exception as e:
+            logger.error(f"Failed to close server properly: {e}")
 
     def _close_connected_clients(self):
         for client in self._clients_conected:
             try:
-                client.shutdown(socket.SHUT_RDWR)
-                client.close()
+                client._stop_client()
             except Exception as e:
                 logger.error(f"Error closing client socket: {e}")
         self._clients_conected.clear()

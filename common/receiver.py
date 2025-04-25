@@ -1,5 +1,7 @@
 import socket
-import logging
+
+from common.logger import get_logger
+logger = get_logger("Receiver")
 
 def receive_data(socket_sender: socket.socket, num_bytes: int) -> bytes:
     """
@@ -10,10 +12,10 @@ def receive_data(socket_sender: socket.socket, num_bytes: int) -> bytes:
         while len(data) < num_bytes:
             chunk = socket_sender.recv(num_bytes - len(data))
             if not chunk:
-                logging.error("Connection closed by sender")
+                logger.error("Connection closed by sender")
                 raise ConnectionError("Connection closed by sender")
             data += chunk
     except (OSError, socket.error) as e:
-        logging.error(f"Socket receive error: {e}")
+        logger.error(f"Socket receive error: {e}")
         raise ConnectionError(f"Receive failed: {e}")
     return data

@@ -10,6 +10,8 @@ from utils import download_dataset, send_datasets_to_server
 
 from result_receiver import ResultReceiver
 
+import common.exceptions as exceptions
+
 MAX_RETRIES = 5
 DELAY_BETWEEN_RETRIES = 10
 
@@ -99,6 +101,12 @@ class Client:
                 logger.info("Datasets sent successfully.")
                 
                 logger.info("Waiting for pending results...")
+                self._results_thread.join()
+                break
+
+            except exceptions.ServerNotConnectedError:
+                logger.error("Connection closed by server")
+                self._results_thread.stop()
                 self._results_thread.join()
                 break
 

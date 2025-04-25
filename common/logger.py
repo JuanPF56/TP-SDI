@@ -10,4 +10,6 @@ def get_logger(name):
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
+    logger.propagate = False # Prevent propagation to the root logger
+
     return logger
