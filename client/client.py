@@ -10,6 +10,8 @@ from utils import download_dataset, send_datasets_to_server
 
 from result_receiver import ResultReceiver
 
+import common.exceptions as exceptions
+
 MAX_RETRIES = 5
 DELAY_BETWEEN_RETRIES = 10
 
@@ -27,8 +29,8 @@ class Client:
         self._query_responses_expected = QUERYS_EXPECTED
         self._results_thread = None
 
-        signal.signal(signal.SIGTERM, self._stop_client)
-        signal.signal(signal.SIGINT, self._stop_client)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
 
     def _connect(self, retries=MAX_RETRIES, delay=DELAY_BETWEEN_RETRIES):
         attempt = 0
@@ -47,6 +49,10 @@ class Client:
                 else:
                     logger.error("Max connection attempts reached. Check if server is up.")
 
+    def _signal_handler(self, signum, frame):
+        logger.info("Signal received, stopping client...")
+        self._stop_client()
+
     def _stop_client(self):
         try:
             if self._results_thread:
@@ -55,9 +61,14 @@ class Client:
                 logger.info("Result receiver thread stopped.")
             if self._socket:
                 self._was_closed = True
-                self._socket.shutdown(socket.SHUT_RDWR)
-                self._socket.close()
-                logger.info("Connection closed")
+                try:
+                    self._socket.shutdown(socket.SHUT_RDWR)
+                except OSError as e:
+                    logger.error(f"Socket already shutted")
+                finally:
+                    if self._socket:
+                        self._socket.close()
+                        logger.info("Socket closed.")
         except Exception as e:
             logger.error(f"Failed to close connection properly: {e}")
 
@@ -90,6 +101,12 @@ class Client:
                 logger.info("Datasets sent successfully.")
                 
                 logger.info("Waiting for pending results...")
+                self._results_thread.join()
+                break
+
+            except exceptions.ServerNotConnectedError:
+                logger.error("Connection closed by server")
+                self._results_thread.stop()
                 self._results_thread.join()
                 break
 

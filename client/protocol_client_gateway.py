@@ -1,5 +1,6 @@
 import common.receiver as receiver
 import common.sender as sender
+import common.exceptions as exceptions
 import socket
 
 import os
@@ -17,17 +18,10 @@ class ProtocolClient:
     def __init__(self, socket: socket.socket, max_batch_size):
         self._socket = socket
         self._max_batch_size = max_batch_size
+        self._connected = True
 
-    def _is_connected(self) -> bool:
-        """
-        Check if the socket is connected.
-        This is a simple check to see if the socket is still open.
-        """
-        try:
-            self._socket.getpeername()
-            return True
-        except socket.error:
-            return False
+    def _is_connected(self):
+        return self._connected
 
     def send_dataset(self, dataset_path, dataset_name, message_type_str):
         logger.debug(f"Sending dataset {dataset_name} as {message_type_str}...")
@@ -56,7 +50,7 @@ class ProtocolClient:
                                 chunk = line_bytes[start:start + safe_end]
 
                                 if current_payload and len(current_payload) + 1 + len(chunk) > max_payload_size:
-                                    self._send_single_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                    self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
                                     batch_number += 1
                                     current_payload = bytearray()
 
@@ -66,14 +60,14 @@ class ProtocolClient:
                         else:
                             extra_bytes = b"\n" if current_payload else b""
                             if len(current_payload) + len(extra_bytes) + len(line_bytes) > max_payload_size:
-                                self._send_single_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
                                 batch_number += 1
                                 current_payload = bytearray()
 
                             current_payload += line_bytes
 
                     if current_payload:
-                        self._send_single_batch(message_type_str, batch_number, current_payload, is_last=True)
+                        self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=True)
                 
                 else:
                     reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
@@ -85,14 +79,19 @@ class ProtocolClient:
                         encoded_line = (line + "\n").encode("utf-8")
 
                         if len(current_payload) + len(encoded_line) > max_payload_size:
-                            self._send_single_batch(message_type_str, batch_number, current_payload, is_last=False)
+                            self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
                             batch_number += 1
                             current_payload = bytearray()
 
                         current_payload += encoded_line
 
                     if current_payload:
-                        self._send_single_batch(message_type_str, batch_number, current_payload, is_last=True)
+                        self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=True)
+
+        except exceptions.ServerNotConnectedError as e:
+            logger.error(f"Connection closed by server: {e}")
+            self._connected = False
+            raise exceptions.ServerNotConnectedError("Connection closed by server")
 
         except Exception as e:
             logger.error(f"Error reading/sending CSV: {e}")
@@ -113,6 +112,14 @@ class ProtocolClient:
                 end -= 1
         return max_len  # fallback (shouldn't reach)
 
+    def _safe_send_batch(self, *args, **kwargs):
+        try:
+            self._send_single_batch(*args, **kwargs)
+        except exceptions.ServerNotConnectedError:
+            logger.error("Connection closed by server during batch send.")
+            self._connected = False
+            raise
+
     def _send_single_batch(self, message_type_str, batch_number, payload: bytes, is_last: bool):
         tipo_de_mensaje = TIPO_MENSAJE[message_type_str]
         is_last_batch = 1 if is_last else 0
@@ -122,7 +129,13 @@ class ProtocolClient:
             raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
 
         logger.debug(f"{message_type_str} - Sending batch {batch_number}")
-        self.send_batch(header, payload)
+
+        try:
+            self.send_batch(header, payload)
+        except exceptions.ServerNotConnectedError:
+            logger.error(f"Connection closed by server")
+            self._connected = False
+            raise exceptions.ServerNotConnectedError("Connection closed by server")
 
     def send_batch(self, header: bytes, payload: bytes):
         try:
@@ -131,19 +144,33 @@ class ProtocolClient:
             if len(batch_data) > self._max_batch_size:
                 raise ValueError(f"Batch size {len(batch_data)} exceeds max allowed {self._max_batch_size}")
             
-            sender.send(self._socket, header)
-            # logger.info(f"Header sent: {header}")
-            sender.send(self._socket, payload)
-            # logger.info(f"Payload sent: {payload}\n(size={len(payload)})")
+            try:
+                sender.send(self._socket, header)
+                # logger.info(f"Header sent: {header}")
+            except ConnectionError as e:
+                logger.error(f"Connection closed by server")
+                self._connected = False
+                raise exceptions.ServerNotConnectedError("Connection closed by server")
+            
+            try:
+                sender.send(self._socket, payload)
+                # logger.info(f"Payload sent: {payload}\n(size={len(payload)})")
+            except ConnectionError as e:
+                logger.error(f"Connection closed by server")
+                self._connected = False
+                raise exceptions.ServerNotConnectedError("Connection closed by server")
 
         except Exception as e:
+            if isinstance(e, exceptions.ServerNotConnectedError):
+                raise
             logger.error(f"Error sending CSV batch: {e}")
 
+    """
     def receive_confirmation(self):
-        """
-        Receives a confirmation message from the server.
-        The confirmation message is expected to be a 1-byte unsigned integer.
-        """
+    
+        # Receives a confirmation message from the server.
+        # The confirmation message is expected to be a 1-byte unsigned integer.
+
         logger.info("Awaiting confirmation from server...")
         try:
             data = receiver.receive_data(self._socket, SIZE_OF_UINT8)
@@ -153,11 +180,18 @@ class ProtocolClient:
         except Exception as e:
             logger.error(f"Error receiving confirmation: {e}")
             return None
-        
+    """
+
     def receive_query_response(self) -> dict:
         logger.info("Awaiting query response from server...")
         # Recibir header
-        header_bytes = receiver.receive_data(self._socket, SIZE_OF_HEADER_RESULTS)
+        try:
+            header_bytes = receiver.receive_data(self._socket, SIZE_OF_HEADER_RESULTS)
+        except ConnectionError as e:
+            logger.error(f"Connection closed by server")
+            self._connected = False
+            raise exceptions.ServerNotConnectedError("Connection closed by server")
+        
         if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
             return None
 
@@ -171,7 +205,13 @@ class ProtocolClient:
         logger.debug(f"Received payload length: {payload_len}")
 
         # Recibir payload
-        payload_bytes = receiver.receive_data(self._socket, payload_len)
+        try:
+            payload_bytes = receiver.receive_data(self._socket, payload_len)
+        except ConnectionError as e:
+            logger.error(f"Connection closed by server")
+            self._connected = False
+            raise exceptions.ServerNotConnectedError("Connection closed by server")
+
         if not payload_bytes or len(payload_bytes) != payload_len:
             return None
         logger.debug(f"Received payload size: {len(payload_bytes)}")

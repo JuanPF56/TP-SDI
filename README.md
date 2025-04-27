@@ -66,10 +66,11 @@ python3 download_datasets.py [--test <cant_lineas>]
 - Si se pasa el flag `--test`, se recortan los datasets a la cantidad de líneas especificada.
 - Los archivos se guardan en la carpeta `./datasets_for_test`.
 
-> 💡 **Requiere instalación de `kagglehub`**:
+> 💡 **Requiere instalación de `kagglehub` y `pandas`**:
 >
 > ```bash
 > pip install kagglehub
+> pip install pandas
 > ```
 
 ---
