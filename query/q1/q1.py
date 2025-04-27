@@ -16,7 +16,6 @@ class ArgSpainGenreQuery:
     def __init__(self, config):
         self.config = config
         self.results = []
-        self.batch_size = 100  # Set your desired batch size
 
         rabbitmq_host = self.config["DEFAULT"].get("rabbitmq_host", "rabbitmq")
         input_queue = self.config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")

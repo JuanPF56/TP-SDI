@@ -185,7 +185,7 @@ class YearFilter(FilterBase):
                         body=json.dumps(self.processed_batch["arg_post_2000"]),
                         properties=pika.BasicProperties(type=msg_type)
                     )
-                    self.processed_batch["arg_post_2000"] = []  # Clear the batch after sending
+                    self.processed_batch["arg_post_2000"] = [] 
                     logger.debug(f"Sent entire batch to {output_queues['arg_post_2000']}")
 
                 if self.processed_batch["arg_spain_2000s"] and len(self.processed_batch["arg_spain_2000s"]) >= self.batch_size:
@@ -196,7 +196,7 @@ class YearFilter(FilterBase):
                         body=json.dumps(self.processed_batch["arg_spain_2000s"]),
                         properties=pika.BasicProperties(type=msg_type)
                     )
-                    self.processed_batch["arg_spain_2000s"] = []  # Clear the batch after sending
+                    self.processed_batch["arg_spain_2000s"] = []  
                     logger.debug(f"Sent entire batch to {output_queues['arg_spain_2000s']}")
 
                 ch.basic_ack(delivery_tag=method.delivery_tag)
