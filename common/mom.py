@@ -7,8 +7,8 @@ logger = logging.getLogger("RabbitMQProcessor")
 class RabbitMQProcessor:
     def __init__(self, config, source_queues, target_queues, rabbitmq_host="rabbitmq"):
         self.config = config
-        self.source_queues = source_queues
-        self.target_queues = target_queues
+        self.source_queues = source_queues if isinstance(source_queues, list) else [source_queues]
+        self.target_queues = target_queues 
         self.rabbitmq_host = rabbitmq_host
         self.connection = None
         self.channel = None
@@ -29,13 +29,19 @@ class RabbitMQProcessor:
             for queue in self.source_queues:
                 self.channel.queue_declare(queue=queue)
 
-            for target in self.target_queues.values():
-                if isinstance(target, list):
-                    for queue in target:
-                        self.channel.queue_declare(queue=queue)
-                else:
-                    self.channel.queue_declare(queue=target)
-
+            # Handle target_queues being a single item, list, or dict
+            if isinstance(self.target_queues, str):
+                self.channel.queue_declare(queue=self.target_queues)
+            elif isinstance(self.target_queues, list):
+                for queue in self.target_queues:
+                    self.channel.queue_declare(queue=queue)
+            elif isinstance(self.target_queues, dict):
+                for target in self.target_queues.values():
+                    if isinstance(target, list):
+                        for queue in target:
+                            self.channel.queue_declare(queue=queue)
+                    else:
+                        self.channel.queue_declare(queue=target)
             return True
         except pika.exceptions.AMQPConnectionError as e:
             logger.error(f"Error al conectar a RabbitMQ: {e}")
@@ -63,6 +69,7 @@ class RabbitMQProcessor:
 
         logger.info("Esperando mensajes...")
         self.channel.start_consuming()
+        
     def publish(self, queue, message, msg_type=None):
         """Publica un mensaje en la cola especificada."""
         logger.info(f"Publicando mensaje en la cola: {queue}, tipo: {msg_type}", extra={"message": message})
