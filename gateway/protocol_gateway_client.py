@@ -12,6 +12,8 @@ from common.protocol import SIZE_OF_HEADER, SIZE_OF_UINT8, TIPO_MENSAJE
 TIPO_MENSAJE_INVERSO = {v: k for k, v in TIPO_MENSAJE.items()}
 
 from common.decoder import Decoder
+TIMEOUT_HEADER = 1
+TIMEOUT_PAYLOAD = 5
 
 class ProtocolGateway:
     def __init__(self, client_socket: socket.socket):
@@ -22,7 +24,7 @@ class ProtocolGateway:
         """
         Check if the client is connected
         """
-        return self._client_socket is not None
+        return self._client_socket is not None and self._client_socket.fileno() != -1
     
     def _stop_client(self) -> None:
         """
@@ -30,6 +32,7 @@ class ProtocolGateway:
         """
         try:
             if self._client_socket:
+                logger.info("Closing client socket")
                 try:
                     self._client_socket.shutdown(socket.SHUT_RDWR)
                     logger.info("Client socket shut down")
@@ -46,10 +49,20 @@ class ProtocolGateway:
             self._client_socket = None
 
     def receive_header(self) -> tuple | None:
+        """
+        Receive and unpack the header from the client.
+        """
         try:
-            header = receiver.receive_data(self._client_socket, SIZE_OF_HEADER)
+            header = receiver.receive_data(
+                self._client_socket,
+                SIZE_OF_HEADER,
+                connected_checker=self._client_is_connected, 
+                timeout=TIMEOUT_HEADER
+            )
+            
             if not header or len(header) != SIZE_OF_HEADER:
                 logger.error("Invalid or incomplete header received")
+                self._stop_client()
                 return None
 
             type_of_batch, current_batch, is_last_batch, payload_len = struct.unpack(">BI B I", header)
@@ -57,26 +70,57 @@ class ProtocolGateway:
 
             if message_code is None:
                 logger.error(f"Unknown message code: {type_of_batch}")
+                self._stop_client()
                 return None
 
             return message_code, current_batch, is_last_batch, payload_len
 
+        except ConnectionError as e:
+            logger.error(f"Connection error while receiving header: {e}")
+            self._stop_client()
+            return None
+
         except Exception as e:
-            logger.error(f"Error receiving header: {e}")
+            logger.error(f"Unexpected error receiving header: {e}")
+            self._stop_client()
             return None
             
-    def receive_payload(self, payload_len: int) -> bytes:
+    def receive_payload(self, payload_len: int) -> bytes | None:
         """
         Receive the payload from the client
         """
-        if payload_len > 0:
-            data = receiver.receive_data(self._client_socket, payload_len)
-            if not data or len(data) != payload_len:
-                logger.error("Invalid or incomplete data received")
-                return None
-            return data
-        else:
+        if payload_len <= 0:
             logger.error("Payload length is zero")
+            return None
+
+        try:
+            data = receiver.receive_data(
+                self._client_socket,
+                payload_len,
+                connected_checker=self._client_is_connected, 
+                timeout=TIMEOUT_PAYLOAD
+            )
+
+            if data is None:
+                logger.error("No data received. Client may have disconnected.")
+                self._stop_client()
+                return None
+
+            if len(data) != payload_len:
+                logger.error(f"Expected {payload_len} bytes, but received {len(data)} bytes")
+                self._stop_client()
+                return None
+
+            return data
+
+        except ConnectionError as e:
+            logger.error(f"Connection error while receiving payload: {e}")
+            self._stop_client()
+            return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error receiving payload: {e}")
+            self._stop_client()
             return None
     
     def process_payload(self, message_code: str, payload: bytes) -> list | None:

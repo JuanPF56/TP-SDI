@@ -14,6 +14,9 @@ logger = get_logger("Protocol Client")
 
 from common.protocol import TIPO_MENSAJE, SIZE_OF_HEADER, SIZE_OF_UINT8, SIZE_OF_HEADER_RESULTS
 
+TIMEOUT_ANSWER_HEADER = 3600 # 1 hour (longest timeout for a query)
+TIMEOUT_ANSWER_PAYLOAD = 5
+
 class ProtocolClient:
     def __init__(self, socket: socket.socket, max_batch_size):
         self._socket = socket
@@ -182,13 +185,19 @@ class ProtocolClient:
             return None
     """
 
-    def receive_query_response(self) -> dict:
+    def receive_query_response(self) -> dict | None:
         logger.info("Awaiting query response from server...")
+
         # Recibir header
         try:
-            header_bytes = receiver.receive_data(self._socket, SIZE_OF_HEADER_RESULTS)
+            header_bytes = receiver.receive_data(
+                self._socket,
+                SIZE_OF_HEADER_RESULTS,
+                connected_checker=self._is_connected, 
+                timeout=TIMEOUT_ANSWER_HEADER
+            )
         except ConnectionError as e:
-            logger.error(f"Connection closed by server")
+            logger.error("Connection closed by server")
             self._connected = False
             raise exceptions.ServerNotConnectedError("Connection closed by server")
         
@@ -200,21 +209,29 @@ class ProtocolClient:
         if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
             logger.error(f"Unexpected message type: {tipo_mensaje}")
             return None
+
         logger.debug(f"Received message type: {TIPO_MENSAJE['RESULTS']}")
         logger.debug(f"Received query ID: {query_id}")
         logger.debug(f"Received payload length: {payload_len}")
 
         # Recibir payload
         try:
-            payload_bytes = receiver.receive_data(self._socket, payload_len)
+            payload_bytes = receiver.receive_data(
+                self._socket,
+                payload_len,
+                connected_checker=self._is_connected, 
+                timeout=TIMEOUT_ANSWER_PAYLOAD
+            )
         except ConnectionError as e:
-            logger.error(f"Connection closed by server")
+            logger.error("Connection closed by server")
             self._connected = False
             raise exceptions.ServerNotConnectedError("Connection closed by server")
 
         if not payload_bytes or len(payload_bytes) != payload_len:
             return None
+
         logger.debug(f"Received payload size: {len(payload_bytes)}")
+
         try:
             result = json.loads(payload_bytes.decode())
             logger.debug(f"Received JSON response: {result}")
@@ -222,3 +239,23 @@ class ProtocolClient:
         except json.JSONDecodeError:
             logger.error("Failed to decode JSON response")
             return None
+        
+    def disconnect(self):
+        logger.info("Disconnecting from server...")
+        tipo_de_mensaje = TIPO_MENSAJE["DISCONNECT"]
+        batch_number = 0
+        payload = b""
+        is_last = True
+        header = struct.pack(">BI B I", tipo_de_mensaje, batch_number, is_last, len(payload))
+
+        if len(header) != SIZE_OF_HEADER:
+            raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
+
+        try:
+            sender.send(self._socket, header)
+            logger.info("Disconnection message sent")
+            
+        except ConnectionError as e:
+            logger.error(f"Connection closed by server")
+            self._connected = False
+            raise exceptions.ServerNotConnectedError("Connection closed by server")

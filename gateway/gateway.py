@@ -93,20 +93,28 @@ class Gateway():
                 header = protocol_gateway.receive_header()
                 if header is None:
                     logger.error("Header is None")
+                    protocol_gateway._stop_client()
                     break
 
                 message_code, current_batch, is_last_batch, payload_len = header
                 logger.debug(f"Message code: {message_code}")
                 if message_code not in TIPO_MENSAJE:
                     logger.error(f"Invalid message code: {message_code}")
-                    protocol_gateway.send_confirmation(ERROR)
+                    protocol_gateway._stop_client()
+                    break
+
+                if message_code == "DISCONNECT":
+                    logger.info("Client requested disconnection.")
+                    protocol_gateway._stop_client()
                     break
 
                 logger.debug(f"{message_code} - Receiving batch {current_batch}")
                 payload = protocol_gateway.receive_payload(payload_len)
                 if not payload or len(payload) != payload_len:
                     logger.error("Failed to receive full payload")
+                    protocol_gateway._stop_client()
                     break
+                logger.debug(f"Received payload of length {len(payload)}")
 
                 processed_data = protocol_gateway.process_payload(message_code, payload)
                 if processed_data is None:
