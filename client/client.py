@@ -55,10 +55,6 @@ class Client:
 
     def _stop_client(self):
         try:
-            if self._results_thread:
-                self._results_thread.stop()
-                self._results_thread.join()
-                logger.info("Result receiver thread stopped.")
             if self._socket:
                 self._was_closed = True
                 try:
@@ -69,6 +65,10 @@ class Client:
                     if self._socket:
                         self._socket.close()
                         logger.info("Socket closed.")
+            if self._results_thread:
+                self._results_thread.stop()
+                self._results_thread.join()
+                logger.info("Result receiver thread stopped.")
         except Exception as e:
             logger.error(f"Failed to close connection properly: {e}")
 
