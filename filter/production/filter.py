@@ -122,7 +122,6 @@ class ProductionFilter(FilterBase):
 
         try:
             movies_batch = json.loads(body)
-            logger.info(f"Received batch of {len(movies_batch)} movies from {queue_name}")
             if not isinstance(movies_batch, list):
                 logger.warning("Expected a list of movies (batch), skipping.")
                 self.rabbitmq_processor.acknowledge(method)
@@ -131,7 +130,6 @@ class ProductionFilter(FilterBase):
                 country_dicts = movie.get("production_countries", [])
                 country_names = [c.get("name") for c in country_dicts if "name" in c]
 
-                logger.info(f"Processing movie: {movie.get('original_title')}")
                 logger.debug(f"Production countries: {country_names}")
 
                 if "Argentina" in country_names:
