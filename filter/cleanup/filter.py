@@ -208,7 +208,7 @@ class CleanupFilter(FilterBase):
         Callback function to handle incoming messages from RabbitMQ.
         Handles EOS and batch message processing/publishing.
         """
-        msg_type = properties.type if properties and properties.type else "UNKNOWN"
+        msg_type = self._get_message_type(properties)
 
         if msg_type == EOS_TYPE:
             self._handle_eos(body, queue_name, method, msg_type)

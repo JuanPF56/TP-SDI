@@ -86,7 +86,7 @@ class ProductionFilter(FilterBase):
         Callback function to process batched messages from the input queue.
         Filters movies by production countries and sends them in batches to the appropriate queues.
         """
-        msg_type = properties.type if properties and properties.type else "UNKNOWN"
+        msg_type = self._get_message_type(properties)
 
         if msg_type == EOS_TYPE:
             self._mark_eos_received(body, queue_name)

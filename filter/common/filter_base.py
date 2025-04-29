@@ -63,5 +63,8 @@ class FilterBase:
             self.rabbitmq_processor.close()
             logger.info("Connection closed.")
 
+    def _get_message_type(self, properties):
+        return properties.type if properties and properties.type else "UNKNOWN"
+
     def process(self):
         raise NotImplementedError("Subclasses should implement this.")

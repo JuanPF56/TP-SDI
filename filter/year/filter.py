@@ -103,7 +103,7 @@ class YearFilter(FilterBase):
 
 
     def callback(self, ch, method, properties, body, input_queue):
-        msg_type = properties.type if properties and properties.type else "UNKNOWN"
+        msg_type = self._get_message_type(properties)
 
         if msg_type == EOS_TYPE:
             self._mark_eos_received(body, input_queue)
