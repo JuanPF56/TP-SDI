@@ -158,17 +158,6 @@ class CleanupFilter(FilterBase):
         self._mark_eos_received(body, queue_name, msg_type)
         self.rabbitmq_processor.acknowledge(method)
 
-    def _decode_body(self, body, queue_name):
-        try:
-            data_batch = json.loads(body)
-            if not isinstance(data_batch, list):
-                logger.warning(f"Expected a batch (list), got {type(data_batch)}. Skipping.")
-                return None
-            return data_batch
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error in message from {queue_name}: {e}")
-            return None
-
     def _process_cleanup_batch(self, data_batch, queue_name):
         if queue_name == self.source_queues[0]:
             self.batch.extend([self.clean_movie(d) for d in data_batch])

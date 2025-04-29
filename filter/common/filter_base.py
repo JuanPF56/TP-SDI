@@ -1,4 +1,5 @@
 import os
+import json
 
 import logging
 
@@ -65,6 +66,18 @@ class FilterBase:
 
     def _get_message_type(self, properties):
         return properties.type if properties and properties.type else "UNKNOWN"
+    
+    def _decode_body(self, body, queue_name):
+        logger = logging.getLogger(self.__class__.__name__)
+        try:
+            data_batch = json.loads(body)
+            if not isinstance(data_batch, list):
+                logger.error(f"Expected a batch (list), got {type(data_batch)}. Skipping.")
+                return None
+            return data_batch
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in message from {queue_name}: {e}")
+            return None
 
     def process(self):
         raise NotImplementedError("Subclasses should implement this.")

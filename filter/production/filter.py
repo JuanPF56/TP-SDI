@@ -113,11 +113,11 @@ class ProductionFilter(FilterBase):
             return
 
         try:
-            movies_batch = json.loads(body)
-            if not isinstance(movies_batch, list):
-                logger.warning("Expected a list of movies (batch), skipping.")
+            movies_batch = self._decode_body(body, queue_name)
+            if not movies_batch:
                 self.rabbitmq_processor.acknowledge(method)
                 return
+            
             for movie in movies_batch:
                 country_dicts = movie.get("production_countries", [])
                 country_names = [c.get("name") for c in country_dicts if "name" in c]

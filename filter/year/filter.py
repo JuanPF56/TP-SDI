@@ -120,9 +120,9 @@ class YearFilter(FilterBase):
             return
 
         try:
-            movies_batch = json.loads(body)
-            if not isinstance(movies_batch, list):
-                logger.warning("❌ Expected a list (batch) of movies, skipping.")
+            movies_batch = self._decode_body(body, input_queue)
+            if not movies_batch:
+                logger.error("Expected a list (batch) of movies, skipping..")
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
