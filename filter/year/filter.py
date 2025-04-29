@@ -12,7 +12,6 @@ class YearFilter(FilterBase):
     def __init__(self, config):
         super().__init__(config)
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1")) * 2  # Two queues to await EOS from
-        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
 
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
@@ -175,22 +174,8 @@ class YearFilter(FilterBase):
         - movies_arg_post_2000: Argentine-only movies after 2000
         - movies_arg_spain_2000s: Argentina+Spain movies between 2000-2009
         """
-        for key, value in self.config["DEFAULT"].items():
-            logger.info(f"Config: {key}: {value}")
-            
-        if not self.rabbitmq_processor.connect():
-            logger.error("Error al conectar a RabbitMQ. Saliendo.")
-            return
-        
-        try:
-            logger.info("Starting message consumption...")
-            self.rabbitmq_processor.consume(self.callback)
-        except KeyboardInterrupt:
-            logger.info("Graceful shutdown on SIGINT")
-            self.rabbitmq_processor.close()  # Use the processor's close method
-        except Exception as e:
-            logger.error(f"Error during consuming: {e}")
-            self.rabbitmq_processor.close()  # Use the processor's close method
+        logger.info("YearFilter is starting up")
+        self.run_consumer()
 
     def extract_year(self, date_str):
         try:

@@ -1,5 +1,7 @@
 import os
 
+import logging
+
 from common.mom import RabbitMQProcessor
 
 EOS_TYPE = "EOS" 
@@ -31,6 +33,35 @@ class FilterBase:
             source_queues=self.source_queues,
             target_queues=self.target_queues
         )
+
+    def run_consumer(self):
+        logger = logging.getLogger(self.__class__.__name__)
+        
+        logger.info("Node is online")
+        logger.info(f"Configuration loaded successfully")
+        for key, value in self.config["DEFAULT"].items():
+            logger.info(f"Config: {key}: {value}")
+
+        if not self.rabbitmq_processor.connect():
+            logger.error("Error connecting to RabbitMQ. Exiting...")
+            return
+
+        try:
+            logger.info("Starting message consumption...")
+            self.rabbitmq_processor.consume(self.callback)
+
+        except KeyboardInterrupt:
+            logger.info("Shutting down gracefully...")
+            self.rabbitmq_processor.stop_consuming()
+
+        except Exception as e:
+            logger.error(f"Error during consumption: {e}")
+            self.rabbitmq_processor.stop_consuming()
+
+        finally:
+            logger.info("Closing RabbitMQ connection...")
+            self.rabbitmq_processor.close()
+            logger.info("Connection closed.")
 
     def process(self):
         raise NotImplementedError("Subclasses should implement this.")

@@ -1,6 +1,5 @@
 import configparser
 import json
-import os
 
 from common.logger import get_logger
 logger = get_logger("Filter-Cleanup")
@@ -224,24 +223,11 @@ class CleanupFilter(FilterBase):
 
 
     def process(self):
+        """
+        Main processing function for the CleanupFilter.
+        """
         logger.info("CleanupFilter is starting up")
-        
-        for key, value in self.config["DEFAULT"].items():
-            logger.info(f"Config: {key}: {value}")
-            
-        if not self.rabbitmq_processor.connect():
-            logger.error("Error al conectar a RabbitMQ. Saliendo.")
-            return
-        
-        try:
-            logger.info("Starting message consumption...")
-            self.rabbitmq_processor.consume(self.callback)
-        except KeyboardInterrupt:
-            logger.info("Graceful shutdown on SIGINT")
-            self.rabbitmq_processor.close()  # Use the processor's close method
-        except Exception as e:
-            logger.error(f"Error during consuming: {e}")
-            self.rabbitmq_processor.close()  # Use the processor's close method
+        self.run_consumer()
 
 
 if __name__ == "__main__":

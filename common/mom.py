@@ -127,5 +127,6 @@ class RabbitMQProcessor:
         Cierra la conexión de RabbitMQ.
         """
         if self.connection and self.connection.is_open:
+            self.channel.close()
             self.connection.close()
             logger.info("Conexión cerrada con RabbitMQ.")

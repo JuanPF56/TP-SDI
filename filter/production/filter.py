@@ -1,6 +1,5 @@
 import configparser
 import json
-import os
 
 from common.logger import get_logger
 logger = get_logger("Filter-Production")
@@ -176,25 +175,8 @@ class ProductionFilter(FilterBase):
         - movies_solo: for movies produced in only one country
         - movies_arg_spain: for movies produced in both Argentina and Spain
         """
-        logger.info("Node is online")
-        logger.info("Configuration loaded successfully")
-        for key, value in self.config["DEFAULT"].items():
-            logger.info(f"{key}: {value}")
-
-        if not self.rabbitmq_processor.connect():
-            logger.error("Error al conectar a RabbitMQ. Saliendo.")
-            return
-
-        try:
-            logger.info("Starting message consumption...")
-            self.rabbitmq_processor.consume(self.callback)
-        except KeyboardInterrupt:
-            logger.info("Shutting down gracefully...")
-            self.rabbitmq_processor.stop_consuming()
-        finally:
-            logger.info("Closing RabbitMQ connection...")
-            self.rabbitmq_processor.close()
-            logger.info("Connection closed.")
+        logger.info("ProductionFilter is starting up")
+        self.run_consumer()
 
 
 if __name__ == "__main__":
