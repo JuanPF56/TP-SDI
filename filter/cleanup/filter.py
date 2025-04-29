@@ -217,7 +217,6 @@ class CleanupFilter(FilterBase):
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error in message from {queue_name}: {e}")
-            logger.error(f"Raw message: {body[:100]}...")
         except Exception as e:
             logger.error(f"Error processing message from {queue_name}: {e}")
 
