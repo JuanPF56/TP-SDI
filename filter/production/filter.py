@@ -5,40 +5,34 @@ import os
 from common.logger import get_logger
 logger = get_logger("Filter-Production")
 
-from common.filter_base import FilterBase
-from common.mom import RabbitMQProcessor
-
-EOS_TYPE = "EOS" 
+from common.filter_base import FilterBase, EOS_TYPE
 
 class ProductionFilter(FilterBase):
     def __init__(self, config):
+        """
+        Initialize the ProductionFilter with the provided configuration.
+        """
         super().__init__(config)
-        self.config = config
-        self._eos_flags = {}
-        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
         self.batch_arg = []
         self.batch_solo = []
         self.batch_arg_spain = []
-        self.source_queues = [self.config["DEFAULT"].get("movies_clean_queue", "movies_clean")]
-    
+        self._initialize_queues()
+        self._initialize_rabbitmq_processor()
+
+    def _initialize_queues(self):
+        defaults = self.config["DEFAULT"]
+        self.source_queues = [defaults.get("movies_clean_queue", "movies_clean")]
         self.target_queues = {
             self.source_queues[0]: [
-                self.config["DEFAULT"].get("movies_argentina_queue", "movies_argentina"),
-                self.config["DEFAULT"].get("movies_solo_queue", "movies_solo"),
-                self.config["DEFAULT"].get("movies_arg_spain_queue", "movies_arg_spain")
+                defaults.get("movies_argentina_queue", "movies_argentina"),
+                defaults.get("movies_solo_queue", "movies_solo"),
+                defaults.get("movies_arg_spain_queue", "movies_arg_spain")
             ]
         }
-
-        self.node_id = int(os.getenv("NODE_ID", "1"))
-        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
-        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
-
-        self.rabbitmq_processor = RabbitMQProcessor(
-            config=self.config,
-            source_queues=self.source_queues,
-            target_queues=self.target_queues
-        )   
-        
+    
+    def setup(self):
+        self._initialize_queues()
+        self._initialize_rabbitmq_processor()
 
     def _mark_eos_received(self, body, input_queue):
         """
@@ -207,4 +201,5 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
     production_filter = ProductionFilter(config)
+    production_filter.setup()
     production_filter.process()

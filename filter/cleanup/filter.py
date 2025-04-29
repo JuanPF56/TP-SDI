@@ -5,57 +5,46 @@ import os
 from common.logger import get_logger
 logger = get_logger("Filter-Cleanup")
 
-from common.filter_base import FilterBase
-from common.mom import RabbitMQProcessor
-
-EOS_TYPE = "EOS" 
+from common.filter_base import FilterBase, EOS_TYPE
 
 class CleanupFilter(FilterBase):
     def __init__(self, config):
         """
         Initialize the CleanupFilter with the provided configuration.
-        Args:
-            config (ConfigParser): Configuration object containing RabbitMQ settings.
-        
-        Variables:
-            source_queues (list): List of source queues to consume from (raw data).
-            target_queues (dict): Dictionary mapping source queues to target queues (cleaned data).
-            rabbitmq_host (str): Hostname of the RabbitMQ server.
-            connection (pika.BlockingConnection): Connection object for RabbitMQ.
         """
         super().__init__(config)
+        self.batch = []
+        self._initialize_queues()
+        self._eos_flags = {q: False for q in self.source_queues}
+        self._initialize_rabbitmq_processor()
 
-        self.config = config
+    def _initialize_queues(self):
+        defaults = self.config["DEFAULT"]
 
         self.source_queues = [
-            self.config["DEFAULT"].get("movies_raw_queue", "movies_raw"),
-            self.config["DEFAULT"].get("ratings_raw_queue", "ratings_raw"),
-            self.config["DEFAULT"].get("credits_raw_queue", "credits_raw"),
+            defaults.get("movies_raw_queue", "movies_raw"),
+            defaults.get("ratings_raw_queue", "ratings_raw"),
+            defaults.get("credits_raw_queue", "credits_raw"),
         ]
 
         self.target_queues = {
             self.source_queues[0]: [
-            self.config["DEFAULT"].get("movies_clean_for_production_queue", "movies_clean_for_production"),
-            self.config["DEFAULT"].get("movies_clean_for_sentiment_queue", "movies_clean_for_sentiment"),
+                defaults.get("movies_clean_for_production_queue", "movies_clean_for_production"),
+                defaults.get("movies_clean_for_sentiment_queue", "movies_clean_for_sentiment"),
             ],
-            self.source_queues[1]: self.config["DEFAULT"].get("ratings_clean_queue", "ratings_clean"),
-            self.source_queues[2]: self.config["DEFAULT"].get("credits_clean_queue", "credits_clean"),
+            self.source_queues[1]: defaults.get("ratings_clean_queue", "ratings_clean"),
+            self.source_queues[2]: defaults.get("credits_clean_queue", "credits_clean"),
         }
-        self.node_id = int(os.getenv("NODE_ID", "1"))
-        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
-        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
+    def setup(self):
+        """
+        Setup method to initialize the filter.
+        This method is called when the filter is instantiated.
+        It sets up the source and target queues, and initializes the RabbitMQ processor.
+        """
+        self._initialize_queues()
         self._eos_flags = {q: False for q in self.source_queues}
-
-        self.batch = []
-        # Instanciamos RabbitMQProcessor
-        self.rabbitmq_processor = RabbitMQProcessor(
-            config=self.config,
-            source_queues=self.source_queues,
-            target_queues=self.target_queues
-        )   
-        
-
+        self._initialize_rabbitmq_processor()
 
     def clean_movie(self, data):
         """
@@ -259,4 +248,5 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
     filter_instance = CleanupFilter(config)
+    filter_instance.setup()
     filter_instance.process()

@@ -1,32 +1,33 @@
 import configparser
 import json
 import os
-import pika
 from datetime import datetime
-from common.logger import get_logger
-from common.filter_base import FilterBase
-from common.mom import RabbitMQProcessor
 
-EOS_TYPE = "EOS" 
+from common.logger import get_logger
 logger = get_logger("Filter-Year")
+
+from common.filter_base import FilterBase, EOS_TYPE
 
 class YearFilter(FilterBase):
     def __init__(self, config):
         super().__init__(config)
-        self.config = config
-        self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1")) * 2  # Two queues to await EOS from
-        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
+
+        self._initialize_queues()
+        self._initialize_rabbitmq_processor()
+
+    def _initialize_queues(self):
+        defaults = self.config["DEFAULT"]
         
         self.source_queues = [
-            self.config["DEFAULT"].get("movies_argentina_queue", "movies_argentina"),
-            self.config["DEFAULT"].get("movies_arg_spain_queue", "movies_arg_spain")
+            defaults.get("movies_argentina_queue", "movies_argentina"),
+            defaults.get("movies_arg_spain_queue", "movies_arg_spain")
         ]
 
         self.target_queues = {
-            self.source_queues[0]: self.config["DEFAULT"].get("movies_arg_post_2000_queue", "movies_arg_post_2000"),
-            self.source_queues[1]: self.config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
+            self.source_queues[0]: defaults.get("movies_arg_post_2000_queue", "movies_arg_post_2000"),
+            self.source_queues[1]: defaults.get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
         }
 
         self.processed_batch = {
@@ -39,11 +40,9 @@ class YearFilter(FilterBase):
             self.source_queues[1]: {}
         }
 
-        self.rabbitmq_processor = RabbitMQProcessor(
-            config=self.config,
-            source_queues=self.source_queues,
-            target_queues=self.target_queues
-        )
+    def setup(self):
+        self._initialize_queues()
+        self._initialize_rabbitmq_processor()
 
     def _mark_eos_received(self, body, input_queue):
         """
@@ -204,4 +203,5 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
     year_filter = YearFilter(config)
+    year_filter.setup()
     year_filter.process()
