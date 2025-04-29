@@ -149,77 +149,85 @@ class CleanupFilter(FilterBase):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
             self.rabbitmq_processor.stop_consuming()
 
+    def _handle_eos(self, body, queue_name, method, msg_type):
+        logger.debug(f"Received EOS from {queue_name}")
+        if len(self.batch) > 0:
+            logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
+            self._publish_batch(queue_name, self.batch, None)
+            self.batch.clear()
+        self._mark_eos_received(body, queue_name, msg_type)
+        self.rabbitmq_processor.acknowledge(method)
+
+    def _decode_body(self, body, queue_name):
+        try:
+            data_batch = json.loads(body)
+            if not isinstance(data_batch, list):
+                logger.warning(f"Expected a batch (list), got {type(data_batch)}. Skipping.")
+                return None
+            return data_batch
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in message from {queue_name}: {e}")
+            return None
+
+    def _process_cleanup_batch(self, data_batch, queue_name):
+        if queue_name == self.source_queues[0]:
+            self.batch.extend([self.clean_movie(d) for d in data_batch])
+        elif queue_name == self.source_queues[1]:
+            self.batch.extend([self.clean_rating(d) for d in data_batch])
+        elif queue_name == self.source_queues[2]:
+            self.batch.extend([self.clean_credit(d) for d in data_batch])
+        else:
+            logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
+
+    def _fill_batch(self, queue_name, msg_type):
+        batch_sz = self._determine_batch_size(queue_name)
+        if self.batch and len(self.batch) >= batch_sz:
+            self._publish_batch(queue_name, self.batch, msg_type)
+            self.batch.clear()
+
+    def _publish_batch(self, queue_name, batch, msg_type=None):
+        target_queues = self.target_queues.get(queue_name, [])
+        if not isinstance(target_queues, list):
+            target_queues = [target_queues]
+        for target_queue in target_queues:
+            self.rabbitmq_processor.publish(
+                queue=target_queue,
+                message=batch,
+                msg_type=msg_type
+            )
+
+    def _determine_batch_size(self, queue_name):
+        if queue_name == self.source_queues[1]:
+            return 10000
+        if queue_name == self.source_queues[0]:
+            return 50
+        return self.batch_size
+
     def callback(self, ch, method, properties, body, queue_name):
         """
         Callback function to handle incoming messages from RabbitMQ.
         Handles EOS and batch message processing/publishing.
         """
+        msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+        if msg_type == EOS_TYPE:
+            self._handle_eos(body, queue_name, method, msg_type)
+            return
+
         try:
-            msg_type = properties.type if properties and properties.type else "UNKNOWN"
-            
-            # Handle EOS signal
-            if msg_type == EOS_TYPE:
-                logger.debug(f"Received EOS from {queue_name}")
-                if len(self.batch) > 0:
-                    logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
-                    target_queues = self.target_queues[queue_name]
-                    if not isinstance(target_queues, list):
-                        target_queues = [target_queues]
-                    for target_queue in target_queues:
-                        self.rabbitmq_processor.publish(
-                            queue=target_queue,
-                            message=self.batch,
-                        )
-                    self.batch.clear()
-                self._mark_eos_received(body, queue_name, msg_type)
+            data_batch = self._decode_body(body, queue_name)
+            if data_batch is None:
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            # Decode and validate input
-            data_batch = json.loads(body)
-            if not isinstance(data_batch, list):
-                logger.warning(f"Expected a batch (list), got {type(data_batch)}. Skipping.")
-                self.rabbitmq_processor.acknowledge(method)
-                return
+            self._process_cleanup_batch(data_batch, queue_name)
+            self._fill_batch(queue_name, msg_type)
 
-            # Select correct cleanup function
-            if queue_name == self.source_queues[0]:
-                self.batch.extend([self.clean_movie(d) for d in data_batch])
-            elif queue_name == self.source_queues[1]:
-                self.batch.extend([self.clean_rating(d) for d in data_batch])
-            elif queue_name == self.source_queues[2]:
-                self.batch.extend([self.clean_credit(d) for d in data_batch])
-            else:
-                logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
-                self.rabbitmq_processor.acknowledge(method)
-                return
-
-            # TODO: Use a constant for batch size and assign different values for
-            # different queues
-            batch_sz = 10000 if queue_name == self.source_queues[1] else \
-                50 if queue_name == self.source_queues[0] else self.batch_size
-
-            if self.batch and len(self.batch) >= batch_sz:
-                # Support single or multiple target queues
-                target_queues = self.target_queues[queue_name]
-                if not isinstance(target_queues, list):
-                    target_queues = [target_queues]
-            
-                for target_queue in target_queues:
-                    self.rabbitmq_processor.publish(
-                        queue=target_queue,
-                        message=self.batch,
-                        msg_type=msg_type
-                    )
-                    
-                self.batch.clear()
             self.rabbitmq_processor.acknowledge(method)
 
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error in message from {queue_name}: {e}")
         except Exception as e:
             logger.error(f"Error processing message from {queue_name}: {e}")
-
+            self.rabbitmq_processor.acknowledge(method)
 
     def process(self):
         """
