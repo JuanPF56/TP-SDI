@@ -1,13 +1,14 @@
 import configparser
 import json
 import os
-import pika
-import time
 
 from common.logger import get_logger
+logger = get_logger("Filter-Cleanup")
+
 from common.filter_base import FilterBase
 from common.mom import RabbitMQProcessor
-logger = get_logger("Filter-Cleanup")
+
+EOS_TYPE = "EOS" 
 
 class CleanupFilter(FilterBase):
     def __init__(self, config):
@@ -169,7 +170,7 @@ class CleanupFilter(FilterBase):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             
             # Handle EOS signal
-            if msg_type == "EOS":
+            if msg_type == EOS_TYPE:
                 logger.debug(f"Received EOS from {queue_name}")
                 if len(self.batch) > 0:
                     logger.warning("Batch not empty when EOS received. Publishing remaining batch.")

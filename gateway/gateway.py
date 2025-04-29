@@ -11,20 +11,9 @@ logger = get_logger("Gateway")
 
 from protocol_gateway_client import ProtocolGateway
 from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
+from common.mom import RabbitMQProcessor
 
 from result_dispatcher import ResultDispatcher
-
-def connect_to_rabbitmq(host, retries=5, delay=3):
-    for attempt in range(1, retries + 1):
-        try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=host))
-            logger.info("Successfully connected to RabbitMQ.")
-            return connection
-        except pika.exceptions.AMQPConnectionError as e:
-            logger.warning(f"RabbitMQ connection failed (attempt {attempt}/{retries}): {e}")
-            time.sleep(delay)
-            delay *= 2  # Exponential backoff
-    raise RuntimeError("Failed to connect to RabbitMQ after multiple attempts.")
 
 class Gateway():
     def __init__(self, config):
@@ -38,14 +27,20 @@ class Gateway():
         self._datasets_received = 0
 
         # Connect to RabbitMQ with retry
-        self.rabbitmq_connection = connect_to_rabbitmq(config["DEFAULT"]["rabbitmq_host"])
-        self.rabbitmq_channel = self.rabbitmq_connection.channel()
-
-        # Declare queues
-        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["movies_raw_queue"])
-        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["credits_raw_queue"])
-        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["ratings_raw_queue"])
-        self.rabbitmq_channel.queue_declare(queue=config["DEFAULT"]["results_queue"])
+        self.rabbitmq = RabbitMQProcessor(
+            config=config,
+            source_queues=[],  # Gateway does not consume messages, so empty list
+            target_queues=[
+                config["DEFAULT"]["movies_raw_queue"],
+                config["DEFAULT"]["credits_raw_queue"],
+                config["DEFAULT"]["ratings_raw_queue"],
+                config["DEFAULT"]["results_queue"],
+            ],
+            rabbitmq_host=config["DEFAULT"]["rabbitmq_host"]
+        )
+        connected = self.rabbitmq.connect()
+        if not connected:
+            raise RuntimeError("Failed to connect to RabbitMQ.")
 
         logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
 
@@ -135,22 +130,18 @@ class Gateway():
                         queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
 
                     if queue_key:
-                        # 🆕 Send the entire batch as a single message (JSON array)
-                        batch_payload = json.dumps([asdict(item) for item in processed_data])
-                        self.rabbitmq_channel.basic_publish(
-                            exchange='',
-                            routing_key=queue_key,
-                            body=batch_payload,
-                            properties=pika.BasicProperties(type=message_code)
+                        batch_payload = [asdict(item) for item in processed_data]
+                        self.rabbitmq.publish(
+                            queue=queue_key,
+                            message=batch_payload,
+                            msg_type=message_code
                         )
 
-                        # 🧊 End-of-stream marker only if it's the last batch
                         if is_last_batch == IS_LAST_BATCH_FLAG:
-                            self.rabbitmq_channel.basic_publish(
-                                exchange='',
-                                routing_key=queue_key,
-                                body=b'',
-                                properties=pika.BasicProperties(type="EOS")
+                            self.rabbitmq.publish(
+                                queue=queue_key,
+                                message={}, # Empty message to indicate end of batch
+                                msg_type="EOS"
                             )
 
                 except (TypeError, ValueError) as e:
@@ -184,7 +175,6 @@ class Gateway():
 
         except Exception as e:
             logger.error(f"Error handling client connection: {e}")
-            logger.error("Client socket is not connected")
             return
 
     def _signal_handler(self, signum, frame):
@@ -198,12 +188,8 @@ class Gateway():
                 self.result_dispatcher.join()
                 logger.info("Result dispatcher thread stopped.")
             
-            if self.rabbitmq_channel:
-                self.rabbitmq_channel.close()
-                logger.info("RabbitMQ channel closed.")
-
-            if self.rabbitmq_connection:
-                self.rabbitmq_connection.close()
+            if self.rabbitmq:
+                self.rabbitmq.close()
                 logger.info("RabbitMQ connection closed.")
 
             if self._gateway_socket:

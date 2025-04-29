@@ -1,15 +1,14 @@
 import configparser
 import json
 import os
-import pika
 
 from common.logger import get_logger
+logger = get_logger("Filter-Production")
+
 from common.filter_base import FilterBase
 from common.mom import RabbitMQProcessor
 
 EOS_TYPE = "EOS" 
-
-logger = get_logger("Filter-Production")
 
 class ProductionFilter(FilterBase):
     def __init__(self, config):

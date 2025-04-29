@@ -65,6 +65,7 @@ def pretty_print_movies_with_genres(result: dict):
 
     lines = []
     lines.append(f"                                   {query_id}")
+    lines.append("-" * 77)
     lines.append("Películas y sus géneros de los años 2000 con producción Argentina y Española.")
 
     if not rows:
@@ -89,6 +90,7 @@ def pretty_print_top_spenders(result: dict):
 
     lines = []
     lines.append(f"                             {query_id}")
+    lines.append("-" * 69)
     lines.append("Top 5 de países que más dinero han invertido en producciones sin")
     lines.append("colaborar con otros países.")
 
@@ -116,7 +118,7 @@ def pretty_print_rating_extremes(result: dict):
     lines.append(f"                             {query_id}")
     lines.append("-" * 72)
     lines.append("Película de producción Argentina estrenada a partir del 2000,")
-    lines.append(" con mayor y con menor promedio de rating.")
+    lines.append("con mayor y con menor promedio de rating.")
 
     if not res or not isinstance(res, dict) or "highest" not in res or "lowest" not in res:
         lines.append("-" * 72)
@@ -140,15 +142,15 @@ def pretty_print_top_actors(result: dict):
 
     lines = []
     lines.append(f"                            {query_id}")
-    lines.append("Top 10 de actores con mayor participación en películas de producción")
     lines.append("-" * 70)
+    lines.append("Top 10 de actores con mayor participación en películas de producción")
     lines.append("Argentina con fecha de estreno posterior al 2000.")
+    lines.append("-" * 70)
 
-    if not res or not isinstance(res, dict) or "actors" not in res:
+    if not res or not isinstance(res, dict) or "actors" not in res or not res["actors"]:
+        lines.append("No se encontraron resultados para la consulta")
         lines.append("-" * 70)
-        lines.append(f"No se encontraron resultados para la consulta")
     else:
-        lines.append("-" * 70)
         lines.append(f"{'Pos.':<5} {'Actor':30} Participaciones")
         lines.append("-" * 70)
 
@@ -167,21 +169,22 @@ def pretty_print_income_ratio_by_sentiment(result: dict):
     ratios = result.get("results", {})
 
     lines = []
-    lines.append(f"                                              {query_id}")
-    lines.append("-" * 62)
-    lines.append("Average de la tasa ingreso/presupuesto de peliculas con overview de sentimiento positivo vs. sentimiento negativo.")
+    lines.append(f"                          {query_id}")
+    lines.append("-" * 66)
+    lines.append("Average de la tasa ingreso/presupuesto de peliculas con")
+    lines.append("overview de sentimiento positivo vs. sentimiento negativo.")
 
     if not ratios or not isinstance(ratios, dict):
-        lines.append("-" * 62)
+        lines.append("-" * 66)
         lines.append(f"No se encontraron resultados para la consulta {query_id}")
     else:
         try:
             positive_ratio = float(ratios.get("average_positive_rate", 0))
             negative_ratio = float(ratios.get("average_negative_rate", 0))
-            lines.append("-" * 62)
+            lines.append("-" * 66)
             lines.append(f"😊 Sentimiento positivo - Tasa ingreso/presupuesto: {positive_ratio:.2f}")
-            lines.append(f"☹️  Sentimiento negativo - Tasa ingreso/presupuesto: {negative_ratio:.2f}")
-            lines.append("-" * 62)
+            lines.append(f"☹️ Sentimiento negativo - Tasa ingreso/presupuesto: {negative_ratio:.2f}")
+            lines.append("-" * 66)
         except (ValueError, TypeError) as e:
             lines.append(f"Error al procesar los resultados para la consulta {query_id}: {e}")
 
