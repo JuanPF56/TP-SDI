@@ -5,10 +5,6 @@ datasets_for_test/
 
 resultados/
 
-output/
-
-logs/
-
 docker-compose.yaml
 
 global_config.ini
