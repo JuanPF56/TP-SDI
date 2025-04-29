@@ -168,7 +168,7 @@ class CleanupFilter(FilterBase):
         else:
             logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
 
-    def _fill_batch(self, queue_name, msg_type):
+    def _publish_ready_batches(self, queue_name, msg_type):
         batch_sz = self._determine_batch_size(queue_name)
         if self.batch and len(self.batch) >= batch_sz:
             self._publish_batch(queue_name, self.batch, msg_type)
@@ -210,7 +210,7 @@ class CleanupFilter(FilterBase):
                 return
 
             self._process_cleanup_batch(data_batch, queue_name)
-            self._fill_batch(queue_name, msg_type)
+            self._publish_ready_batches(queue_name, msg_type)
 
             self.rabbitmq_processor.acknowledge(method)
 

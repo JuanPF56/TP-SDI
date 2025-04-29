@@ -81,6 +81,58 @@ class ProductionFilter(FilterBase):
                     logger.debug(f"EOS message sent to {queue}")
             self.rabbitmq_processor.stop_consuming()
 
+    def _publish_batch(self, queue, batch):
+        self.rabbitmq_processor.publish(queue=queue, message=batch)
+        logger.debug(f"Sent batch to {queue}")
+
+    def _handle_eos(self, queue_name, body, method):
+        logger.debug(f"Received EOS from {queue_name}")
+
+        if self.batch_arg:
+            self._publish_batch(queue=self.target_queues[queue_name][0], batch=self.batch_arg)
+            self.batch_arg.clear()
+
+        if self.batch_solo:
+            self._publish_batch(queue=self.target_queues[queue_name][1], batch=self.batch_solo)
+            self.batch_solo.clear()
+
+        if self.batch_arg_spain:
+            self._publish_batch(queue=self.target_queues[queue_name][2], batch=self.batch_arg_spain)
+            self.batch_arg_spain.clear()
+
+        self._mark_eos_received(body, queue_name)
+        self._send_eos()
+        self.rabbitmq_processor.acknowledge(method)
+
+    def _process_movies_batch(self, movies_batch):
+        for movie in movies_batch:
+            country_dicts = movie.get("production_countries", [])
+            country_names = [c.get("name") for c in country_dicts if "name" in c]
+
+            logger.debug(f"Production countries: {country_names}")
+
+            if "Argentina" in country_names:
+                self.batch_arg.append(movie)
+
+            if len(country_names) == 1:
+                self.batch_solo.append(movie)
+
+            if "Argentina" in country_names and "Spain" in country_names:
+                self.batch_arg_spain.append(movie)
+
+    def _publish_ready_batches(self, queue_name):
+        if self.batch_arg and len(self.batch_arg) >= self.batch_size:
+            self._publish_batch(queue=self.target_queues[queue_name][0], batch=self.batch_arg)
+            self.batch_arg.clear()
+
+        if self.batch_solo and len(self.batch_solo) >= self.batch_size:
+            self._publish_batch(queue=self.target_queues[queue_name][1], batch=self.batch_solo)
+            self.batch_solo.clear()
+
+        if self.batch_arg_spain and len(self.batch_arg_spain) >= self.batch_size:
+            self._publish_batch(queue=self.target_queues[queue_name][2], batch=self.batch_arg_spain)
+            self.batch_arg_spain.clear()
+
     def callback(self, ch, method, properties, body, queue_name):
         """
         Callback function to process batched messages from the input queue.
@@ -89,27 +141,7 @@ class ProductionFilter(FilterBase):
         msg_type = self._get_message_type(properties)
 
         if msg_type == EOS_TYPE:
-            self._mark_eos_received(body, queue_name)
-            if len(self.batch_arg) > 0:
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[queue_name][0],
-                    message=self.batch_arg,
-                )
-                self.batch_arg.clear()
-            if len(self.batch_solo) > 0:
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[queue_name][1],
-                    message=self.batch_solo,
-                )
-                self.batch_solo.clear()
-            if len(self.batch_arg_spain) > 0:
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[queue_name][2],
-                    message=self.batch_arg_spain,
-                )
-                self.batch_arg_spain.clear()
-            self._send_eos()
-            self.rabbitmq_processor.acknowledge(method)
+            self._handle_eos(queue_name, body, method)
             return
 
         try:
@@ -117,54 +149,15 @@ class ProductionFilter(FilterBase):
             if not movies_batch:
                 self.rabbitmq_processor.acknowledge(method)
                 return
-            
-            for movie in movies_batch:
-                country_dicts = movie.get("production_countries", [])
-                country_names = [c.get("name") for c in country_dicts if "name" in c]
 
-                logger.debug(f"Production countries: {country_names}")
+            self._process_movies_batch(movies_batch)
+            self._publish_ready_batches(queue_name)
 
-                if "Argentina" in country_names:
-                    self.batch_arg.append(movie)
-
-                if len(country_names) == 1:
-                    self.batch_solo.append(movie)
-
-                if "Argentina" in country_names and "Spain" in country_names:
-                    self.batch_arg_spain.append(movie)
-
-            # Publish non-empty batches
-            if self.batch_arg and len(self.batch_arg) >= self.batch_size:
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[queue_name][0],
-                    message=self.batch_arg,
-                )
-                self.batch_arg.clear()
-                logger.debug(f"Sent batch to {self.target_queues[queue_name][0]}")
-
-            if self.batch_solo and len(self.batch_solo) >= self.batch_size:
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[queue_name][1],
-                    message=self.batch_solo,
-                )
-                self.batch_solo.clear()
-                logger.debug(f"Sent batch to {self.target_queues[queue_name][1]}")
-
-            if self.batch_arg_spain and len(self.batch_arg_spain) >= self.batch_size:
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[queue_name][2],
-                    message=self.batch_arg_spain,
-                )   
-                self.batch_arg_spain.clear()
-                logger.debug(f"Sent batch to {self.target_queues[queue_name][2]}")
-
-            # Acknowledge the message after processing
             self.rabbitmq_processor.acknowledge(method)
 
         except Exception as e:
             logger.error(f"Failed to process batch: {e}")
-            self.rabbitmq_processor.acknowledge(method)     
-
+            self.rabbitmq_processor.acknowledge(method) 
 
     def process(self):
         """

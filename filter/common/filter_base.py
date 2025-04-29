@@ -1,7 +1,9 @@
 import os
 import json
 
-import logging
+from common.logger import get_logger
+logger = get_logger("Filter-Base")
+
 
 from common.mom import RabbitMQProcessor
 
@@ -35,9 +37,7 @@ class FilterBase:
             target_queues=self.target_queues
         )
 
-    def run_consumer(self):
-        logger = logging.getLogger(self.__class__.__name__)
-        
+    def run_consumer(self):       
         logger.info("Node is online")
         logger.info(f"Configuration loaded successfully")
         for key, value in self.config["DEFAULT"].items():
@@ -66,9 +66,8 @@ class FilterBase:
 
     def _get_message_type(self, properties):
         return properties.type if properties and properties.type else "UNKNOWN"
-    
+
     def _decode_body(self, body, queue_name):
-        logger = logging.getLogger(self.__class__.__name__)
         try:
             data_batch = json.loads(body)
             if not isinstance(data_batch, list):
