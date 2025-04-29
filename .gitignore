@@ -4,7 +4,3 @@ client/data/
 datasets_for_test/
 
 resultados/
-
-docker-compose.yaml
-
-global_config.ini
