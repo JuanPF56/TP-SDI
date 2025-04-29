@@ -153,11 +153,11 @@ class ProductionFilter(FilterBase):
             self._process_movies_batch(movies_batch)
             self._publish_ready_batches(queue_name)
 
-            self.rabbitmq_processor.acknowledge(method)
-
         except Exception as e:
-            logger.error(f"Failed to process batch: {e}")
-            self.rabbitmq_processor.acknowledge(method) 
+            logger.error(f"Error processing message from {queue_name}: {e}")
+
+        finally:
+            self.rabbitmq_processor.acknowledge(method)
 
     def process(self):
         """

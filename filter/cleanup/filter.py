@@ -149,7 +149,7 @@ class CleanupFilter(FilterBase):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
             self.rabbitmq_processor.stop_consuming()
 
-    def _handle_eos(self, body, queue_name, method, msg_type):
+    def _handle_eos(self, queue_name, body, method, msg_type):
         logger.debug(f"Received EOS from {queue_name}")
         if len(self.batch) > 0:
             logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
@@ -200,7 +200,7 @@ class CleanupFilter(FilterBase):
         msg_type = self._get_message_type(properties)
 
         if msg_type == EOS_TYPE:
-            self._handle_eos(body, queue_name, method, msg_type)
+            self._handle_eos(queue_name, body, method, msg_type)
             return
 
         try:
@@ -212,10 +212,10 @@ class CleanupFilter(FilterBase):
             self._process_cleanup_batch(data_batch, queue_name)
             self._publish_ready_batches(queue_name, msg_type)
 
-            self.rabbitmq_processor.acknowledge(method)
-
         except Exception as e:
             logger.error(f"Error processing message from {queue_name}: {e}")
+        
+        finally:
             self.rabbitmq_processor.acknowledge(method)
 
     def process(self):

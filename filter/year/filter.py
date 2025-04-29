@@ -101,67 +101,71 @@ class YearFilter(FilterBase):
             )
             logger.info(f"EOS message sent to {queue}")
 
+    def _handle_eos(self, input_queue, body, method):
+        logger.debug(f"Received EOS from {input_queue}")
+
+        if self.processed_batch.get(input_queue):
+            logger.info(f"Publishing remaining {len(self.processed_batch[input_queue])} movies to {self.target_queues[input_queue]}")
+            self.rabbitmq_processor.publish(
+                queue=self.target_queues[input_queue],
+                message=self.processed_batch[input_queue]
+            )
+            self.processed_batch[input_queue] = []
+
+        self._mark_eos_received(body, input_queue)
+        self._check_eos_flags()
+        self.rabbitmq_processor.acknowledge(method)
+
+    def _process_movies_batch(self, movies_batch, input_queue):
+        for movie in movies_batch:
+            title = movie.get("original_title")
+            date_str = movie.get("release_date", "")
+            release_year = self.extract_year(date_str)
+
+            logger.debug(f"Processing '{title}' released in {release_year} from queue '{input_queue}'")
+
+            if input_queue == self.source_queues[0]:
+                # Argentine-only movies after 2000
+                if release_year and release_year > 2000:
+                    self.processed_batch[input_queue].append(movie)
+            elif input_queue == self.source_queues[1]:
+                # Argentina + Spain movies between 2000-2009
+                if release_year and 2000 <= release_year <= 2009:
+                    self.processed_batch[input_queue].append(movie)
+            else:
+                logger.warning(f"Unknown source queue: {input_queue}")
+
+    def _publish_ready_batches(self, input_queue, msg_type):
+        if len(self.processed_batch[input_queue]) >= self.batch_size:
+            logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_queues[input_queue]}")
+            self.rabbitmq_processor.publish(
+                queue=self.target_queues[input_queue],
+                message=self.processed_batch[input_queue],
+                msg_type=msg_type
+            )
+            self.processed_batch[input_queue] = []
+
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = self._get_message_type(properties)
 
         if msg_type == EOS_TYPE:
-            self._mark_eos_received(body, input_queue)
-            # Publish any remaining processed movies
-            if len(self.processed_batch[input_queue]) > 0:
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[input_queue],
-                    message=self.processed_batch[input_queue],
-                )
-                self.processed_batch[input_queue] = []
-            
-            self._check_eos_flags()
-            self.rabbitmq_processor.acknowledge(method)
+            self._handle_eos(input_queue, body, method)
             return
 
         try:
             movies_batch = self._decode_body(body, input_queue)
             if not movies_batch:
-                logger.error("Expected a list (batch) of movies, skipping..")
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            for movie in movies_batch:
-                title = movie.get("original_title")
-                date_str = movie.get("release_date", "")
-                release_year = self.extract_year(date_str)
+            self._process_movies_batch(movies_batch, input_queue)
+            self._publish_ready_batches(input_queue, msg_type)
 
-                logger.debug(f"Processing '{title}' released in {release_year} from queue '{input_queue}'")
-
-                if input_queue == self.source_queues[0]:
-                    # Argentine movies after 2000
-                    if release_year and release_year > 2000:
-                        self.processed_batch[input_queue].append(movie)
-                elif input_queue == self.source_queues[1]:
-                    # Argentina+Spain movies in the 2000s decade
-                    if release_year and 2000 <= release_year <= 2009:
-                        self.processed_batch[input_queue].append(movie)
-                else:
-                    logger.warning(f"Unknown source queue: {input_queue}")
-
-            # Publish the processed batch when it reaches the batch size
-
-            if len(self.processed_batch[input_queue]) >= self.batch_size:
-                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_queues[input_queue]}")
-                self.rabbitmq_processor.publish(
-                    queue=self.target_queues[input_queue],
-                    message=self.processed_batch[input_queue],
-                    msg_type=msg_type
-                )
-                self.processed_batch[input_queue] = []
-
-            self.rabbitmq_processor.acknowledge(method)
-
-        except json.JSONDecodeError:
-            logger.warning("❌ Skipping invalid JSON")
-            self.rabbitmq_processor.acknowledge(method)
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
+            logger.error(f"Error processing message from {input_queue}: {e}")
+
+        finally:
             self.rabbitmq_processor.acknowledge(method)
 
     def process(self):
