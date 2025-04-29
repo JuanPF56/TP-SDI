@@ -56,7 +56,6 @@ class ProtocolGateway:
             header = receiver.receive_data(
                 self._client_socket,
                 SIZE_OF_HEADER,
-                connected_checker=self._client_is_connected, 
                 timeout=TIMEOUT_HEADER
             )
             
@@ -97,7 +96,6 @@ class ProtocolGateway:
             data = receiver.receive_data(
                 self._client_socket,
                 payload_len,
-                connected_checker=self._client_is_connected, 
                 timeout=TIMEOUT_PAYLOAD
             )
 

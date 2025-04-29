@@ -1,61 +1,49 @@
 import configparser
 import json
-import os
 
 from common.logger import get_logger
 logger = get_logger("Filter-Cleanup")
 
-from common.filter_base import FilterBase
-from common.mom import RabbitMQProcessor
-
-EOS_TYPE = "EOS" 
+from common.filter_base import FilterBase, EOS_TYPE
 
 class CleanupFilter(FilterBase):
     def __init__(self, config):
         """
         Initialize the CleanupFilter with the provided configuration.
-        Args:
-            config (ConfigParser): Configuration object containing RabbitMQ settings.
-        
-        Variables:
-            source_queues (list): List of source queues to consume from (raw data).
-            target_queues (dict): Dictionary mapping source queues to target queues (cleaned data).
-            rabbitmq_host (str): Hostname of the RabbitMQ server.
-            connection (pika.BlockingConnection): Connection object for RabbitMQ.
         """
         super().__init__(config)
+        self.batch = []
+        self._initialize_queues()
+        self._eos_flags = {q: False for q in self.source_queues}
+        self._initialize_rabbitmq_processor()
 
-        self.config = config
+    def _initialize_queues(self):
+        defaults = self.config["DEFAULT"]
 
         self.source_queues = [
-            self.config["DEFAULT"].get("movies_raw_queue", "movies_raw"),
-            self.config["DEFAULT"].get("ratings_raw_queue", "ratings_raw"),
-            self.config["DEFAULT"].get("credits_raw_queue", "credits_raw"),
+            defaults.get("movies_raw_queue", "movies_raw"),
+            defaults.get("ratings_raw_queue", "ratings_raw"),
+            defaults.get("credits_raw_queue", "credits_raw"),
         ]
 
         self.target_queues = {
             self.source_queues[0]: [
-            self.config["DEFAULT"].get("movies_clean_for_production_queue", "movies_clean_for_production"),
-            self.config["DEFAULT"].get("movies_clean_for_sentiment_queue", "movies_clean_for_sentiment"),
+                defaults.get("movies_clean_for_production_queue", "movies_clean_for_production"),
+                defaults.get("movies_clean_for_sentiment_queue", "movies_clean_for_sentiment"),
             ],
-            self.source_queues[1]: self.config["DEFAULT"].get("ratings_clean_queue", "ratings_clean"),
-            self.source_queues[2]: self.config["DEFAULT"].get("credits_clean_queue", "credits_clean"),
+            self.source_queues[1]: defaults.get("ratings_clean_queue", "ratings_clean"),
+            self.source_queues[2]: defaults.get("credits_clean_queue", "credits_clean"),
         }
-        self.node_id = int(os.getenv("NODE_ID", "1"))
-        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
-        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
+    def setup(self):
+        """
+        Setup method to initialize the filter.
+        This method is called when the filter is instantiated.
+        It sets up the source and target queues, and initializes the RabbitMQ processor.
+        """
+        self._initialize_queues()
         self._eos_flags = {q: False for q in self.source_queues}
-
-        self.batch = []
-        # Instanciamos RabbitMQProcessor
-        self.rabbitmq_processor = RabbitMQProcessor(
-            config=self.config,
-            source_queues=self.source_queues,
-            target_queues=self.target_queues
-        )   
-        
-
+        self._initialize_rabbitmq_processor()
 
     def clean_movie(self, data):
         """
@@ -161,102 +149,86 @@ class CleanupFilter(FilterBase):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
             self.rabbitmq_processor.stop_consuming()
 
+    def _handle_eos(self, queue_name, body, method, msg_type):
+        logger.debug(f"Received EOS from {queue_name}")
+        if len(self.batch) > 0:
+            logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
+            self._publish_batch(queue_name, self.batch, None)
+            self.batch.clear()
+        self._mark_eos_received(body, queue_name, msg_type)
+        self.rabbitmq_processor.acknowledge(method)
+
+    def _process_cleanup_batch(self, data_batch, queue_name):
+        if queue_name == self.source_queues[0]:
+            self.batch.extend([self.clean_movie(d) for d in data_batch])
+        elif queue_name == self.source_queues[1]:
+            self.batch.extend([self.clean_rating(d) for d in data_batch])
+        elif queue_name == self.source_queues[2]:
+            self.batch.extend([self.clean_credit(d) for d in data_batch])
+        else:
+            logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
+
+    def _publish_ready_batches(self, queue_name, msg_type):
+        batch_sz = self._determine_batch_size(queue_name)
+        if self.batch and len(self.batch) >= batch_sz:
+            self._publish_batch(queue_name, self.batch, msg_type)
+            self.batch.clear()
+
+    def _publish_batch(self, queue_name, batch, msg_type=None):
+        target_queues = self.target_queues.get(queue_name, [])
+        if not isinstance(target_queues, list):
+            target_queues = [target_queues]
+        for target_queue in target_queues:
+            self.rabbitmq_processor.publish(
+                queue=target_queue,
+                message=batch,
+                msg_type=msg_type
+            )
+
+    def _determine_batch_size(self, queue_name):
+        if queue_name == self.source_queues[1]:
+            return 10000
+        if queue_name == self.source_queues[0]:
+            return 50
+        return self.batch_size
+
     def callback(self, ch, method, properties, body, queue_name):
         """
         Callback function to handle incoming messages from RabbitMQ.
         Handles EOS and batch message processing/publishing.
         """
+        msg_type = self._get_message_type(properties)
+
+        if msg_type == EOS_TYPE:
+            self._handle_eos(queue_name, body, method, msg_type)
+            return
+
         try:
-            msg_type = properties.type if properties and properties.type else "UNKNOWN"
-            
-            # Handle EOS signal
-            if msg_type == EOS_TYPE:
-                logger.debug(f"Received EOS from {queue_name}")
-                if len(self.batch) > 0:
-                    logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
-                    target_queues = self.target_queues[queue_name]
-                    if not isinstance(target_queues, list):
-                        target_queues = [target_queues]
-                    for target_queue in target_queues:
-                        self.rabbitmq_processor.publish(
-                            queue=target_queue,
-                            message=self.batch,
-                        )
-                    self.batch.clear()
-                self._mark_eos_received(body, queue_name, msg_type)
+            data_batch = self._decode_body(body, queue_name)
+            if data_batch is None:
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            # Decode and validate input
-            data_batch = json.loads(body)
-            if not isinstance(data_batch, list):
-                logger.warning(f"Expected a batch (list), got {type(data_batch)}. Skipping.")
-                self.rabbitmq_processor.acknowledge(method)
-                return
+            self._process_cleanup_batch(data_batch, queue_name)
+            self._publish_ready_batches(queue_name, msg_type)
 
-            # Select correct cleanup function
-            if queue_name == self.source_queues[0]:
-                self.batch.extend([self.clean_movie(d) for d in data_batch])
-            elif queue_name == self.source_queues[1]:
-                self.batch.extend([self.clean_rating(d) for d in data_batch])
-            elif queue_name == self.source_queues[2]:
-                self.batch.extend([self.clean_credit(d) for d in data_batch])
-            else:
-                logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
-                self.rabbitmq_processor.acknowledge(method)
-                return
-
-            # TODO: Use a constant for batch size and assign different values for
-            # different queues
-            batch_sz = 10000 if queue_name == self.source_queues[1] else \
-                50 if queue_name == self.source_queues[0] else self.batch_size
-
-            if self.batch and len(self.batch) >= batch_sz:
-                # Support single or multiple target queues
-                target_queues = self.target_queues[queue_name]
-                if not isinstance(target_queues, list):
-                    target_queues = [target_queues]
-            
-                for target_queue in target_queues:
-                    self.rabbitmq_processor.publish(
-                        queue=target_queue,
-                        message=self.batch,
-                        msg_type=msg_type
-                    )
-                    
-                self.batch.clear()
-            self.rabbitmq_processor.acknowledge(method)
-
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error in message from {queue_name}: {e}")
-            logger.error(f"Raw message: {body[:100]}...")
         except Exception as e:
             logger.error(f"Error processing message from {queue_name}: {e}")
-
+        
+        finally:
+            self.rabbitmq_processor.acknowledge(method)
 
     def process(self):
+        """
+        Main processing function for the CleanupFilter.
+        """
         logger.info("CleanupFilter is starting up")
-        
-        for key, value in self.config["DEFAULT"].items():
-            logger.info(f"Config: {key}: {value}")
-            
-        if not self.rabbitmq_processor.connect():
-            logger.error("Error al conectar a RabbitMQ. Saliendo.")
-            return
-        
-        try:
-            logger.info("Starting message consumption...")
-            self.rabbitmq_processor.consume(self.callback)
-        except KeyboardInterrupt:
-            logger.info("Graceful shutdown on SIGINT")
-            self.rabbitmq_processor.close()  # Use the processor's close method
-        except Exception as e:
-            logger.error(f"Error during consuming: {e}")
-            self.rabbitmq_processor.close()  # Use the processor's close method
+        self.run_consumer()
 
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
     filter_instance = CleanupFilter(config)
+    filter_instance.setup()
     filter_instance.process()
