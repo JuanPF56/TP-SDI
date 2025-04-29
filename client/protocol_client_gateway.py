@@ -193,7 +193,6 @@ class ProtocolClient:
             header_bytes = receiver.receive_data(
                 self._socket,
                 SIZE_OF_HEADER_RESULTS,
-                connected_checker=self._is_connected, 
                 timeout=TIMEOUT_ANSWER_HEADER
             )
         except ConnectionError as e:
@@ -219,7 +218,6 @@ class ProtocolClient:
             payload_bytes = receiver.receive_data(
                 self._socket,
                 payload_len,
-                connected_checker=self._is_connected, 
                 timeout=TIMEOUT_ANSWER_PAYLOAD
             )
         except ConnectionError as e:
