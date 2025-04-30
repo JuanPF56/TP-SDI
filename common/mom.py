@@ -99,6 +99,7 @@ class RabbitMQProcessor:
         Starts consuming messages from the specified source queues.
         """
         logger.info("Iniciando el consumo de mensajes...")
+        self.channel.basic_qos(prefetch_count=5)
         for queue in self.source_queues:
             # Create a closure that properly captures the queue variable
             def create_callback_wrapper(queue_name):
@@ -155,3 +156,13 @@ class RabbitMQProcessor:
             self.channel.close()
             self.connection.close()
             logger.info("Conexión cerrada con RabbitMQ.")
+
+    def reconnect_and_restart(self, callback):
+        """Reconecta y reinicia el procesamiento de mensajes."""
+        try:
+            if self.connection and not self.connection.is_closed:
+                self.connection.close()
+        except Exception as e:
+            logger.warning(f"Error al cerrar la conexión: {e}")
+        self.connect()
+        self.consume(callback)
