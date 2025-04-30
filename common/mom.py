@@ -12,7 +12,7 @@ CONNECTION_TIMEOUT = 300
 
 class RabbitMQProcessor:
     def __init__(self, config, source_queues, target_queues, rabbitmq_host="rabbitmq",
-                 source_exchange=None, exchange_queues=None, target_exchange=None):
+                 source_exchange=None, target_exchange=None):
         """
         Initializes the RabbitMQProcessor with the given configuration and queues.
         :param config: Configuration object containing RabbitMQ settings.
@@ -20,8 +20,6 @@ class RabbitMQProcessor:
         :param target_queues: List of target queues to publish messages to.
         :param rabbitmq_host: Hostname of the RabbitMQ server.
         :param source_exchange: Name of the source exchange to bind queues to.
-        :param exchange_queues: List of queues to bind to the source exchange (they have
-        to be in the source_queues list).
         :param target_exchange: Name of the target exchange to publish messages to.
         """
         self.config = config
@@ -29,7 +27,6 @@ class RabbitMQProcessor:
         self.target_queues = target_queues 
         self.source_exchange = source_exchange
         self.target_exchange = target_exchange
-        self.exchange_queues = exchange_queues if isinstance(exchange_queues, list) else [exchange_queues]
         self.rabbitmq_host = rabbitmq_host
         self.connection = None
         self.channel = None
@@ -73,11 +70,12 @@ class RabbitMQProcessor:
                 # Handle source_exchange and target_exchange if provided
                 if self.source_exchange:
                     self.channel.exchange_declare(exchange=self.source_exchange, exchange_type='fanout')
-                    # If exchange_queues is not a list, convert it to a list
-                    if not isinstance(self.exchange_queues, list):
-                        self.exchange_queues = [self.exchange_queues]
-                    for queue in self.exchange_queues:
-                        self.channel.queue_bind(exchange=self.source_exchange, queue=queue, routing_key=queue)
+                    # Declare a random exclusive queue for the source exchange
+                    result = self.channel.queue_declare(queue='', exclusive=True)
+                    queue_name = result.method.queue
+                    self.channel.queue_bind(exchange=self.source_exchange, queue=queue_name)
+                    # Add the queue to the source_queues for consumption
+                    self.source_queues.append(queue_name)
                 
                 if self.target_exchange:
                     self.channel.exchange_declare(exchange=self.target_exchange, exchange_type='fanout')                       
