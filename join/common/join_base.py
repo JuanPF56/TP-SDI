@@ -115,10 +115,11 @@ class JoinBase:
         # Declare a fanout exchange
         chan.exchange_declare(exchange=movies_exchange, exchange_type='fanout')
         # Form the queue name
-        movies_queue = 'movies_queue_' + str(self.node_id)
+        # movies_queue = 'movies_queue_' + str(self.node_id)
         # Create a new queue for the movies
-        chan.queue_declare(queue=movies_queue)
+        result = chan.queue_declare(queue='', exclusive=True)
         # Bind the queue to the exchange
+        movies_queue = result.method.queue
         chan.queue_bind(exchange=movies_exchange, queue=movies_queue)
 
         def callback(ch, method, properties, body):
