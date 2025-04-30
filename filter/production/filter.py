@@ -53,7 +53,7 @@ class ProductionFilter(FilterBase):
         if count < self.nodes_of_type:
             # Send EOS back to input queue for other production nodes
             self.rabbitmq_processor.publish(
-                queue=input_queue,
+                target=input_queue,
                 message={"node_id": node_id, "count": count},
                 msg_type=EOS_TYPE,
             )
@@ -74,7 +74,7 @@ class ProductionFilter(FilterBase):
             for queue_list in self.target_queues.values():
                 for queue in queue_list:
                     self.rabbitmq_processor.publish(
-                        queue=queue,
+                        target=queue,
                         message={"node_id": self.node_id, "count": 0},
                         msg_type=EOS_TYPE,
                     )
@@ -82,7 +82,7 @@ class ProductionFilter(FilterBase):
             self.rabbitmq_processor.stop_consuming()
 
     def _publish_batch(self, queue, batch):
-        self.rabbitmq_processor.publish(queue=queue, message=batch)
+        self.rabbitmq_processor.publish(target=queue, message=batch)
         logger.debug(f"Sent batch to {queue}")
 
     def _handle_eos(self, queue_name, body, method):
