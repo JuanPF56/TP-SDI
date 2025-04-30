@@ -63,7 +63,7 @@ class ArgProdActorsQuery:
 
         logger.info("RESULTS:" + str(results_msg))
         self.rabbitmq_processor.publish(
-            queue=self.config["DEFAULT"]["results_queue"],
+            target=self.config["DEFAULT"]["results_queue"],
             message=results_msg
         )
 

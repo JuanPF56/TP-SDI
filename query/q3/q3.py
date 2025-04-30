@@ -83,7 +83,7 @@ class ArgProdRatingsQuery:
         logger.info("RESULTS:" + str(results_msg))
 
         self.rabbitmq_processor.publish(
-            queue=self.target_queue,
+            target=self.target_queue,
             message=results_msg
         )
 

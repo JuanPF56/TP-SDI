@@ -41,7 +41,7 @@ class SoloCountryBudgetQuery:
         }
         logger.info("RESULTS:" + str(results))
         self.rabbitmq_processor.publish(
-            queue=self.config["DEFAULT"]["results_queue"],
+            target=self.config["DEFAULT"]["results_queue"],
             message=results
         )
 

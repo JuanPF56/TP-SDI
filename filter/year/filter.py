@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 
 from common.logger import get_logger
+from common.mom import RabbitMQProcessor
 logger = get_logger("Filter-Year")
 
 from common.filter_base import FilterBase, EOS_TYPE
@@ -16,6 +17,14 @@ class YearFilter(FilterBase):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
 
+    def _initialize_rabbitmq_processor(self):
+        self.rabbitmq_processor = RabbitMQProcessor(
+            config=self.config,
+            source_queues=self.source_queues,
+            target_queues=self.target_queue,
+            target_exchange=self.target_exchange          
+        )
+
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
         
@@ -24,10 +33,8 @@ class YearFilter(FilterBase):
             defaults.get("movies_arg_spain_queue", "movies_arg_spain")
         ]
 
-        self.target_queues = {
-            self.source_queues[0]: defaults.get("movies_arg_post_2000_queue", "movies_arg_post_2000"),
-            self.source_queues[1]: defaults.get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
-        }
+        self.target_queue = defaults.get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
+        self.target_exchange = defaults.get("movies_arg_post_2000_exchange", "movies_arg_post_2000")
 
         self.processed_batch = {
             self.source_queues[0]: [],
@@ -66,7 +73,7 @@ class YearFilter(FilterBase):
         if count < self.nodes_of_type: 
             # Send EOS back to input queue for other year nodes
             self.rabbitmq_processor.publish(
-                queue=input_queue,
+                target=input_queue,
                 message={"node_id": node_id, "count": count},
                 msg_type=EOS_TYPE
             )
@@ -92,23 +99,40 @@ class YearFilter(FilterBase):
         """
         Propagate the end of stream (EOS) to all output queues.
         """
-        logger.debug("Sending EOS to output queues")
-        for queue in self.target_queues.values():
-            self.rabbitmq_processor.publish(
-                queue=queue,
-                message={"node_id": self.node_id, "count": 0},
-                msg_type=EOS_TYPE,
-            )
-            logger.info(f"EOS message sent to {queue}")
+        logger.debug("Sending EOS to output queue and exchange")
+        self.rabbitmq_processor.publish(
+            target=self.target_queue,
+            message={"node_id": self.node_id, "count": 0},
+            msg_type=EOS_TYPE,
+        )
+        logger.info(f"EOS message sent to {self.target_queue}")
+        self.rabbitmq_processor.publish(
+            target=self.target_exchange,
+            message={"node_id": self.node_id, "count": 0},
+            msg_type=EOS_TYPE,
+            exchange=True
+        )
+        logger.info(f"EOS message sent to {self.target_exchange}")
 
     def _handle_eos(self, input_queue, body, method):
         logger.debug(f"Received EOS from {input_queue}")
 
         if self.processed_batch.get(input_queue):
-            logger.info(f"Publishing remaining {len(self.processed_batch[input_queue])} movies to {self.target_queues[input_queue]}")
+            exchange = False
+            if input_queue == self.source_queues[0]:
+                # Argentine-only movies after 2000
+                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_exchange}")   
+                exchange = True
+            elif input_queue == self.source_queues[1]:
+                # Argentina + Spain movies between 2000-2009
+                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_queue}")
+            else:
+                logger.warning(f"Unknown source queue: {input_queue}")
+                return
             self.rabbitmq_processor.publish(
-                queue=self.target_queues[input_queue],
-                message=self.processed_batch[input_queue]
+                target=self.target_exchange if exchange else self.target_queue,
+                message=self.processed_batch[input_queue],
+                exchange=exchange,
             )
             self.processed_batch[input_queue] = []
 
@@ -137,11 +161,22 @@ class YearFilter(FilterBase):
 
     def _publish_ready_batches(self, input_queue, msg_type):
         if len(self.processed_batch[input_queue]) >= self.batch_size:
-            logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_queues[input_queue]}")
+            exchange = False
+            if input_queue == self.source_queues[0]:
+                # Argentine-only movies after 2000
+                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_exchange}")   
+                exchange = True
+            elif input_queue == self.source_queues[1]:
+                # Argentina + Spain movies between 2000-2009
+                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_queue}")
+            else:
+                logger.warning(f"Unknown source queue: {input_queue}")
+                return
             self.rabbitmq_processor.publish(
-                queue=self.target_queues[input_queue],
+                target=self.target_exchange if exchange else self.target_queue,
                 message=self.processed_batch[input_queue],
-                msg_type=msg_type
+                msg_type=msg_type,
+                exchange=exchange
             )
             self.processed_batch[input_queue] = []
 

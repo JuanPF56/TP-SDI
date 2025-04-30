@@ -132,14 +132,14 @@ class Gateway():
                     if queue_key:
                         batch_payload = [asdict(item) for item in processed_data]
                         self.rabbitmq.publish(
-                            queue=queue_key,
+                            target=queue_key,
                             message=batch_payload,
                             msg_type=message_code
                         )
 
                         if is_last_batch == IS_LAST_BATCH_FLAG:
                             self.rabbitmq.publish(
-                                queue=queue_key,
+                                target=queue_key,
                                 message={}, # Empty message to indicate end of batch
                                 msg_type="EOS"
                             )

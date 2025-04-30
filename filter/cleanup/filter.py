@@ -121,7 +121,7 @@ class CleanupFilter(FilterBase):
         if count < self.nodes_of_type:
             logger.debug(f"Sending EOS back to input queue: {queue_name}")
             self.rabbitmq_processor.publish(
-                queue=queue_name,
+                target=queue_name,
                 message={"node_id": self.node_id, "count": count},
                 msg_type=msg_type
             )
@@ -131,7 +131,7 @@ class CleanupFilter(FilterBase):
             if isinstance(targets, list):
                 for target in targets:
                     self.rabbitmq_processor.publish(
-                        queue=target,
+                        target=target,
                         message={"node_id": self.node_id, "count": 0},
                         msg_type=msg_type
                     )
@@ -139,7 +139,7 @@ class CleanupFilter(FilterBase):
                     logger.debug(f"EOS sent to target queue: {target}")
             else:
                 self.rabbitmq_processor.publish(
-                    queue=targets,
+                    target=targets,
                     message={"node_id": self.node_id, "count": 0},
                     msg_type=msg_type
                 )
@@ -180,7 +180,7 @@ class CleanupFilter(FilterBase):
             target_queues = [target_queues]
         for target_queue in target_queues:
             self.rabbitmq_processor.publish(
-                queue=target_queue,
+                target=target_queue,
                 message=batch,
                 msg_type=msg_type
             )

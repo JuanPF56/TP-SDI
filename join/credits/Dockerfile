@@ -3,8 +3,9 @@ WORKDIR /app
 
 # Copy common code
 COPY common/ ./common/
+COPY join/common/ ./common/
 
 # Copy specific code
-COPY join_table/ .
+COPY join/credits/ .
 
-CMD ["python3", "join_table.py"]
+CMD ["python3", "join.py"]
