@@ -151,7 +151,7 @@ class JoinBase:
                     self.movies_table.append(new_movie)
                 self.log_debug(f"Received {len(movies)} movies so far.")
                 
-        self.log_info("Consuming from queue: %s", 'movies_queue')
+        self.log_info("Consuming from queue: movies_queue")
         chan.basic_consume(queue='movies_queue', on_message_callback=callback, auto_ack=True)
                 
         chan.start_consuming()
