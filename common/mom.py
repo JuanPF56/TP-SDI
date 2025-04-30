@@ -72,7 +72,7 @@ class RabbitMQProcessor:
 
                 # Handle source_exchange and target_exchange if provided
                 if self.source_exchange:
-                    self.channel.exchange_declare(exchange=self.source_exchange, exchange_type='topic')
+                    self.channel.exchange_declare(exchange=self.source_exchange, exchange_type='fanout')
                     # If exchange_queues is not a list, convert it to a list
                     if not isinstance(self.exchange_queues, list):
                         self.exchange_queues = [self.exchange_queues]
@@ -80,7 +80,7 @@ class RabbitMQProcessor:
                         self.channel.queue_bind(exchange=self.source_exchange, queue=queue, routing_key=queue)
                 
                 if self.target_exchange:
-                    self.channel.exchange_declare(exchange=self.target_exchange, exchange_type='topic')                       
+                    self.channel.exchange_declare(exchange=self.target_exchange, exchange_type='fanout')                       
                 
                 return True
 

@@ -114,10 +114,12 @@ class JoinBase:
 
         # Declare a fanout exchange
         chan.exchange_declare(exchange=movies_exchange, exchange_type='fanout')
+        # Form the queue name
+        movies_queue = 'movies_queue_' + str(self.node_id)
         # Create a new queue for the movies
-        chan.queue_declare(queue='movies_queue', exclusive=True)
+        chan.queue_declare(queue=movies_queue)
         # Bind the queue to the exchange
-        chan.queue_bind(exchange=movies_exchange, queue='movies_queue')
+        chan.queue_bind(exchange=movies_exchange, queue=movies_queue)
 
         def callback(ch, method, properties, body):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
@@ -152,7 +154,7 @@ class JoinBase:
                 self.log_debug(f"Received {len(movies)} movies so far.")
                 
         self.log_info("Consuming from queue: movies_queue")
-        chan.basic_consume(queue='movies_queue', on_message_callback=callback, auto_ack=True)
+        chan.basic_consume(queue=movies_queue, on_message_callback=callback, auto_ack=True)
                 
         chan.start_consuming()
         chan.close()
