@@ -74,6 +74,7 @@ class RabbitMQProcessor:
         Inicia el consumo de mensajes desde las colas.
         """
         logger.info("Iniciando el consumo de mensajes...")
+        self.channel.basic_qos(prefetch_count=5)
         for queue in self.source_queues:
             # Create a closure that properly captures the queue variable
             def create_callback_wrapper(queue_name):
@@ -92,10 +93,7 @@ class RabbitMQProcessor:
         self.channel.start_consuming()
         
     def publish(self, queue, message, msg_type=None):
-        """
-        Publica un mensaje en la cola especificada.
-        """
-        logger.debug(f"Publicando mensaje en la cola: {queue}, tipo: {msg_type}", extra={"payload": message})
+        """Publica un mensaje en la cola especificada."""
         self.channel.basic_publish(
             exchange='',
             routing_key=queue,
@@ -130,3 +128,13 @@ class RabbitMQProcessor:
             self.channel.close()
             self.connection.close()
             logger.info("Conexión cerrada con RabbitMQ.")
+
+    def reconnect_and_restart(self, callback):
+        """Reconecta y reinicia el procesamiento de mensajes."""
+        try:
+            if self.connection and not self.connection.is_closed:
+                self.connection.close()
+        except Exception as e:
+            logger.warning(f"Error al cerrar la conexión: {e}")
+        self.connect()
+        self.consume(callback)
