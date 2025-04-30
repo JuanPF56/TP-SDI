@@ -3,11 +3,11 @@ import json
 
 import pika
 from common.logger import get_logger
-from common.join_base import JoinBatchBase
+from common.join_base import JoinBase
 
-logger = get_logger("JoinBatch-Credits")
+logger = get_logger("Join-Credits")
 
-class JoinBatchCredits(JoinBatchBase):
+class JoinCredits(JoinBase):
     def process_batch(self, ch, method, properties, body):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
@@ -98,4 +98,4 @@ class JoinBatchCredits(JoinBatchBase):
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
-    JoinBatchCredits(config).process()
+    JoinCredits(config).process()

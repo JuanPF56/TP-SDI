@@ -3,11 +3,11 @@ import json
 
 import pika
 from common.logger import get_logger
-from common.join_base import JoinBatchBase
+from common.join_base import JoinBase
 
 logger = get_logger("JoinBatch-Ratings")
 
-class JoinBatchRatings(JoinBatchBase):
+class JoinRatings(JoinBase):
     def process_batch(self, ch, method, properties, body):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
@@ -94,4 +94,4 @@ class JoinBatchRatings(JoinBatchBase):
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
-    JoinBatchRatings(config).process()
+    JoinRatings(config).process()

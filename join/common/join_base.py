@@ -9,7 +9,7 @@ EOS_TYPE = "EOS"
 
 SECONDS_TO_HEARTBEAT = 600  # 10 minutes (adjustable)
 
-class JoinBatchBase:
+class JoinBase:
     def __init__(self, config):
         self.config = config
         # Connect to RabbitMQ with retry
@@ -28,8 +28,10 @@ class JoinBatchBase:
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
+        self.year_nodes_to_await = int(os.getenv("YEAR_NODES_TO_AWAIT", "1"))
 
         self._eos_flags = {}
+        self._year_eos_flags = {}
         
         # Create a shared list to store the movies table
         self.manager = multiprocessing.Manager()
@@ -90,7 +92,7 @@ class JoinBatchBase:
 
     def receive_movies_table(self):
         # Get the movies table exchange name from the config
-        movies_table_exchange = self.config["DEFAULT"].get("movies_table_exchange", "movies_table_broadcast")
+        movies_exchange = self.config["DEFAULT"].get("movies_exchange", "movies_arg_post_2000")
         # Connect to RabbitMQ
         conn, chan = self.__connect_to_rabbitmq()
 
@@ -102,27 +104,47 @@ class JoinBatchBase:
         signal.signal(signal.SIGTERM, hdlSigTermTableRcv)
 
         # Declare a fanout exchange
-        chan.exchange_declare(exchange=movies_table_exchange, exchange_type='fanout')
-        # Create a new queue with a random name
-        result = chan.queue_declare(queue='', exclusive=True)
-        table_queue = result.method.queue
+        chan.exchange_declare(exchange=movies_exchange, exchange_type='fanout')
+        # Create a new queue for the movies
+        chan.queue_declare(queue='movies_queue', exclusive=True)
         # Bind the queue to the exchange
-        chan.queue_bind(exchange=movies_table_exchange, queue=table_queue)
+        chan.queue_bind(exchange=movies_exchange, queue='movies_queue')
 
-        # Callback function to handle incoming messages
         def callback(ch, method, properties, body):
-            try:
-                movies = json.loads(body)
-                self.movies_table.extend(movies)
-                self.movies_table_ready.set()
-                ch.stop_consuming()
-            except Exception as e:
-                self.log_info(f"Error receiving movies table: {e}")
-        
-        self.log_info("Waiting for movies table...")
-        # Start consuming messages from the queue
-        chan.basic_consume(queue=table_queue, on_message_callback=callback, auto_ack=True)
-        
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+
+            if msg_type == EOS_TYPE:
+                try:
+                    data = json.loads(body)
+                    node_id = data.get("node_id")
+                except json.JSONDecodeError:
+                    self.log_error("Failed to decode EOS message")
+                    return
+                if node_id not in self._year_eos_flags:
+                    self._year_eos_flags[node_id] = True
+                    self.log_debug(f"EOS received for node {node_id}.")
+                if len(self._year_eos_flags) == int(self.year_nodes_to_await):
+                    self.log_info("All nodes have sent EOS. Notifying movies table ready.")
+                    self.movies_table_ready.set()
+                    ch.stop_consuming()
+            else:
+                try:
+                    movies = json.loads(body)
+                except json.JSONDecodeError:
+                    self.log_error(f"Error decoding JSON: {body}")
+                    return
+                self.log_debug(f"Received message: {movies}")
+                for movie in movies:
+                    new_movie = {
+                        "id" : str(movie["id"]),
+                        "original_title": movie["original_title"],
+                    }
+                    self.movies_table.append(new_movie)
+                self.log_debug(f"Received {len(movies)} movies so far.")
+                
+        self.log_info("Consuming from queue: %s", 'movies_queue')
+        chan.basic_consume(queue='movies_queue', on_message_callback=callback, auto_ack=True)
+                
         chan.start_consuming()
         chan.close()
 
@@ -159,4 +181,10 @@ class JoinBatchBase:
         raise NotImplementedError("Subclasses must implement this method")
     
     def log_info(self, message):
+        raise NotImplementedError("Subclasses must implement this method")
+    
+    def log_error(self, message):
+        raise NotImplementedError("Subclasses must implement this method")
+    
+    def log_debug(self, message):
         raise NotImplementedError("Subclasses must implement this method")
