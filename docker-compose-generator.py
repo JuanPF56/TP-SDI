@@ -1,6 +1,7 @@
 import sys
 import configparser
 import yaml
+from copy import deepcopy
 
 def generate_compose(filename, short_test=False):
 
@@ -72,20 +73,20 @@ def generate_compose(filename, short_test=False):
 
     # Filter nodes
     for subtype in ["cleanup", "year", "production"]:
-        depends_on = {"gateway": {"condition": "service_healthy"}}
         if subtype == "cleanup":
             num_nodes = cleanup
             nodes_to_await = 1
+            depends = {"gateway": {"condition": "service_healthy"}}
         elif subtype == "year":
             num_nodes = year
             nodes_to_await = production
-            depends_on = {
-                "gateway": {"condition": "service_healthy"},
-                **{node: {"condition": "service_started"} for node in j_nodes}
-            }
+            depends = {"gateway": {"condition": "service_healthy"}}
+            for node in j_nodes:
+                depends[node] = {"condition": "service_started"}
         elif subtype == "production":
             num_nodes = production
             nodes_to_await = cleanup
+            depends = {"gateway": {"condition": "service_healthy"}}
         for i in range(1, num_nodes + 1):
             services[f"filter_{subtype}_{i}"] = {
                 "container_name": f"filter_{subtype}_{i}",
@@ -100,7 +101,7 @@ def generate_compose(filename, short_test=False):
                     "NODES_TO_AWAIT": str(nodes_to_await),
                     "NODES_OF_TYPE": num_nodes,
                 },
-                "depends_on": depends_on,
+                "depends_on": deepcopy(depends),
                 "networks": ["testing_net"]
             }
 

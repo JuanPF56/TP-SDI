@@ -10,9 +10,8 @@ docker-image:
 	docker build -f ./base_node/Dockerfile -t base_node:latest .
 	docker build -f ./gateway/Dockerfile -t gateway:latest .
 	docker build -f ./client/Dockerfile -t client:latest .
-	docker build -f ./join_table/Dockerfile -t join_table:latest .
-	docker build -f ./join_batch/credits/Dockerfile -t join_batch_credits:latest .
-	docker build -f ./join_batch/ratings/Dockerfile -t join_batch_ratings:latest .
+	docker build -f ./join/credits/Dockerfile -t join_credits:latest .
+	docker build -f ./join/ratings/Dockerfile -t join_ratings:latest .
 	docker build -f ./filter/cleanup/Dockerfile -t filter_cleanup:latest .
 	docker build -f ./filter/year/Dockerfile -t filter_year:latest .
 	docker build -f ./filter/production/Dockerfile -t filter_production:latest .

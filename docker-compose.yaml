@@ -86,6 +86,16 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+      join_credits_1:
+        condition: service_started
+      join_credits_2:
+        condition: service_started
+      join_ratings_1:
+        condition: service_started
+      join_ratings_2:
+        condition: service_started
+      join_ratings_3:
+        condition: service_started
     networks:
     - testing_net
   filter_year_2:
@@ -102,6 +112,16 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+      join_credits_1:
+        condition: service_started
+      join_credits_2:
+        condition: service_started
+      join_ratings_1:
+        condition: service_started
+      join_ratings_2:
+        condition: service_started
+      join_ratings_3:
+        condition: service_started
     networks:
     - testing_net
   filter_production_1:
@@ -216,104 +236,86 @@ services:
         condition: service_healthy
     networks:
     - testing_net
-  join_table:
-    container_name: join_table
-    image: join_table:latest
-    entrypoint: python3 /app/join_table.py
-    volumes:
-    - ./join_table/config.ini:/app/config.ini
-    environment:
-      NODES_TO_AWAIT: '2'
-    depends_on:
-      gateway:
-        condition: service_healthy
-      join_batch_credits_1:
-        condition: service_started
-      join_batch_credits_2:
-        condition: service_started
-      join_batch_ratings_1:
-        condition: service_started
-      join_batch_ratings_2:
-        condition: service_started
-      join_batch_ratings_3:
-        condition: service_started
-    networks:
-    - testing_net
-  join_batch_credits_1:
-    container_name: join_batch_credits_1
-    image: join_batch_credits:latest
-    entrypoint: python3 /app/join_batch.py
+  join_credits_1:
+    container_name: join_credits_1
+    image: join_credits:latest
+    entrypoint: python3 /app/join.py
     environment:
       NODE_ID: '1'
-      NODE_TYPE: join_batch_credits
+      NODE_TYPE: join_credits
       NODES_TO_AWAIT: '2'
       NODES_OF_TYPE: 2
+      YEAR_NODES_TO_AWAIT: '2'
     volumes:
-    - ./join_batch/credits/config.ini:/app/config.ini
+    - ./join/credits/config.ini:/app/config.ini
     depends_on:
       gateway:
         condition: service_healthy
     networks:
     - testing_net
-  join_batch_credits_2:
-    container_name: join_batch_credits_2
-    image: join_batch_credits:latest
-    entrypoint: python3 /app/join_batch.py
+  join_credits_2:
+    container_name: join_credits_2
+    image: join_credits:latest
+    entrypoint: python3 /app/join.py
     environment:
       NODE_ID: '2'
-      NODE_TYPE: join_batch_credits
+      NODE_TYPE: join_credits
       NODES_TO_AWAIT: '2'
       NODES_OF_TYPE: 2
+      YEAR_NODES_TO_AWAIT: '2'
     volumes:
-    - ./join_batch/credits/config.ini:/app/config.ini
+    - ./join/credits/config.ini:/app/config.ini
     depends_on:
       gateway:
         condition: service_healthy
     networks:
     - testing_net
-  join_batch_ratings_1:
-    container_name: join_batch_ratings_1
-    image: join_batch_ratings:latest
-    entrypoint: python3 /app/join_batch.py
+  join_ratings_1:
+    container_name: join_ratings_1
+    image: join_ratings:latest
+    entrypoint: python3 /app/join.py
     environment:
       NODE_ID: '1'
-      NODE_TYPE: join_batch_ratings
+      NODE_TYPE: join_ratings
       NODES_TO_AWAIT: '2'
       NODES_OF_TYPE: 3
+      YEAR_NODES_TO_AWAIT: '2'
     volumes:
-    - ./join_batch/ratings/config.ini:/app/config.ini
+    - ./join/ratings/config.ini:/app/config.ini
     depends_on:
       gateway:
         condition: service_healthy
     networks:
     - testing_net
-  join_batch_ratings_2:
-    container_name: join_batch_ratings_2
-    image: join_batch_ratings:latest
-    entrypoint: python3 /app/join_batch.py
+  join_ratings_2:
+    container_name: join_ratings_2
+    image: join_ratings:latest
+    entrypoint: python3 /app/join.py
     environment:
       NODE_ID: '2'
-      NODE_TYPE: join_batch_ratings
+      NODE_TYPE: join_ratings
       NODES_TO_AWAIT: '2'
       NODES_OF_TYPE: 3
+      YEAR_NODES_TO_AWAIT: '2'
     volumes:
-    - ./join_batch/ratings/config.ini:/app/config.ini
+    - ./join/ratings/config.ini:/app/config.ini
     depends_on:
       gateway:
         condition: service_healthy
     networks:
     - testing_net
-  join_batch_ratings_3:
-    container_name: join_batch_ratings_3
-    image: join_batch_ratings:latest
-    entrypoint: python3 /app/join_batch.py
+  join_ratings_3:
+    container_name: join_ratings_3
+    image: join_ratings:latest
+    entrypoint: python3 /app/join.py
     environment:
       NODE_ID: '3'
-      NODE_TYPE: join_batch_ratings
+      NODE_TYPE: join_ratings
       NODES_TO_AWAIT: '2'
       NODES_OF_TYPE: 3
+      YEAR_NODES_TO_AWAIT: '2'
     volumes:
-    - ./join_batch/ratings/config.ini:/app/config.ini
+    - ./join/ratings/config.ini:/app/config.ini
     depends_on:
       gateway:
         condition: service_healthy
