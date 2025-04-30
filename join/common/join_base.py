@@ -11,6 +11,9 @@ SECONDS_TO_HEARTBEAT = 600  # 10 minutes (adjustable)
 
 class JoinBase:
     def __init__(self, config):
+        """
+        Initialize the JoinBase class with the given configuration.
+        """
         self.config = config
         # Connect to RabbitMQ with retry
         self.connection, self.channel = self.__connect_to_rabbitmq()
@@ -91,6 +94,12 @@ class JoinBase:
         self.table_receiver.join()
 
     def receive_movies_table(self):
+        """
+        Start the process to receive the movies from the broadcast exchange.
+        This method will create a new queue and bind it to the exchange.
+        It will then consume messages from the queue and populate the movies table.
+        Once all nodes have sent EOS messages, it will notify that the movies table is ready.
+        """
         # Get the movies table exchange name from the config
         movies_exchange = self.config["DEFAULT"].get("movies_exchange", "movies_arg_post_2000")
         # Connect to RabbitMQ
@@ -149,7 +158,12 @@ class JoinBase:
         chan.close()
 
     def receive_batch(self):
-       # Wait for the movies table to be received
+        """
+        Start the process to receive batches from the input queue.
+        This method will wait for the movies table to be ready before 
+        starting to consume messages.
+        """
+        # Wait for the movies table to be ready
         self.movies_table_ready.wait()
 
         self.log_info("Movies table is ready. Starting to receive batches...")
@@ -178,8 +192,96 @@ class JoinBase:
                 break
 
     def process_batch(self, ch, method, properties, body):
-        raise NotImplementedError("Subclasses must implement this method")
+        """
+        Process the incoming batch of messages.
+        This method handles the end-of-stream (EOS) messages and performs the join operation.
+        The join operation is defined in the perform_join method, which should be overridden
+        by subclasses.
+        """
+        try:
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+            if msg_type == "EOS":
+                try:
+                    data = json.loads(body)
+                    node_id = data.get("node_id")
+                    count = data.get("count")
+                except json.JSONDecodeError:
+                    self.log_debug("Failed to decode EOS message")
+                    return
+                self.log_debug(f"EOS message received: {data}")
+                if node_id not in self._eos_flags:
+                    count += 1
+                    self._eos_flags[node_id] = True
+                    self.log_debug(f"EOS received for node {node_id}.")
+                if len(self._eos_flags) == int(self.eos_to_await):
+                    self.log_info("All nodes have sent EOS. Sending EOS to output queue.")
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.output_queue,
+                        body=json.dumps({"node_id": self.node_id, "count": 0}),
+                        properties=pika.BasicProperties(type=msg_type)
+                    )
+                    ch.stop_consuming()
+                self.log_debug(f"EOS count for node {node_id}: {count}")
+                self.log_debug(f"Nodes of type: {self.nodes_of_type}")
+                # If this isn't the last node, put the EOS message back to the queue for other nodes
+                if count < self.nodes_of_type:
+                    self.log_debug(f"Sending EOS back to input queue for node {node_id}.")
+                    # Put the EOS message back to the queue for other nodes
+                    self.channel.basic_publish(
+                        exchange='',
+                        routing_key=self.input_queue,
+                        body=json.dumps({"node_id": node_id, "count": count}),
+                        properties=pika.BasicProperties(type=msg_type)
+                    )
+                return
+            # Load the data from the incoming message
+            try:
+                decoded = json.loads(body)
+                if isinstance(decoded, list):
+                    self.log_debug(f"Received list: {decoded}")
+                    data = decoded
+                elif isinstance(decoded, dict):
+                    self.log_debug(f"Received dict: {decoded}")
+                    data = [decoded]
+                else:
+                    self.log_warning(f"Unexpected JSON format: {decoded}")
+                    return
+            except json.JSONDecodeError as e:
+                self.log_error(f"Error decoding JSON: {e}")
+                return
+            
+            # Build a set of movie IDs for fast lookup
+            movies_by_id = {movie["id"]: movie for movie in self.movies_table}
+            joined_data = self.perform_join(data, movies_by_id)            
+
+            if not joined_data:
+                self.log_debug("No matching movies found in the movies table.")
+                return
+            
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.output_queue,
+                body=json.dumps(joined_data).encode('utf-8'),
+                properties=pika.BasicProperties(type=msg_type)
+            )
+        except pika.exceptions.StreamLostError as e:
+            self.log_info(f"Stream lost, reconnecting: {e}")
+            self.connection.close()
+            self.channel.stop_consuming()
+            self.connection, self.channel = self.__connect_to_rabbitmq()
+            self.receive_batch()
+
+        except Exception as e:
+            self.log_error(f"[ERROR] Unexpected error in process_batch: {e}")
     
+    def perform_join(self, data, movies_by_id):
+        """
+        Perform the join operation between the incoming data and the movies table.
+        This method should be overridden by subclasses to implement specific join logic.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
     def log_info(self, message):
         raise NotImplementedError("Subclasses must implement this method")
     
@@ -187,4 +289,7 @@ class JoinBase:
         raise NotImplementedError("Subclasses must implement this method")
     
     def log_debug(self, message):
+        raise NotImplementedError("Subclasses must implement this method")
+    
+    def log_warning(self, message):
         raise NotImplementedError("Subclasses must implement this method")
