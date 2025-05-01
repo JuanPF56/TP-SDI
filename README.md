@@ -47,12 +47,49 @@ join_batch_ratings_nodes = 3
 
 ### 🔧 Generar el `docker-compose.yaml`
 
+El sistema cuenta con un script auxiliar para facilitar la generación del archivo docker-compose.yaml de forma dinámica, según los parámetros que definas.
+
+### ✅ Uso recomendado con `generate-compose.sh`
+
 ```bash
-python3 docker-compose-generator.py <output_file.yml> [-short_test]
+./generate-compose.sh <output_file.yml> [-short_test] [-cant_clientes N]
 ```
 
-- El flag `-short_test` monta el volumen `./datasets_for_test:/datasets` para correr el sistema con datasets reducidos (útil para pruebas rápidas).
-- Ej de uso: `python3 docker-compose-generator.py docker-compose.yaml`
+### 📌 Parámetros
+
+- `<output_file.yml>`: nombre del archivo de salida (docker-compose.yaml, por ejemplo).
+
+- `-short_test`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`).
+
+- `-cant_clientes N`: opcional. Define la cantidad de clientes (client_X) que se generan en el sistema.
+
+### 🧪 Ejemplos
+
+- Generar configuración completa:
+
+```bash
+./generate-compose.sh docker-compose.yaml
+```
+
+- Generar para pruebas rápidas:
+
+```bash
+./generate-compose.sh docker-compose.yaml -short_test
+```
+
+- Generar con 4 clientes:
+
+```bash
+./generate-compose.sh docker-compose.yaml -cant_clientes 4
+```
+
+- Combinar ambos:
+
+```bash
+./generate-compose.sh docker-compose.yaml -short_test -cant_clientes 3
+```
+
+> 💡 Internamente, este script llama al generador python3 docker-compose-generator.py pasando los argumentos adecuados y haciendo un manejo limpio del orden de los flags.
 
 ---
 

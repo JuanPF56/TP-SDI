@@ -1,9 +1,10 @@
 import sys
 import configparser
 import yaml
+import uuid
 from copy import deepcopy
 
-def generate_compose(filename, short_test=False):
+def generate_compose(filename, short_test=False, cant_clientes=1):
 
     # Get amount of nodes
     config = configparser.ConfigParser()
@@ -205,29 +206,31 @@ def generate_compose(filename, short_test=False):
             "networks": ["testing_net"]
         }
 
-    # Client node
-    client_volumes = [
-        "./client/config.ini:/app/config.ini",
-        "./resultados:/app/resultados"
-    ]
-    if short_test:
-        client_volumes.append("./datasets_for_test:/datasets")
+    # Clients nodes
+    for i in range(1, cant_clientes + 1):
+        client_volumes = [
+            "./client/config.ini:/app/config.ini",
+            f"./resultados:/app/resultados"
+        ]
+        if short_test:
+            client_volumes.append("./datasets_for_test:/datasets")
 
-    services["client"] = {
-        "container_name": "client",
-        "image": "client:latest",
-        "entrypoint": "python3 /app/main.py",
-        "volumes": client_volumes,
-        "environment": {
-            "USE_TEST_DATASET": "1" if short_test else "0"
-        },
-        "depends_on": {
-            "gateway": {
-                "condition": "service_healthy"
-            }
-        },
-        "networks": ["testing_net"]
-    }
+        services[f"client_{i}"] = {
+            "container_name": f"client_{i}",
+            "image": "client:latest",
+            "entrypoint": "python3 /app/main.py",
+            "volumes": client_volumes,
+            "environment": {
+                "USE_TEST_DATASET": "1" if short_test else "0",
+                "CLIENT_UUID": str(uuid.uuid4())
+            },
+            "depends_on": {
+                "gateway": {
+                    "condition": "service_healthy"
+                }
+            },
+            "networks": ["testing_net"]
+        }
 
     # Compose root
     compose = {
@@ -249,12 +252,20 @@ def main():
     args = sys.argv[1:]
 
     if not args or args[0].startswith("-"):
-        print("Usage: python3 docker-compose-generator.py <output_file.yml> [-short_test]")
+        print("Usage: python3 docker-compose-generator.py <output_file.yml> [-short_test] [-cant_clientes <n>]")
         sys.exit(1)
 
     filename = args[0]
     short_test = "-short_test" in args
-    generate_compose(filename, short_test)
+
+    # Obtener cantidad de clientes (default 1)
+    cant_clientes = 1
+    if "-cant_clientes" in args:
+        idx = args.index("-cant_clientes")
+        if idx + 1 < len(args):
+            cant_clientes = int(args[idx + 1])
+
+    generate_compose(filename, short_test, cant_clientes)
 
 if __name__ == "__main__":
     main()
