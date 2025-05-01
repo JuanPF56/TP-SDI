@@ -1,30 +1,34 @@
 import socket
 import signal
-import pika
-import json
 import os
-import time
+import uuid
 from dataclasses import asdict
 
 from common.logger import get_logger
 logger = get_logger("Gateway")
 
 from protocol_gateway_client import ProtocolGateway
-from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
+from client_registry import ClientRegistry
+from common.protocol import TIPO_MENSAJE, IS_LAST_BATCH_FLAG
 from common.mom import RabbitMQProcessor
 
 from result_dispatcher import ResultDispatcher
+from connected_client import ConnectedClient
 
 class Gateway():
     def __init__(self, config):
         self.config = config
+
+        # Initialize gateway socket
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._gateway_socket.bind(('', int(config["DEFAULT"]["GATEWAY_PORT"])))
         self._gateway_socket.listen(int(config["DEFAULT"]["LISTEN_BACKLOG"]))
+        logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
         self._was_closed = False
-        self._clients_conected = []
+
+        # Initialize connected clients registry that monitors the connected clients
+        self._clients_connected = ClientRegistry()
         self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
-        self._datasets_received = 0
 
         # Connect to RabbitMQ with retry
         self.rabbitmq = RabbitMQProcessor(
@@ -42,16 +46,6 @@ class Gateway():
         if not connected:
             raise RuntimeError("Failed to connect to RabbitMQ.")
 
-        logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
-
-        # Initialize ResultDispatcher
-        self.result_dispatcher = ResultDispatcher(
-            config["DEFAULT"]["rabbitmq_host"],
-            config["DEFAULT"]["results_queue"],
-            self._clients_conected
-        )
-        self.result_dispatcher.start()
-
         try:
             with open("/tmp/gateway_ready", "w") as f:
                 f.write("ready")
@@ -59,14 +53,23 @@ class Gateway():
         except Exception as e:
             logger.error(f"Failed to create healthcheck file: {e}")
 
+        # Initialize ResultDispatcher
+        self.result_dispatcher = ResultDispatcher(
+            config["DEFAULT"]["rabbitmq_host"],
+            config["DEFAULT"]["results_queue"],
+            self._clients_connected
+        )
+        self.result_dispatcher.start()
+
+        # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
     def run(self):
         while not self._was_closed:
             try:
-                protocol_gateway = self.__accept_new_connection()
-                self.__handle_client_connection(protocol_gateway)
+                new_connected_client = self.__accept_new_connection()
+                self.__handle_client_connection(new_connected_client)
             except OSError as e:
                 if self._was_closed:
                     break
@@ -74,16 +77,23 @@ class Gateway():
 
     def __accept_new_connection(self):
         logger.info("Waiting for new connections...")
-        c, addr = self._gateway_socket.accept()
-        protocol_gateway = ProtocolGateway(c)
-        self._clients_conected.append(protocol_gateway)
-        logger.info(f"New connection from {addr}")
-        return protocol_gateway
+        accepted_socket, accepted_address = self._gateway_socket.accept()
+        logger.info(f"New connection from {accepted_address}")
 
-    def __handle_client_connection(self, protocol_gateway: ProtocolGateway):
+        new_connected_client = ConnectedClient(
+            client_id = str(uuid.uuid4()),
+            client_socket = accepted_socket,
+            client_addr = accepted_address
+        )
+        self._clients_connected.add(new_connected_client)
+        new_connected_client.send_client_id()
+        return new_connected_client
+
+    def __handle_client_connection(self, new_connected_client: ConnectedClient):
         try:
-            while protocol_gateway._client_is_connected():
+            while new_connected_client._client_is_connected():
                 logger.debug("Waiting for message...")
+                protocol_gateway = new_connected_client.get_protocol_gateway()
 
                 header = protocol_gateway.receive_header()
                 if header is None:
@@ -213,9 +223,8 @@ class Gateway():
             logger.error(f"Failed to close server properly: {e}")
 
     def _close_connected_clients(self):
-        for client in self._clients_conected:
-            try:
-                client._stop_client()
-            except Exception as e:
-                logger.error(f"Error closing client socket: {e}")
-        self._clients_conected.clear()
+        logger.info("Closing connected clients...")
+        try:
+            self._clients_connected.clear()
+        except Exception as e:
+            logger.error(f"Error closing client socket: {e}")

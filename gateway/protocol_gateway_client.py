@@ -8,7 +8,7 @@ import common.sender as sender
 from common.logger import get_logger
 logger = get_logger("Protocol Gateway")
 
-from common.protocol import SIZE_OF_HEADER, SIZE_OF_UINT8, TIPO_MENSAJE
+from common.protocol import SIZE_OF_HEADER, SIZE_OF_UINT8, TIPO_MENSAJE, SIZE_OF_UUID
 TIPO_MENSAJE_INVERSO = {v: k for k, v in TIPO_MENSAJE.items()}
 
 from common.decoder import Decoder
@@ -47,6 +47,27 @@ class ProtocolGateway:
         except Exception as e:
             logger.error(f"Failed to close client socket: {e}")
             self._client_socket = None
+
+    def send_client_id(self, client_id: str):
+        """
+        Send the client ID to the connected client.
+        """
+        try:
+            encoded_client_id = client_id.encode("utf-8")
+            client_id_len = len(encoded_client_id)
+            if client_id_len != SIZE_OF_UUID:
+                logger.error(f"Client ID length is not {SIZE_OF_UUID} bytes")
+                raise ValueError("Client ID length is not 36 bytes")
+            
+            sender.send(self._client_socket, encoded_client_id)
+
+        except ConnectionError as e:
+            logger.error(f"Connection error while sending client ID: {e}")
+            self._stop_client()
+
+        except Exception as e:
+            logger.error(f"Failed to send client ID: {e}")
+            self._stop_client()
 
     def receive_header(self) -> tuple | None:
         """
