@@ -221,8 +221,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "entrypoint": "python3 /app/main.py",
             "volumes": client_volumes,
             "environment": {
-                "USE_TEST_DATASET": "1" if short_test else "0",
-                "CLIENT_ID": str(uuid.uuid4())
+                "USE_TEST_DATASET": "1" if short_test else "0", 
+                "REQUESTS_TO_SERVER": "1"
             },
             "depends_on": {
                 "gateway": {
