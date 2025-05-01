@@ -37,8 +37,8 @@ cleanup_filter_nodes = 2
 production_filter_nodes = 2
 year_filter_nodes = 2
 sentiment_analyzer_nodes = 5
-join_batch_credits_nodes = 2
-join_batch_ratings_nodes = 3
+join_credits_nodes = 2
+join_ratings_nodes = 3
 ```
 
 🔁 Una vez configurado, ejecutá el generador de docker-compose para que los cambios se reflejen en la definición del sistema.
