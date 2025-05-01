@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$#" -lt 1 ]; then
-    echo "Uso: $0 <nombre_archivo> [-cant_clientes <numero>] [-short_test]"
+    echo "Uso: $0 <nombre_archivo> [-cant_clientes <numero>] [-short_test <cant_lineas>]"
     exit 1
 fi
 
@@ -13,6 +13,7 @@ args=("$@")  # Guardamos todos los flags originales
 # Valores por defecto
 cant_clientes="1"
 modo_test="No"
+cant_lineas_test=0
 
 # Parseo manual de los flags
 while [[ "$#" -gt 0 ]]; do
@@ -23,6 +24,8 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         -short_test)
             modo_test="Sí"
+            shift
+            cant_lineas_test=$1
             ;;
     esac
     shift
@@ -33,6 +36,12 @@ echo "Nombre del archivo de salida: $filename"
 echo "Cantidad de clientes: $cant_clientes"
 echo "¿Modo test activado?: $modo_test"
 
-# Usamos los argumentos originales guardados
+# Ejecutamos download_datasets.py si es modo test
+if [ "$modo_test" == "Sí" ]; then
+    echo "Ejecutando download_datasets.py con --test $cant_lineas_test"
+    python3 download_datasets.py --test "$cant_lineas_test"
+fi
+
+# Generamos el archivo de docker compose
 python3 docker-compose-generator.py "$filename" "${args[@]}"
 echo "Archivo generado con éxito."

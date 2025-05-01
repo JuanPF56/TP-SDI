@@ -398,9 +398,10 @@ services:
     volumes:
     - ./client/config.ini:/app/config.ini
     - ./resultados:/app/resultados
+    - ./datasets_for_test:/datasets
     environment:
-      USE_TEST_DATASET: '0'
-      CLIENT_ID: 30830b57-2726-42d6-92eb-fa326fec7972
+      USE_TEST_DATASET: '1'
+      CLIENT_ID: 5bf0bbbe-4634-4073-9f44-1233cb06f682
     depends_on:
       gateway:
         condition: service_healthy
@@ -413,9 +414,10 @@ services:
     volumes:
     - ./client/config.ini:/app/config.ini
     - ./resultados:/app/resultados
+    - ./datasets_for_test:/datasets
     environment:
-      USE_TEST_DATASET: '0'
-      CLIENT_ID: 2cd097ff-74d1-444f-957b-853618acfd5d
+      USE_TEST_DATASET: '1'
+      CLIENT_ID: 732d58b7-ceaf-4b36-9372-92d67f15d0b0
     depends_on:
       gateway:
         condition: service_healthy

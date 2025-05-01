@@ -56,14 +56,14 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 ### ✅ Uso recomendado con `generate-compose.sh`
 
 ```bash
-./generate-compose.sh <output_file.yml> [-short_test] [-cant_clientes N]
+./generate-compose.sh <output_file.yml> [-short_test <cant_lineas>] [-cant_clientes N]
 ```
 
 ### 📌 Parámetros
 
 - `<output_file.yml>`: nombre del archivo de salida (`docker-compose.yaml`, por ejemplo).
 
-- `-short_test`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`).
+- `-short_test <cant_lineas>`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py --test <cant_lineas>`.
 
 - `-cant_clientes N`: opcional. Define la cantidad de clientes (client_X) que se generan en el sistema.
 
@@ -75,10 +75,10 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 ./generate-compose.sh docker-compose.yaml
 ```
 
-- Generar para pruebas rápidas:
+- Generar para pruebas rápidas con 500 líneas:
 
 ```bash
-./generate-compose.sh docker-compose.yaml -short_test
+./generate-compose.sh docker-compose.yaml -short_test 500
 ```
 
 - Generar con 4 clientes:
@@ -90,10 +90,10 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh docker-compose.yaml -short_test -cant_clientes 3
+./generate-compose.sh docker-compose.yaml -short_test 1000 -cant_clientes 2
 ```
 
-> 💡 Internamente, este script llama al generador `python3 docker-compose-generator.py` pasando los argumentos adecuados y haciendo un manejo limpio del orden de los flags.
+> 💡 Internamente, este script llama al generador `python3 docker-compose-generator.py` pasando los argumentos adecuados y ejecuta `download_datasets.py` automáticamente si estás en modo test.
 
 ---
 
