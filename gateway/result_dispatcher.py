@@ -12,15 +12,18 @@ QUERYS_TO_ANSWER = 5
 
 class ResultDispatcher(threading.Thread):
     def __init__(self, rabbitmq_host, results_queue, connected_clients):
+        # Initialize the thread
         super().__init__(daemon=True)
-        self.rabbitmq_host = rabbitmq_host
-        self.results_queue = results_queue
-        self.connected_clients = connected_clients
         self._stop_flag = threading.Event()
+
+        # RabbitMQ connection parameters
+        self.rabbitmq_host = rabbitmq_host
         self.channel = None
         self.connection = None
-        self._results_send = 0
-        self._results_expected = QUERYS_TO_ANSWER
+        self.results_queue = results_queue
+
+        # List of connected clients
+        self.connected_clients = connected_clients
 
     def stop(self):
         self._stop_flag.set()
@@ -41,7 +44,9 @@ class ResultDispatcher(threading.Thread):
                 try:
                     result_data = json.loads(body)
                     logger.debug(f"Received result: {result_data}")
-
+                    # TODO: Aca hay que ver con que formato se lo pasamos a los senders para clientes, y como viene de la cola de results
+                    # En principio necesito el UUID para buscarlo, despeus el request_number para saber de que consulta es, y por ultimo {query_id, result}
+                    """
                     for client in self.connected_clients:
                         if client._client_is_connected():
                             client.send_result(result_data)
@@ -49,6 +54,7 @@ class ResultDispatcher(threading.Thread):
                     if self._results_send >= self._results_expected:
                         logger.info(f"Sent {self._results_send} results to clients.")
                         self._stop_flag.set()  # Stop after sending expected results
+                    """  
                 except Exception as e:
                     logger.error(f"Error processing result: {e}")
                 finally:
