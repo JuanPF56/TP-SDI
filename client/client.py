@@ -18,7 +18,8 @@ DELAY_BETWEEN_RETRIES = 10
 QUERYS_EXPECTED = 5
 
 class Client:
-    def __init__(self, host, port, max_batch_size):
+    def __init__(self, host, port, max_batch_size, client_id=None):
+        self._client_id = client_id
         self._host = host
         self._port = port
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

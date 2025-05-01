@@ -391,8 +391,8 @@ services:
         condition: service_healthy
     networks:
     - testing_net
-  client:
-    container_name: client
+  client_1:
+    container_name: client_1
     image: client:latest
     entrypoint: python3 /app/main.py
     volumes:
@@ -400,6 +400,22 @@ services:
     - ./resultados:/app/resultados
     environment:
       USE_TEST_DATASET: '0'
+      CLIENT_ID: 30830b57-2726-42d6-92eb-fa326fec7972
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+    - testing_net
+  client_2:
+    container_name: client_2
+    image: client:latest
+    entrypoint: python3 /app/main.py
+    volumes:
+    - ./client/config.ini:/app/config.ini
+    - ./resultados:/app/resultados
+    environment:
+      USE_TEST_DATASET: '0'
+      CLIENT_ID: 2cd097ff-74d1-444f-957b-853618acfd5d
     depends_on:
       gateway:
         condition: service_healthy

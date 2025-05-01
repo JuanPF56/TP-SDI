@@ -222,7 +222,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "volumes": client_volumes,
             "environment": {
                 "USE_TEST_DATASET": "1" if short_test else "0",
-                "CLIENT_UUID": str(uuid.uuid4())
+                "CLIENT_ID": str(uuid.uuid4())
             },
             "depends_on": {
                 "gateway": {
