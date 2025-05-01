@@ -101,7 +101,7 @@ class Gateway():
                     protocol_gateway._stop_client()
                     break
 
-                message_code, current_batch, is_last_batch, payload_len = header
+                message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len = header
                 logger.debug(f"Message code: {message_code}")
                 if message_code not in TIPO_MENSAJE:
                     logger.error(f"Invalid message code: {message_code}")
@@ -113,7 +113,9 @@ class Gateway():
                     protocol_gateway._stop_client()
                     break
 
-                logger.debug(f"{message_code} - Receiving batch {current_batch}")
+                client_id = encoded_id.decode("utf-8")
+
+                logger.info(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
                 payload = protocol_gateway.receive_payload(payload_len)
                 if not payload or len(payload) != payload_len:
                     logger.error("Failed to receive full payload")
@@ -171,9 +173,9 @@ class Gateway():
                         dataset_name = "ratings"
 
                     logger.info(f"Received {total_lines} lines from {dataset_name}")
-                    self._datasets_received += 1
+                    new_connected_client._received_datasets += 1
 
-                if self._datasets_received == self._datasets_expected:
+                if new_connected_client._received_datasets == new_connected_client._expected_datasets_to_receive_per_request:
                     logger.info("All datasets received, processing queries.")
                     self.result_dispatcher.join()
                     break

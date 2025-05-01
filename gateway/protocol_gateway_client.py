@@ -85,7 +85,7 @@ class ProtocolGateway:
                 self._stop_client()
                 return None
 
-            type_of_batch, current_batch, is_last_batch, payload_len = struct.unpack(">BI B I", header)
+            type_of_batch, encoded_id, request_number, current_batch, is_last_batch, payload_len = struct.unpack(">B36sBIBI", header)
             message_code = TIPO_MENSAJE_INVERSO.get(type_of_batch)
 
             if message_code is None:
@@ -93,7 +93,7 @@ class ProtocolGateway:
                 self._stop_client()
                 return None
 
-            return message_code, current_batch, is_last_batch, payload_len
+            return message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len
 
         except ConnectionError as e:
             logger.error(f"Connection error while receiving header: {e}")
@@ -182,12 +182,6 @@ class ProtocolGateway:
         else:
             logger.error(f"Unknown message code: {message_code}")
             return None
-    
-    def send_confirmation(self, message_code: int) -> None:
-        """
-        Send confirmation to the client
-        """
-        sender.send(self._client_socket, message_code.to_bytes(SIZE_OF_UINT8, byteorder="big"))
 
     def build_result_message(self, result_dict, query_id_str):
         """
