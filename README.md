@@ -21,6 +21,10 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 - Debe soportar el escalado horizontal al incrementar nodos de cómputo.
 - Se requiere el desarrollo de un Middleware para abstraer la comunicación basada en grupos.
 - Debe soportar una única ejecución del procesamiento y permitir un apagado limpio ante señales `SIGTERM`.
+- Soporte para varias ejecuciones de las consultas por parte de un cliente, sin reinicio del servidor.
+- Ejecución con varios clientes de forma concurrente.
+- Correcta limpieza de los recursos luego de cada ejecución.
+- Se asume que no existen fallas de los sistemas.
 
 ---
 
@@ -28,7 +32,7 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
 ### ⚙️ Configurar cantidad de nodos
 
-Antes de generar el archivo docker-compose.yaml, podés editar el archivo global_config.ini para ajustar la cantidad de nodos que tendrá cada componente del sistema:
+Antes de generar el archivo docker-compose.yaml, podés editar el archivo `global_config.ini` para ajustar la cantidad de nodos que tendrá cada componente del sistema:
 
 ```ini
 [DEFAULT]
@@ -47,7 +51,7 @@ join_batch_ratings_nodes = 3
 
 ### 🔧 Generar el `docker-compose.yaml`
 
-El sistema cuenta con un script auxiliar para facilitar la generación del archivo docker-compose.yaml de forma dinámica, según los parámetros que definas.
+El sistema cuenta con un script auxiliar para facilitar la generación del archivo `docker-compose.yaml` de forma dinámica, según los parámetros que definas.
 
 ### ✅ Uso recomendado con `generate-compose.sh`
 
@@ -57,7 +61,7 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 
 ### 📌 Parámetros
 
-- `<output_file.yml>`: nombre del archivo de salida (docker-compose.yaml, por ejemplo).
+- `<output_file.yml>`: nombre del archivo de salida (`docker-compose.yaml`, por ejemplo).
 
 - `-short_test`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`).
 
@@ -89,7 +93,7 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 ./generate-compose.sh docker-compose.yaml -short_test -cant_clientes 3
 ```
 
-> 💡 Internamente, este script llama al generador python3 docker-compose-generator.py pasando los argumentos adecuados y haciendo un manejo limpio del orden de los flags.
+> 💡 Internamente, este script llama al generador `python3 docker-compose-generator.py` pasando los argumentos adecuados y haciendo un manejo limpio del orden de los flags.
 
 ---
 
@@ -137,7 +141,7 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ---
 
-## Construido con 🛠️
+## 🛠️ Construido con
 
 - [Python](https://www.python.org/)
 - [Docker](https://www.docker.com/)
@@ -147,7 +151,7 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ---
 
-## Autores ✒️
+## ✒️ Autores
 
 - **Juan Pablo Fresia** - 102.396 - [JuanPF56](https://github.com/JuanPF56)
 - **Nathalia Lucia Encinoza Vilela** - 106.295 - [nathencinoza](https://github.com/nathencinoza)
@@ -155,7 +159,7 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ---
 
-## Documentación 📑
+## 📑 Documentación
 
 - [Informe](https://docs.google.com/document/d/18aTTPUsk92PdTrNy6LHbvxGXs0G7jUu8EUrdss36D48/edit?usp=sharing)
 - [Diagramas](https://drive.google.com/file/d/15dcFuXlb_mMzxmrfxLuxFFdnBSae8ah3/view?usp=sharing)
