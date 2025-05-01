@@ -8,10 +8,11 @@ from common.logger import get_logger
 logger = get_logger("Results Receiver")
 
 class ResultReceiver(threading.Thread):
-    def __init__(self, protocol: ProtocolClient, answers_expected: int):
+    def __init__(self, protocol: ProtocolClient, answers_expected: int, requests_to_server: int):
         super().__init__(daemon=True)
         self.protocol = protocol
         self.answers_expected = answers_expected
+        self.requests_to_server = requests_to_server
         self._stop_flag = threading.Event()
         self.answers_received = 0
 
@@ -24,6 +25,7 @@ class ResultReceiver(threading.Thread):
         try:
             while not self._stop_flag.is_set():
                 result = self.protocol.receive_query_response()
+                # CHECK IF NUMBER_OF_REQUEST IS SENT HERE OR NOT !!!
                 if result is not None:
                     if result:
                         if result.get("query") == "Q1":
@@ -38,7 +40,7 @@ class ResultReceiver(threading.Thread):
                             pretty_print_income_ratio_by_sentiment(result)
                     append_raw_result(result)
                     self.answers_received += 1
-                    if self.answers_received >= self.answers_expected:
+                    if self.answers_received >= self.answers_expected*self.requests_to_server:
                         logger.info("All expected results received.")
                         self._stop_flag.set()
                         break

@@ -18,7 +18,8 @@ def download_dataset():
         logger.error(f"Failed to download dataset: {e}")
         return None
 
-def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
+def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient, request_number: int):
+    logger.info("Sending datasets to server...")
     datasets = [
         ("movies_metadata", "BATCH_MOVIES", "movies"),
         ("credits", "BATCH_CREDITS", "actors"),
@@ -27,7 +28,7 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
     for filename, tag, description in datasets:
         try:
             logger.info(f"Sending {description} dataset...")
-            protocol.send_dataset(datasets_path, filename, tag)
+            protocol.send_dataset(datasets_path, filename, tag, request_number)
 
             """
             confirmation = protocol.receive_confirmation()

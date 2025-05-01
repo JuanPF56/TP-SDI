@@ -12,21 +12,50 @@ import json
 from common.logger import get_logger
 logger = get_logger("Protocol Client")
 
-from common.protocol import TIPO_MENSAJE, SIZE_OF_HEADER, SIZE_OF_UINT8, SIZE_OF_HEADER_RESULTS
+from common.protocol import TIPO_MENSAJE, SIZE_OF_UUID, SIZE_OF_HEADER, SIZE_OF_HEADER_RESULTS
 
+TIMEOUT_RECEIVE_ID = 10
 TIMEOUT_ANSWER_HEADER = 3600 # 1 hour (longest timeout for a query)
 TIMEOUT_ANSWER_PAYLOAD = 5
 
 class ProtocolClient:
     def __init__(self, socket: socket.socket, max_batch_size):
+        self._client_id = None
         self._socket = socket
         self._max_batch_size = max_batch_size
         self._connected = True
 
+    def get_client_id(self):
+        logger.info("Waiting for server to assign client ID...")
+        try:
+            client_id_bytes = receiver.receive_data(
+                self._socket,
+                SIZE_OF_UUID,
+                timeout=TIMEOUT_RECEIVE_ID
+            )
+
+            if not client_id_bytes or len(client_id_bytes) != SIZE_OF_UUID:
+                logger.error("Failed to receive client ID from server")
+                raise exceptions.ProtocolError("Failed to receive client ID from server")
+            
+            self._client_id = client_id_bytes.decode("utf-8")
+            logger.info(f"Client ID assigned: {self._client_id}")
+            return self._client_id
+        
+        except ConnectionError as e:
+            logger.error("Connection closed by server")
+            self._connected = False
+            raise exceptions.ProtocolError("Connection closed by server")
+        
+        except Exception as e:
+            logger.error(f"Unexpected error receiving client ID: {e}")
+            self._connected = False
+            raise exceptions.ProtocolError("Unexpected error receiving client ID")
+
     def _is_connected(self):
         return self._connected
 
-    def send_dataset(self, dataset_path, dataset_name, message_type_str):
+    def send_dataset(self, dataset_path, dataset_name, message_type_str, request_number):
         logger.debug(f"Sending dataset {dataset_name} as {message_type_str}...")
 
         csv_path = os.path.join(dataset_path, f"{dataset_name}.csv")
@@ -53,7 +82,7 @@ class ProtocolClient:
                                 chunk = line_bytes[start:start + safe_end]
 
                                 if current_payload and len(current_payload) + 1 + len(chunk) > max_payload_size:
-                                    self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                    self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=False)
                                     batch_number += 1
                                     current_payload = bytearray()
 
@@ -63,14 +92,14 @@ class ProtocolClient:
                         else:
                             extra_bytes = b"\n" if current_payload else b""
                             if len(current_payload) + len(extra_bytes) + len(line_bytes) > max_payload_size:
-                                self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=False)
                                 batch_number += 1
                                 current_payload = bytearray()
 
                             current_payload += line_bytes
 
                     if current_payload:
-                        self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=True)
+                        self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=True)
                 
                 else:
                     reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
@@ -82,14 +111,14 @@ class ProtocolClient:
                         encoded_line = (line + "\n").encode("utf-8")
 
                         if len(current_payload) + len(encoded_line) > max_payload_size:
-                            self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
+                            self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=False)
                             batch_number += 1
                             current_payload = bytearray()
 
                         current_payload += encoded_line
 
                     if current_payload:
-                        self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=True)
+                        self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=True)
 
         except exceptions.ServerNotConnectedError as e:
             logger.error(f"Connection closed by server: {e}")
@@ -123,10 +152,18 @@ class ProtocolClient:
             self._connected = False
             raise
 
-    def _send_single_batch(self, message_type_str, batch_number, payload: bytes, is_last: bool):
+    def _send_single_batch(self, request_number, message_type_str, batch_number, payload: bytes, is_last: bool):
+        # Prepare header
         tipo_de_mensaje = TIPO_MENSAJE[message_type_str]
+
+        encoded_id = self._client_id.encode("utf-8")
+        if len(encoded_id) != SIZE_OF_UUID:
+            logger.error(f"Client ID size {len(encoded_id)} does not match expected {SIZE_OF_UUID}")
+            raise ValueError(f"Client ID size {len(encoded_id)} does not match expected {SIZE_OF_UUID}")
+        
         is_last_batch = 1 if is_last else 0
-        header = struct.pack(">BI B I", tipo_de_mensaje, batch_number, is_last_batch, len(payload))
+
+        header = struct.pack(">B36sBIBI", tipo_de_mensaje, encoded_id, request_number, batch_number, is_last_batch, len(payload))
 
         if len(header) != SIZE_OF_HEADER:
             raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
@@ -168,23 +205,6 @@ class ProtocolClient:
                 raise
             logger.error(f"Error sending CSV batch: {e}")
 
-    """
-    def receive_confirmation(self):
-    
-        # Receives a confirmation message from the server.
-        # The confirmation message is expected to be a 1-byte unsigned integer.
-
-        logger.info("Awaiting confirmation from server...")
-        try:
-            data = receiver.receive_data(self._socket, SIZE_OF_UINT8)
-            confirmation = int.from_bytes(data, byteorder="big")
-            logger.debug(f"Received confirmation: {confirmation}")
-            return confirmation
-        except Exception as e:
-            logger.error(f"Error receiving confirmation: {e}")
-            return None
-    """
-
     def receive_query_response(self) -> dict | None:
         logger.info("Awaiting query response from server...")
 
@@ -203,13 +223,14 @@ class ProtocolClient:
         if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
             return None
 
-        tipo_mensaje, query_id, payload_len = struct.unpack(">BBI", header_bytes)
+        tipo_mensaje, numero_de_consulta, query_id, payload_len = struct.unpack(">BBBI", header_bytes)
 
         if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
             logger.error(f"Unexpected message type: {tipo_mensaje}")
             return None
 
         logger.debug(f"Received message type: {TIPO_MENSAJE['RESULTS']}")
+        logger.debug(f"Received request number: {numero_de_consulta}")
         logger.debug(f"Received query ID: {query_id}")
         logger.debug(f"Received payload length: {payload_len}")
 
@@ -241,10 +262,12 @@ class ProtocolClient:
     def disconnect(self):
         logger.info("Disconnecting from server...")
         tipo_de_mensaje = TIPO_MENSAJE["DISCONNECT"]
+        encoded_id = self._client_id.encode("utf-8")
+        request_number = 0
         batch_number = 0
         payload = b""
         is_last = True
-        header = struct.pack(">BI B I", tipo_de_mensaje, batch_number, is_last, len(payload))
+        header = struct.pack(">B36sBIBI", tipo_de_mensaje, encoded_id, request_number, batch_number, is_last, len(payload))
 
         if len(header) != SIZE_OF_HEADER:
             raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")

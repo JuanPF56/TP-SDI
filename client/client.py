@@ -17,9 +17,14 @@ DELAY_BETWEEN_RETRIES = 10
 
 QUERYS_EXPECTED = 5
 
+DEFAULT_CLIENT_ID = 0
+
+REQUESTS_TO_SERVER = 1 # Number of requests to server (1 request = 3 datasets = 5 queries)
+
 class Client:
-    def __init__(self, host, port, max_batch_size, client_id=None):
-        self._client_id = client_id
+    def __init__(self, host, port, max_batch_size, requests_to_server=REQUESTS_TO_SERVER):
+        self._client_id = DEFAULT_CLIENT_ID
+        self._requests_to_server = requests_to_server
         self._host = host
         self._port = port
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -92,16 +97,24 @@ class Client:
             logger.error("Socket connection failed.")
             return
         
-        self._results_thread = ResultReceiver(self._protocol, self._query_responses_expected)
+        try:
+            self._client_id = self._protocol.get_client_id()
+            logger.info(f"Client ID: {self._client_id}")
+        except exceptions.ProtocolError as e:
+            logger.error(f"Protocol error: {e}")
+            self._stop_client()
+            return
+
+        self._results_thread = ResultReceiver(self._protocol, self._query_responses_expected, self._requests_to_server)
         self._results_thread.start()
 
         while self._protocol._is_connected():
             try:
-                logger.info("Sending datasets to server...")
-                send_datasets_to_server(datasets_path, self._protocol)
-                logger.info("Datasets sent successfully.")
-                
-                logger.info("Waiting for pending results...")
+                for i in range(self._requests_to_server):
+                    logger.info("REQUEST N° " + str(i + 1) + " / " + str(self._requests_to_server))
+                    send_datasets_to_server(datasets_path, self._protocol, i+1)
+                    
+                logger.info("Waiting for pending results...")    
                 self._results_thread.join()
                 break
 
