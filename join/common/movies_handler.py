@@ -108,5 +108,15 @@ class MoviesHandler(multiprocessing.Process):
         if client_id not in self.movies:
             return None
         return list(self.movies[client_id])
+    
+    def remove_movies_table(self, client_id):
+        """
+        Remove the movies table for the given client ID.
+        """
+        if client_id in self.movies:
+            del self.movies[client_id]
+            logger.debug(f"Movies table removed for client {client_id}.")
+        else:
+            logger.error(f"No movies table found for client {client_id}.")
 
     

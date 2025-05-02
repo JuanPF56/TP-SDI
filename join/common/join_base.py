@@ -112,6 +112,8 @@ class JoinBase:
                         message={"node_id": self.node_id, "count": 0},
                         msg_type=msg_type
                     )
+                    # Remove movies table for the client
+                    self.movies_handler.remove_movies_table(client_id)
                 self.log_debug(f"EOS count for node {node_id}: {count}")
                 self.log_debug(f"Nodes of type: {self.nodes_of_type}")
                 # If this isn't the last node, put the EOS message back to the queue for other nodes
