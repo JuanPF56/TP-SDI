@@ -94,7 +94,7 @@ class ConnectedClient(threading.Thread):
                 self._protocol_gateway._stop_client()
                 return
             
-            logger.info(f"Client {self._client_id} requested {self._requests_to_process} requests.")
+            logger.debug(f"Client {self._client_id} requested {self._requests_to_process} requests.")
 
             while self._running and not self._stop_flag.is_set() and not self.was_closed:
                 logger.debug(f"Waiting incoming datasets from {self._client_id}")
@@ -118,7 +118,7 @@ class ConnectedClient(threading.Thread):
 
                 client_id = encoded_id.decode("utf-8")
 
-                logger.info(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
+                logger.debug(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
                 payload = self._protocol_gateway.receive_payload(payload_len)
                 if not payload or len(payload) != payload_len:
                     logger.error("Failed to receive full payload")
