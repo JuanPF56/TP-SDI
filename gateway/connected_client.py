@@ -38,17 +38,43 @@ class ConnectedClient(threading.Thread):
 
         self._expected_answers_to_send_per_request = QUERYS_PER_REQUEST
 
-        self._requests_to_process = 0
+        self._requests_to_be_processed = 0
+        self._processed_datasets_from_request = 0
+
         self._sent_answers = 0
+        self._sent_answers_lock = threading.Lock()
 
         self.broker = broker
 
         self._running = True
         self._stop_flag = threading.Event()
 
+        self._condition = threading.Condition()
+
         # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
+
+    def add_sent_answer(self):
+        """
+        Increment the number of sent answers.
+        """
+        with self._sent_answers_lock:
+            self._sent_answers += 1
+            logger.debug(f"Sent answers: {self._sent_answers}")
+
+            # Notify when all responses are sent
+            if self._sent_answers == (self._requests_to_be_processed * self._expected_answers_to_send_per_request):
+                with self._condition:
+                    logger.debug("All responses sent, notifying.")
+                    self._condition.notify_all()
+
+    def get_sent_answers(self):
+        """
+        Get the number of sent answers.
+        """
+        with self._sent_answers_lock:
+            return self._sent_answers
 
     def get_client_id(self):
         """
@@ -88,104 +114,29 @@ class ConnectedClient(threading.Thread):
         logger.info(f"Connected client {self._client_id} started.")
         try:
             self._protocol_gateway.send_client_id(self._client_id)
-            self._requests_to_process = self._protocol_gateway.receive_amount_of_requests()
-            if self._requests_to_process is None:
+            self._requests_to_be_processed = self._protocol_gateway.receive_amount_of_requests()
+            if self._requests_to_be_processed is None:
                 logger.error("Failed to receive amount of requests")
                 self._protocol_gateway._stop_client()
                 return
             
-            logger.debug(f"Client {self._client_id} requested {self._requests_to_process} requests.")
+            logger.debug(f"Client {self._client_id} requested {self._requests_to_be_processed} requests.")
 
             while self._running and not self._stop_flag.is_set() and not self.was_closed:
-                logger.debug(f"Waiting incoming datasets from {self._client_id}")
-                header = self._protocol_gateway.receive_header()
-                if header is None:
-                    logger.error("Header is None")
-                    self._protocol_gateway._stop_client()
-                    break
+                for i in range(self._requests_to_be_processed):
+                    logger.info(f"Processing datasets from request {i + 1} of {self._requests_to_be_processed}")
+                    while self._processed_datasets_from_request < self._expected_datasets_to_receive_per_request:
+                        self._process_request()
 
-                message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len = header
-                logger.debug(f"Message code: {message_code}")
-                if message_code not in TIPO_MENSAJE:
-                    logger.error(f"Invalid message code: {message_code}")
-                    self._protocol_gateway._stop_client()
-                    break
+                # Wait for all responses to be sent
+                with self._condition:
+                    while self._sent_answers != (self._requests_to_be_processed * self._expected_answers_to_send_per_request):
+                        logger.info("Waiting for all responses to be sent.")
+                        self._condition.wait()  # Wait for notification
 
-                if message_code == "DISCONNECT":
-                    logger.info("Client requested disconnection.")
-                    self._protocol_gateway._stop_client()
-                    break
-
-                client_id = encoded_id.decode("utf-8")
-
-                logger.debug(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
-                payload = self._protocol_gateway.receive_payload(payload_len)
-                if not payload or len(payload) != payload_len:
-                    logger.error("Failed to receive full payload")
-                    self._protocol_gateway._stop_client()
-                    break
-                logger.debug(f"Received payload of length {len(payload)}")
-
-                processed_data = self._protocol_gateway.process_payload(message_code, payload)
-                if processed_data is None:
-                    if message_code == "BATCH_CREDITS":
-                        # May be a partial batch
-                        continue
-                    else:
-                        logger.error("Failed to process payload")
-                        break
-
-                try:
-                    queue_key = None
-                    if message_code == "BATCH_MOVIES":
-                        queue_key = self.config["DEFAULT"]["movies_raw_queue"]
-                    elif message_code == "BATCH_CREDITS":
-                        queue_key = self.config["DEFAULT"]["credits_raw_queue"]
-                    elif message_code == "BATCH_RATINGS":
-                        queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
-
-                    if queue_key:
-                        batch_payload = [asdict(item) for item in processed_data]
-                        self.broker.publish(
-                            target=queue_key,
-                            message=batch_payload,
-                            msg_type=message_code
-                        )
-
-                        if is_last_batch == IS_LAST_BATCH_FLAG:
-                            self.broker.publish(
-                                target=queue_key,
-                                message={}, # Empty message to indicate end of batch
-                                msg_type="EOS"
-                            )
-
-                except (TypeError, ValueError) as e:
-                    logger.error(f"Error serializing data to JSON: {e}")
-                    logger.error(processed_data)
-                    break
-
-                if is_last_batch == IS_LAST_BATCH_FLAG:
-                    if message_code == "BATCH_MOVIES":
-                        total_lines = self._protocol_gateway._decoder.get_decoded_movies()
-                        dataset_name = "movies"
-                    elif message_code == "BATCH_CREDITS":
-                        total_lines = self._protocol_gateway._decoder.get_decoded_credits()
-                        dataset_name = "credits"
-                    elif message_code == "BATCH_RATINGS":
-                        total_lines = self._protocol_gateway._decoder.get_decoded_ratings()
-                        dataset_name = "ratings"
-
-                    logger.info(f"Received {total_lines} lines from {dataset_name}")
-                    self._received_datasets += 1
-
-                if self._received_datasets == self._expected_datasets_to_receive_per_request:
-                    logger.info("All datasets received, processing queries.")
-                    break
-
-            if self._sent_answers == (self._requests_to_process * self._expected_answers_to_send_per_request):
-                logger.info("All answers to all requests have been sent, stopping client.")
+                # If all responses have been sent, close the client
+                logger.info("All answers have been sent, closing client.")
                 self._stop_client()
-                return
 
         except OSError as e:
             if not self._protocol_gateway._client_is_connected():
@@ -196,6 +147,89 @@ class ConnectedClient(threading.Thread):
             logger.error(f"Unexpected error in client {self._client_id}: {e}")
             return
         
+    def _process_request(self):
+        header = self._protocol_gateway.receive_header()
+        if header is None:
+            logger.error("Header is None")
+            self._protocol_gateway._stop_client()
+            return
+
+        message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len = header
+        logger.debug(f"Message code: {message_code}")
+        
+        if message_code not in TIPO_MENSAJE:
+            logger.error(f"Invalid message code: {message_code}")
+            self._protocol_gateway._stop_client()
+            return
+
+        if message_code == "DISCONNECT":
+            logger.info("Client requested disconnection.")
+            self._protocol_gateway._stop_client()
+            return
+
+        client_id = encoded_id.decode("utf-8")
+        logger.debug(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
+        
+        payload = self._protocol_gateway.receive_payload(payload_len)
+        if not payload or len(payload) != payload_len:
+            logger.error("Failed to receive full payload")
+            self._protocol_gateway._stop_client()
+            return
+        
+        logger.debug(f"Received payload of length {len(payload)}")
+        
+        processed_data = self._protocol_gateway.process_payload(message_code, payload)
+        if processed_data is None:
+            if message_code == "BATCH_CREDITS":
+                # May be a partial batch
+                return
+            else:
+                logger.error("Failed to process payload")
+                return
+
+        self._publish_message(message_code, client_id, request_number, current_batch, is_last_batch, processed_data)
+
+
+    def _publish_message(self, message_code, client_id, request_number, current_batch, is_last_batch, processed_data):
+        try:
+            queue_key = self._get_queue_key(message_code)
+            
+            if queue_key:
+                headers = {
+                    "client_id": client_id,
+                    "request_number": request_number,
+                }
+                batch_payload = [asdict(item) for item in processed_data]
+                self.broker.publish(
+                    target=queue_key,
+                    message=batch_payload,
+                    msg_type=message_code, 
+                    headers=headers
+                )
+
+                if is_last_batch == IS_LAST_BATCH_FLAG:
+                    self.broker.publish(
+                        target=queue_key,
+                        message={},  # Empty message to indicate end of batch
+                        msg_type="EOS", 
+                        headers=headers
+                    )
+                    self._processed_datasets_from_request += 1
+
+        except (TypeError, ValueError) as e:
+            logger.error(f"Error serializing data to JSON: {e}")
+            logger.error(processed_data)
+
+
+    def _get_queue_key(self, message_code):
+        if message_code == "BATCH_MOVIES":
+            return self.config["DEFAULT"]["movies_raw_queue"]
+        elif message_code == "BATCH_CREDITS":
+            return self.config["DEFAULT"]["credits_raw_queue"]
+        elif message_code == "BATCH_RATINGS":
+            return self.config["DEFAULT"]["ratings_raw_queue"]
+        return None
+        
 
     def send_result(self, result_data):
         """
@@ -203,4 +237,4 @@ class ConnectedClient(threading.Thread):
         """
         logger.debug(f"Sending result to client {self._client_id}: {result_data}")
         self._protocol_gateway.send_result(result_data)
-        self._sent_answers += 1
+        self.add_sent_answer()
