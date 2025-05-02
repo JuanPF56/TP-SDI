@@ -19,7 +19,8 @@ class FilterBase:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.rabbitmq_processor = None
-        self._eos_flags = {}
+        self.client_manager = None
+        self.current_client_id = None
 
     def setup(self):
         """
