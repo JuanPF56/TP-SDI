@@ -1,31 +1,29 @@
 from threading import Lock
-from typing import List
+from typing import Dict, Optional
 from connected_client import ConnectedClient
 
 class ClientRegistry:
     def __init__(self):
-        self._clients: List[ConnectedClient] = []
+        self._clients: Dict[str, ConnectedClient] = {}
         self._lock = Lock()
 
-    def add(self, client):
+    def add(self, client: ConnectedClient):
         with self._lock:
-            self._clients.append(client)
+            self._clients[client.get_client_id()] = client
 
-    def remove(self, client):
+    def remove(self, client: ConnectedClient):
         with self._lock:
-            if client in self._clients:
-                self._clients.remove(client)
+            client_id = client.get_client_id()
+            if client_id in self._clients:
+                del self._clients[client_id]
 
-    def get_by_uuid(self, uuid_str: str) -> ConnectedClient | None:
+    def get_by_uuid(self, uuid_str: str) -> Optional[ConnectedClient]:
         with self._lock:
-            for client in self._clients:
-                if client.get_client_id() == uuid_str:
-                    return client
-            return None
-    
-    def get_all(self) -> List[ConnectedClient]:
+            return self._clients.get(uuid_str)
+
+    def get_all(self) -> Dict[str, ConnectedClient]:
         with self._lock:
-            return list(self._clients)  # Return a shallow copy
+            return dict(self._clients)  # Return a shallow copy
 
     def count(self) -> int:
         with self._lock:
@@ -33,6 +31,6 @@ class ClientRegistry:
 
     def clear(self):
         with self._lock:
-            for client in self._clients:
+            for client in self._clients.values():
                 client._stop_client()
             self._clients.clear()

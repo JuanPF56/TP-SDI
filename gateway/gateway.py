@@ -8,8 +8,8 @@ logger = get_logger("Gateway")
 
 from client_registry import ClientRegistry
 from common.mom import RabbitMQProcessor
-
 from connected_client import ConnectedClient
+from result_dispatcher import ResultDispatcher
 
 class Gateway():
     def __init__(self, config):
@@ -27,21 +27,36 @@ class Gateway():
         self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
 
         # Connect to RabbitMQ with retry
+        self.rabbitmq = None
+        self._setup_broker_connection()
+
+        # Initialize and start the ResultDispatcher
+        self._result_dispatcher = None
+        self._setup_result_dispatcher()
+
+        # Signal handling
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+
+    def _setup_broker_connection(self):
+        """
+        Set up the RabbitMQ connection.
+        """
         self.rabbitmq = RabbitMQProcessor(
-            config=config,
+            config=self.config,
             source_queues=[],  # Gateway does not consume messages, so empty list
             target_queues=[
-                config["DEFAULT"]["movies_raw_queue"],
-                config["DEFAULT"]["credits_raw_queue"],
-                config["DEFAULT"]["ratings_raw_queue"],
-                config["DEFAULT"]["results_queue"],
+                self.config["DEFAULT"]["movies_raw_queue"],
+                self.config["DEFAULT"]["credits_raw_queue"],
+                self.config["DEFAULT"]["ratings_raw_queue"],
+                self.config["DEFAULT"]["results_queue"],
             ],
-            rabbitmq_host=config["DEFAULT"]["rabbitmq_host"]
+            rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"]
         )
         connected = self.rabbitmq.connect()
         if not connected:
             raise RuntimeError("Failed to connect to RabbitMQ.")
-
+        
         try:
             with open("/tmp/gateway_ready", "w") as f:
                 f.write("ready")
@@ -49,9 +64,16 @@ class Gateway():
         except Exception as e:
             logger.error(f"Failed to create healthcheck file: {e}")
 
-        # Signal handling
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
+    def _setup_result_dispatcher(self):
+        """
+        Set up the ResultDispatcher.
+        """
+        self._result_dispatcher = ResultDispatcher(
+            rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"],
+            results_queue=self.config["DEFAULT"]["results_queue"],
+            clients_connected=self._clients_connected
+        )
+        self._result_dispatcher.start()
 
     def run(self):
         while not self._was_closed:
@@ -94,6 +116,11 @@ class Gateway():
             if self.rabbitmq:
                 self.rabbitmq.close()
                 logger.info("RabbitMQ connection closed.")
+
+            if self._result_dispatcher:
+                self._result_dispatcher.stop()
+                self._result_dispatcher.join()
+                logger.info("ResultDispatcher stopped.")
 
             if self._gateway_socket:
                 self._was_closed = True

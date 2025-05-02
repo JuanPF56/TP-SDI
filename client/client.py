@@ -105,6 +105,13 @@ class Client:
             self._stop_client()
             return
 
+        try:
+            self._protocol.send_amount_of_requests(self._requests_to_server)
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            self._stop_client()
+            return
+
         self._results_thread = ResultReceiver(self._protocol, self._query_responses_expected, self._requests_to_server)
         self._results_thread.start()
 

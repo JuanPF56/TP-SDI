@@ -52,6 +52,22 @@ class ProtocolClient:
             self._connected = False
             raise exceptions.ProtocolError("Unexpected error receiving client ID")
 
+    def send_amount_of_requests(self, amount_of_requests):
+        logger.info(f"Sending amount of requests: {amount_of_requests}")
+        if amount_of_requests <= 0:
+            logger.error("Invalid amount of requests")
+            raise ValueError("Invalid amount of requests")
+        if amount_of_requests > 255:
+            logger.error("Amount of requests exceeds maximum limit (255)")
+            raise ValueError("Amount of requests exceeds maximum limit (255)")
+        try:
+            sender.send(self._socket, struct.pack(">B", amount_of_requests))
+        
+        except ConnectionError as e:
+            logger.error("Connection closed by server")
+            self._connected = False
+            raise exceptions.ProtocolError("Connection closed by server")
+
     def _is_connected(self):
         return self._connected
 

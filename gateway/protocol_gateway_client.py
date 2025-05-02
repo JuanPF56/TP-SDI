@@ -16,7 +16,8 @@ TIMEOUT_HEADER = 1
 TIMEOUT_PAYLOAD = 5
 
 class ProtocolGateway:
-    def __init__(self, client_socket: socket.socket):
+    def __init__(self, client_socket: socket.socket, client_id: str):
+        self._client_id = client_id
         self._client_socket = client_socket
         self._decoder = Decoder()
 
@@ -68,6 +69,35 @@ class ProtocolGateway:
         except Exception as e:
             logger.error(f"Failed to send client ID: {e}")
             self._stop_client()
+
+    def receive_amount_of_requests(self) -> int | None:
+        """
+        Receive the amount of requests from the client.
+        """
+        try:
+            data = receiver.receive_data(
+                self._client_socket,
+                SIZE_OF_UINT8,
+                timeout=TIMEOUT_HEADER
+            )
+
+            if data is None or len(data) != SIZE_OF_UINT8:
+                logger.error("Invalid or incomplete data received")
+                self._stop_client()
+                return None
+
+            amount_of_requests = struct.unpack(">B", data)[0]
+            return amount_of_requests
+
+        except ConnectionError as e:
+            logger.error(f"Connection error while receiving amount of requests: {e}")
+            self._stop_client()
+            return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error receiving amount of requests: {e}")
+            self._stop_client()
+            return None
 
     def receive_header(self) -> tuple | None:
         """
