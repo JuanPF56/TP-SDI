@@ -11,7 +11,7 @@ COOL_DOWN_TIME = 0.5  # seconds
 QUERYS_TO_ANSWER = 5
 
 class ResultDispatcher(threading.Thread):
-    def __init__(self, rabbitmq_host, results_queue, connected_clients):
+    def __init__(self, rabbitmq_host, results_queue):
         # Initialize the thread
         super().__init__(daemon=True)
         self._stop_flag = threading.Event()
@@ -21,9 +21,6 @@ class ResultDispatcher(threading.Thread):
         self.channel = None
         self.connection = None
         self.results_queue = results_queue
-
-        # List of connected clients
-        self.connected_clients = connected_clients
 
     def stop(self):
         self._stop_flag.set()
