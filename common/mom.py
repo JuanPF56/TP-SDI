@@ -118,16 +118,17 @@ class RabbitMQProcessor:
         self.channel.start_consuming()
         
     def publish(self, target, message, msg_type=None, exchange=False):
-        """
-        Publishes a message to the specified target.
-        """        
         logger.debug(f"Publicando mensaje en: {target}, tipo: {msg_type}", extra={"payload": message})
-        self.channel.basic_publish(
+        
+        # Crear un canal efímero asi se puede compartir self.rabbitmq entre clientes
+        channel = self.connection.channel()
+        channel.basic_publish(
             exchange=target if exchange else '',
             routing_key=target if not exchange else '',
             body=json.dumps(message),
             properties=pika.BasicProperties(type=msg_type)
         )
+        channel.close()  # Cerrar el canal después de publicar
         logger.debug(f"Mensaje enviado a: {target}, tipo: {msg_type}")
 
     def stop_consuming(self):
