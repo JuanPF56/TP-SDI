@@ -245,11 +245,6 @@ class ProtocolClient:
             logger.error(f"Unexpected message type: {tipo_mensaje}")
             return None
 
-        logger.debug(f"Received message type: {TIPO_MENSAJE['RESULTS']}")
-        logger.debug(f"Received request number: {numero_de_consulta}")
-        logger.debug(f"Received query ID: {query_id}")
-        logger.debug(f"Received payload length: {payload_len}")
-
         # Recibir payload
         try:
             payload_bytes = receiver.receive_data(
@@ -268,9 +263,23 @@ class ProtocolClient:
         logger.debug(f"Received payload size: {len(payload_bytes)}")
 
         try:
-            result = json.loads(payload_bytes.decode())
-            logger.debug(f"Received JSON response: {result}")
-            return result
+            result_of_query = json.loads(payload_bytes.decode())
+            logger.debug(f"Received JSON response: {result_of_query}")
+
+            # Armar la estructura respuesta:
+            """
+            {
+                "numero_de_consulta": 1,
+                "query_id": "Q4",
+                "results": { ... }
+            }
+            """
+            return {
+                    "numero_de_consulta": numero_de_consulta,
+                    "query_id": f"Q{query_id}",
+                    "results": result_of_query
+                    }
+        
         except json.JSONDecodeError:
             logger.error("Failed to decode JSON response")
             return None

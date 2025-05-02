@@ -46,9 +46,8 @@ class ResultDispatcher(threading.Thread):
                 method, properties, body = self._get_next_result()
                 if body:
                     try:
-                        logger.info(f"Raw body received: {body}")
                         result_data = json.loads(body)
-                        logger.info(f"Received result: {result_data}")
+                        logger.debug(f"Received result: {result_data}")
                         """
                         Expected result format:
                         {

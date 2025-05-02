@@ -26,6 +26,7 @@ services:
     entrypoint: python3 /app/main.py
     volumes:
     - ./gateway/config.ini:/app/config.ini
+    - ./resultados:/app/resultados
     depends_on:
       rabbitmq:
         condition: service_healthy

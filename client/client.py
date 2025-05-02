@@ -112,7 +112,7 @@ class Client:
             self._stop_client()
             return
 
-        self._results_thread = ResultReceiver(self._protocol, self._query_responses_expected, self._requests_to_server)
+        self._results_thread = ResultReceiver(self._protocol, self._query_responses_expected, self._requests_to_server, self._client_id)
         self._results_thread.start()
 
         while self._protocol._is_connected():

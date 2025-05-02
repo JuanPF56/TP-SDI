@@ -213,30 +213,42 @@ class ProtocolGateway:
             logger.error(f"Unknown message code: {message_code}")
             return None
 
-    def build_result_message(self, result_dict, query_id_str):
+    def build_result_message(self, result_data):
         """
-        result_dict: dict como {'query': 'Q1', 'results': [...]}
-        query_id_str: 'Q1', 'Q2', etc.
+        result_dict:
+        {
+            "client_id": "uuid-del-cliente",
+            "request_number": 1,
+            "query": "Q4",
+            "results": { ... }
+        }
         """
         tipo_de_mensaje = TIPO_MENSAJE["RESULTS"]
 
+        # client_id not needed
+
+        request_number = result_data.get("request_number", -1) # default to -1 if not found
+
+        query_id_str = result_data.get("query", "Q0")  # fallback for missing query
         # Extract number from query_id_str (Q1 -> 1)
         query_id = int(query_id_str[1:])
 
+        result_of_query = result_data.get("results", {})
+
         # Serialize payload
-        payload = json.dumps(result_dict).encode()
+        payload = json.dumps(result_of_query).encode()
         payload_len = len(payload)
 
         # Header: tipo(1 byte), query_id(1 byte), payload_len(4 bytes)
-        header = struct.pack(">BBI", tipo_de_mensaje, query_id, payload_len)
+        header = struct.pack(">BBBI", tipo_de_mensaje, request_number, query_id, payload_len)
 
         full_message = header + payload
 
         return full_message
 
-    def send_result(self, result_dict: dict) -> None:
-        query_id_str = result_dict.get("query", "Q0")  # fallback for missing query
-        message = self.build_result_message(result_dict, query_id_str)
+    def send_result(self, result_data: dict) -> None:
+        message = self.build_result_message(result_data)
+
         logger.debug(f"Sending result message: {message}")
         sender.send(self._client_socket, message)
     

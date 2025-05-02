@@ -56,7 +56,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         "image": "gateway:latest",
         "entrypoint": "python3 /app/main.py",
         "volumes": [
-            "./gateway/config.ini:/app/config.ini"
+            "./gateway/config.ini:/app/config.ini",
+            "./resultados:/app/resultados"
         ],
         "depends_on": {
             "rabbitmq": {
