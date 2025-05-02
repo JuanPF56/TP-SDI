@@ -53,13 +53,13 @@ join_batch_ratings_nodes = 3
 
 El sistema cuenta con un script auxiliar para facilitar la generación del archivo `docker-compose.yaml` de forma dinámica, según los parámetros que definas.
 
-### ✅ Uso recomendado con `generate-compose.sh`
+#### ✅ Uso recomendado con `generate-compose.sh`
 
 ```bash
 ./generate-compose.sh <output_file.yml> [-short_test <cant_lineas>] [-cant_clientes N]
 ```
 
-### 📌 Parámetros
+#### 📌 Parámetros
 
 - `<output_file.yml>`: nombre del archivo de salida (`docker-compose.yaml`, por ejemplo).
 
@@ -67,7 +67,7 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 
 - `-cant_clientes N`: opcional. Define la cantidad de clientes (client_X) que se generan en el sistema.
 
-### 🧪 Ejemplos
+#### 🧪 Ejemplos
 
 - Generar configuración completa:
 
