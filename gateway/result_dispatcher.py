@@ -46,12 +46,11 @@ class ResultDispatcher(threading.Thread):
                 method, properties, body = self._get_next_result()
                 if body:
                     try:
+                        logger.info(f"Raw body received: {body}")
                         result_data = json.loads(body)
-                        logger.debug(f"Received result: {result_data}")
-                        # TODO: Aca hay que ver con que formato se lo pasamos a los senders para clientes, y como viene de la cola de results
-                        # En principio necesito el UUID para buscarlo, despeus el request_number para saber de que consulta es, y por ultimo {query, result}
+                        logger.info(f"Received result: {result_data}")
                         """
-                        Seria algo asi:
+                        Expected result format:
                         {
                             "client_id": "uuid-del-cliente",
                             "request_number": 1,
@@ -62,7 +61,8 @@ class ResultDispatcher(threading.Thread):
                         client_id = result_data.get("client_id")
                         if not client_id:
                             logger.warning("Missing client_id in result.")
-                            self._ack(method)
+                            if method:
+                                self._ack(method)
                             continue
 
                         client = self._clients_connected.get_by_uuid(client_id)
@@ -75,7 +75,8 @@ class ResultDispatcher(threading.Thread):
                     except Exception as e:
                         logger.error(f"Error processing result: {e}")
                     finally:
-                        self._ack(method)
+                        if method:
+                            self._ack(method)
                 else:
                     time.sleep(COOL_DOWN_TIME)
 

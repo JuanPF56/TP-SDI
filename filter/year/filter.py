@@ -50,7 +50,7 @@ class YearFilter(FilterBase):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
 
-    def _mark_eos_received(self, body, input_queue):
+    def _mark_eos_received(self, body, input_queue, headers):
         """
         Mark the end of stream (EOS) for the given input queue
         for the given node.
@@ -75,10 +75,11 @@ class YearFilter(FilterBase):
             self.rabbitmq_processor.publish(
                 target=input_queue,
                 message={"node_id": node_id, "count": count},
-                msg_type=EOS_TYPE
+                msg_type=EOS_TYPE,
+                headers=headers
             )
     
-    def _check_eos_flags(self):
+    def _check_eos_flags(self, headers):
         """
         Check if all nodes have sent EOS and propagate to output queues.
         """
@@ -90,12 +91,12 @@ class YearFilter(FilterBase):
         logger.debug(f"EOS all received: {all_eos_received}")
         if all_eos_received and eos_nodes_len == int(self.eos_to_await):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
-            self._send_eos()
+            self._send_eos(headers)
             self.rabbitmq_processor.stop_consuming()
         else:
             logger.debug("Not all nodes have sent EOS yet. Waiting...")
 
-    def _send_eos(self):
+    def _send_eos(self, headers):
         """
         Propagate the end of stream (EOS) to all output queues.
         """
@@ -104,17 +105,19 @@ class YearFilter(FilterBase):
             target=self.target_queue,
             message={"node_id": self.node_id, "count": 0},
             msg_type=EOS_TYPE,
+            headers=headers
         )
         logger.info(f"EOS message sent to {self.target_queue}")
         self.rabbitmq_processor.publish(
             target=self.target_exchange,
             message={"node_id": self.node_id, "count": 0},
             msg_type=EOS_TYPE,
-            exchange=True
+            exchange=True,
+            headers=headers
         )
         logger.info(f"EOS message sent to {self.target_exchange}")
 
-    def _handle_eos(self, input_queue, body, method):
+    def _handle_eos(self, input_queue, body, method, headers):
         logger.debug(f"Received EOS from {input_queue}")
 
         if self.processed_batch.get(input_queue):
@@ -133,11 +136,12 @@ class YearFilter(FilterBase):
                 target=self.target_exchange if exchange else self.target_queue,
                 message=self.processed_batch[input_queue],
                 exchange=exchange,
+                headers=headers
             )
             self.processed_batch[input_queue] = []
 
-        self._mark_eos_received(body, input_queue)
-        self._check_eos_flags()
+        self._mark_eos_received(body, input_queue, headers)
+        self._check_eos_flags(headers)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_movies_batch(self, movies_batch, input_queue):
@@ -159,7 +163,7 @@ class YearFilter(FilterBase):
             else:
                 logger.warning(f"Unknown source queue: {input_queue}")
 
-    def _publish_ready_batches(self, input_queue, msg_type):
+    def _publish_ready_batches(self, input_queue, msg_type, headers):
         if len(self.processed_batch[input_queue]) >= self.batch_size:
             exchange = False
             if input_queue == self.source_queues[0]:
@@ -176,16 +180,18 @@ class YearFilter(FilterBase):
                 target=self.target_exchange if exchange else self.target_queue,
                 message=self.processed_batch[input_queue],
                 msg_type=msg_type,
-                exchange=exchange
+                exchange=exchange,
+                headers=headers
             )
             self.processed_batch[input_queue] = []
 
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = self._get_message_type(properties)
+        headers = getattr(properties, "headers", {}) or {}
 
         if msg_type == EOS_TYPE:
-            self._handle_eos(input_queue, body, method)
+            self._handle_eos(input_queue, body, method, headers)
             return
 
         try:
@@ -195,7 +201,7 @@ class YearFilter(FilterBase):
                 return
 
             self._process_movies_batch(movies_batch, input_queue)
-            self._publish_ready_batches(input_queue, msg_type)
+            self._publish_ready_batches(input_queue, msg_type, headers)
 
         except Exception as e:
             logger.error(f"Error processing message from {input_queue}: {e}")

@@ -1,7 +1,6 @@
 import configparser
 import json
 import os
-import pika
 from common.mom import RabbitMQProcessor
 from collections import defaultdict
 from common.logger import get_logger
@@ -16,12 +15,16 @@ class SoloCountryBudgetQuery:
     """
     def __init__(self, config):
         self.config = config
-        self.budget_by_country = defaultdict(int)
+
         self.source_queue = self.config["DEFAULT"].get("movies_solo_queue", "movies_solo")
         self.target_queue = self.config["DEFAULT"].get("results_queue", "results_queue")
 
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.eos_flags = {}
+
+        self.budget_by_country_by_request = defaultdict(lambda: defaultdict(int))
+        self.eos_flags_by_request = defaultdict(set)
+
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
             source_queues=self.source_queue,
@@ -29,51 +32,78 @@ class SoloCountryBudgetQuery:
         )   
 
 
-    def _calculate_and_publish_results(self):
+    def _calculate_and_publish_results(self, client_id, request_number):
         """
         Calculate the top 5 countries by budget.
         """
-        sorted_countries = sorted(self.budget_by_country.items(), key=lambda x: x[1], reverse=True)
+        key = (client_id, request_number)
+        budget_by_country = self.budget_by_country_by_request[key]
+
+        sorted_countries = sorted(budget_by_country.items(), key=lambda x: x[1], reverse=True)
         top_5 = sorted_countries[:5]
+
         results = {
+            "client_id": client_id,
+            "request_number": request_number,
             "query": "Q2",
             "results": top_5
         }
-        logger.info("RESULTS:" + str(results))
+
+        logger.info(f"RESULTS for {key}: {results}")
+
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"],
             message=results
         )
 
+        # Limpieza de memoria
+        del self.budget_by_country_by_request[key]
+        del self.eos_flags_by_request[key]
+
 
     def callback(self, ch, method, properties, body, input_queue):
-        try:
-            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+        msg_type = properties.type if properties and properties.type else "UNKNOWN"
+        headers = properties.headers or {}
 
-            if msg_type == EOS_TYPE:
-                try:
-                    data = json.loads(body)
-                    node_id = data.get("node_id")
-                except json.JSONDecodeError:
-                    logger.error("Failed to decode EOS message")
-                    return
-                if node_id not in self.eos_flags:
-                    self.eos_flags[node_id] = True
-                    logger.info(f"EOS received for node {node_id}.")
-                else:
-                    logger.warning(f"EOS message for node {node_id} already received. Ignoring duplicate.")
-                    return
-                if len(self.eos_flags) == int(self.eos_to_await):
-                    logger.info("All nodes have sent EOS. Calculating results...")
-                    self._calculate_and_publish_results()
-                self.rabbitmq_processor.acknowledge(method)
+        client_id = headers.get("client_id")
+        request_number = headers.get("request_number")
+        if not client_id or request_number is None:
+            logger.warning("❌ Missing client_id or request_number in headers. Skipping.")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
+        key = (client_id, request_number)
+
+        if msg_type == EOS_TYPE:
+            try:
+                data = json.loads(body)
+                node_id = data.get("node_id")
+            except json.JSONDecodeError:
+                logger.error("Failed to decode EOS message")
+                return
+            
+            if node_id in self.eos_flags_by_request[key]:
+                logger.warning(f"Duplicated EOS from node {node_id} for request {key}")
                 return
 
+            self.eos_flags_by_request[key].add(node_id)
+            logger.info(f"EOS received from node {node_id} for request {key}")
+
+            if len(self.eos_flags_by_request[key]) == self.eos_to_await:
+                logger.info(f"All EOS received for request {key}. Calculating results.")
+                self._calculate_and_publish_results(client_id, request_number)
+
+            self.rabbitmq_processor.acknowledge(method)
+            return
+
+        # Normal message (batch of movies)
+        try:
             movies_batch = json.loads(body)
             if not isinstance(movies_batch, list):
                 logger.info("❌ Expected a list (batch) of movies, skipping.")
                 self.rabbitmq_processor.acknowledge(method)
                 return
+            
             for movie in movies_batch:
                 production_countries = movie.get("production_countries", [])
                 if not production_countries:
@@ -84,7 +114,7 @@ class SoloCountryBudgetQuery:
                     continue
 
                 budget = movie.get("budget", 0)
-                self.budget_by_country[country] += budget
+                self.budget_by_country_by_request[key][country] += budget
 
             self.rabbitmq_processor.acknowledge(method)
 
