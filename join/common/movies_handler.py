@@ -40,9 +40,9 @@ class MoviesHandler(multiprocessing.Process):
     def run(self):
         """
         Start the process to receive the movies from the broadcast exchange.
-        This method will create a new queue and bind it to the exchange.
-        It will then consume messages from the queue and populate the movies table.
-        Once all nodes have sent EOS messages, it will notify that the movies table is ready.
+        It will consume messages from the queue and populate the movies table for each client.
+        Once all nodes for the client have sent EOS messages, it will notify that 
+        at least one table is ready.
         """
 
         def callback(ch, method, properties, body, queue_name):
