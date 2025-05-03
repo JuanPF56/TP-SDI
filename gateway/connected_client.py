@@ -139,7 +139,10 @@ class ConnectedClient(threading.Thread):
                 for i in range(self._requests_to_be_processed):
                     logger.info(f"Processing datasets from request {i + 1} of {self._requests_to_be_processed}")
                     while self._processed_datasets_from_request < self._expected_datasets_to_receive_per_request:
-                        self._process_request()
+                        if self._process_request() is False:
+                            logger.error("Failed to process request")
+                            self._protocol_gateway._stop_client()
+                            return
 
                 # Wait for all responses to be sent
                 with self._condition:
@@ -161,13 +164,13 @@ class ConnectedClient(threading.Thread):
             self._protocol_gateway._stop_client()
             return
         
-    def _process_request(self):
+    def _process_request(self) -> bool:
         try:
             header = self._protocol_gateway.receive_header()
             if header is None:
                 logger.error("Header is None")
                 self._protocol_gateway._stop_client()
-                return
+                return False
 
             message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len = header
             logger.debug(f"Message code: {message_code}")
@@ -175,12 +178,12 @@ class ConnectedClient(threading.Thread):
             if message_code not in TIPO_MENSAJE:
                 logger.error(f"Invalid message code: {message_code}")
                 self._protocol_gateway._stop_client()
-                return
-
+                return False
+            
             if message_code == "DISCONNECT":
                 logger.info("Client requested disconnection.")
                 self._protocol_gateway._stop_client()
-                return
+                return True
 
             client_id = encoded_id.decode("utf-8")
             logger.debug(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
@@ -189,7 +192,7 @@ class ConnectedClient(threading.Thread):
             if not payload or len(payload) != payload_len:
                 logger.error("Failed to receive full payload")
                 self._protocol_gateway._stop_client()
-                return
+                return False
             
             logger.debug(f"Received payload of length {len(payload)}")
             
@@ -197,22 +200,23 @@ class ConnectedClient(threading.Thread):
             if processed_data is None:
                 if message_code == "BATCH_CREDITS":
                     # May be a partial batch
-                    return
+                    return True
                 else:
                     logger.error("Failed to process payload")
-                    return
+                    return False
 
             self._publish_message(message_code, client_id, request_number, current_batch, is_last_batch, processed_data)
+            return True
         
         except (socket.error, socket.timeout) as e:
             logger.error(f"Socket error raised: {e}, from client {self._client_id}")
             self._protocol_gateway._stop_client()
-            return
+            return False
         
         except Exception as e:
             logger.error(f"Unexpected error in _processs_request: {e}, from client {self._client_id}")
             self._protocol_gateway._stop_client()
-            return
+            return False
 
 
     def _publish_message(self, message_code, client_id, request_number, current_batch, is_last_batch, processed_data):
