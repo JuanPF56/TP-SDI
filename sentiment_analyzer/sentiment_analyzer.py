@@ -64,7 +64,7 @@ class SentimentAnalyzer:
             logger.error(f"Error during sentiment analysis: {e}")
             return "neutral"
 
-    def _mark_eos_received(self, body, channel):
+    def _mark_eos_received(self, body, channel, headers):
         try:
             data = json.loads(body)
             node_id = data.get("node_id")
@@ -85,9 +85,10 @@ class SentimentAnalyzer:
                 target=self.source_queue,
                 message={"node_id": node_id, "count": count},
                 msg_type=EOS_TYPE,
+                headers=headers
             )
         
-    def _send_eos(self, msg_type):
+    def _send_eos(self, msg_type, headers):
         if self.current_client_state.has_received_all_eos(self.source_queue):
             logger.info("All nodes have sent EOS. Sending EOS to both queues.")
             for queue in self.target_queues:
@@ -95,6 +96,7 @@ class SentimentAnalyzer:
                     target=queue,
                     message={"node_id": self.node_id},
                     msg_type=msg_type,
+                    headers=headers,
                 )
             logger.debug("Sent EOS message to both queues.")
 
@@ -112,11 +114,12 @@ class SentimentAnalyzer:
             self.current_client_state = self.client_manager.add_client(client_id, request_number)
 
             if msg_type == EOS_TYPE:
-                self._mark_eos_received(body, ch)
+                self._mark_eos_received(body, ch, headers)
                 if len(self.batch_positive) > 0:
                     self.rabbitmq_processor.publish(
                         target=self.target_queues[0],
                         message=self.batch_positive,
+                        headers=headers,
                     )
                     logger.info(f"Sent {len(self.batch_positive)} positive movies to {self.target_queues[0]}")
                     self.batch_positive = []
@@ -124,10 +127,11 @@ class SentimentAnalyzer:
                     self.rabbitmq_processor.publish(
                         target=self.target_queues[1],
                         message=self.batch_negative,
+                        headers=headers,
                     )
                     logger.info(f"Sent {len(self.batch_negative)} negative movies to {self.target_queues[1]}")
                     self.batch_negative = []
-                self._send_eos(msg_type)
+                self._send_eos(msg_type, headers)
                 return
 
             movies_batch = json.loads(body)
@@ -164,6 +168,7 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.publish(
                     target=self.target_queues[0],
                     message=self.batch_positive,
+                    headers=headers,
                 )
                 logger.info(f"Sent batch of {len(self.batch_positive)} positive movies.")
                 self.batch_positive = []
@@ -172,6 +177,7 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.publish(
                     target=self.target_queues[1],
                     message=self.batch_negative,
+                    headers=headers,
                 )
                 logger.info(f"Sent batch of {len(self.batch_negative)} negative movies.")
                 self.batch_negative = []
