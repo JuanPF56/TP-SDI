@@ -17,38 +17,37 @@ class ClientState:
         
     def has_queue_received_eos(self, queue_name):
         """Check if the required amount of EOS messages has been received for a queue"""
-        logger.info(f"Checking if all EOS received for queue {queue_name}")
+        logger.debug(f"Checking if all EOS received for queue {queue_name}")
         eos_received = self.eos_flags.get(queue_name, {})
-        logger.info(f"EOS received: {eos_received}")
+        logger.debug(f"EOS received: {eos_received}")
         if len(eos_received) == self.amount_of_eos:
-            logger.info(f"All EOS received for queue {queue_name}")
+            logger.debug(f"All EOS received for queue {queue_name}")
             return True
         else:
-            logger.info(f"Not all EOS received for queue {queue_name}")
+            logger.debug(f"Not all EOS received for queue {queue_name}")
             return False
             
     def has_queue_received_eos_from_node(self, queue_name, node_id):
         """Check if an EOS message has been received from a specific node for a queue"""
-        logger.info(f"Checking if EOS received from node {node_id} for queue {queue_name}")
+        logger.debug(f"Checking if EOS received from node {node_id} for queue {queue_name}")
         eos_received = self.eos_flags.get(queue_name, {})
-        logger.info(f"EOS received: {eos_received}")
+        logger.debug(f"EOS received: {eos_received}")
         if eos_received.get(node_id, False):
-            logger.info(f"EOS received from node {node_id} for queue {queue_name}")
+            logger.debug(f"EOS received from node {node_id} for queue {queue_name}")
             return True
         else:
-            logger.info(f"EOS not received from node {node_id} for queue {queue_name}")
+            logger.debug(f"EOS not received from node {node_id} for queue {queue_name}")
             return False
             
     def has_received_all_eos(self, queues):
         """Check if all required EOS messages have been received for all specified queues"""
-        logger.info(f"Checking if all EOS received for queues {queues}")
         if not isinstance(queues, list):
             queues = [queues]
         for queue in queues:
             if not self.has_queue_received_eos(queue):
-                logger.info(f"Not all EOS received for queue {queue}")
+                logger.debug(f"Not all EOS received for queue {queue}")
                 return False
-        logger.info("All EOS received for all queues")
+        logger.debug("All EOS received for all queues")
         return True
         
     def get_eos_count(self, queue_name):
