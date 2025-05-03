@@ -48,6 +48,8 @@ class SentimentStats:
             avg_negative = sum(negatives) / len(negatives) if negatives else 0
 
             results = {
+                "client_id": client_id,
+                "request_number": request_number,
                 "query": "Q5",
                 "results": {
                     "average_positive_rate": avg_positive,
@@ -58,7 +60,7 @@ class SentimentStats:
             # Publish results to a results queue (not implemented here)
 
             self.rabbitmq_processor.publish(
-                queue=self.config["DEFAULT"]["results_queue"],
+                target=self.config["DEFAULT"]["results_queue"],
                 message=results
             )
 
