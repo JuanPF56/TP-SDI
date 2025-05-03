@@ -72,7 +72,7 @@ class SentimentAnalyzer:
         except json.JSONDecodeError:
             logger.error("Failed to decode EOS message")
             return      
-        if self.current_client_state.has_queue_received_eos_from_node(self.source_queue, node_id):
+        if not self.current_client_state.has_queue_received_eos_from_node(self.source_queue, node_id):
             count += 1
             self.current_client_state.mark_eos(self.source_queue, node_id)
             logger.debug(f"EOS received for node {node_id}.")
