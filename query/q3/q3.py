@@ -88,9 +88,13 @@ class ArgProdRatingsQuery:
                 logger.error("❌ Failed to decode EOS message.")
                 self.rabbitmq_processor.acknowledge(method)
                 return
+            
+            logger.info(f"EOS received for node {node_id} in queue {input_queue}, eos flgas: {client_state.eos_flags}")
 
             if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
+                client_state.mark_eos(input_queue, node_id)
                 logger.info(f"✅ EOS received from node {node_id}.")
+
             else:
                 logger.warning(f"⚠️ Duplicate EOS from node {node_id}. Ignored.")
                 self.rabbitmq_processor.acknowledge(method)
