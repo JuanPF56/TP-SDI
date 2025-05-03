@@ -14,7 +14,7 @@ logger = get_logger("Protocol Client")
 
 from common.protocol import TIPO_MENSAJE, SIZE_OF_UUID, SIZE_OF_HEADER, SIZE_OF_HEADER_RESULTS
 
-TIMEOUT_RECEIVE_ID = 10
+TIMEOUT_RECEIVE_ID = 60
 TIMEOUT_ANSWER_HEADER = 3600 # 1 hour (longest timeout for a query)
 TIMEOUT_ANSWER_PAYLOAD = 5
 
