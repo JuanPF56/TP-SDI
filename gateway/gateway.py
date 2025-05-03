@@ -38,8 +38,7 @@ class Gateway():
         Set up the ResultDispatcher.
         """
         self._result_dispatcher = ResultDispatcher(
-            rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"],
-            results_queue=self.config["DEFAULT"]["results_queue"],
+            self.config,
             clients_connected=self._clients_connected
         )
         self._result_dispatcher.start()

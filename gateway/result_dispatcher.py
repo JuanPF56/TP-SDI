@@ -7,6 +7,7 @@ from common.logger import get_logger
 logger = get_logger("Result Dispatcher")
 
 from client_registry import ClientRegistry
+from common.mom import RabbitMQProcessor
 
 BASE_COOL_DOWN_TIME = 0.5  # seconds
 MAX_COOL_DOWN_TIME = 60  # seconds
@@ -14,35 +15,35 @@ MAX_COOL_DOWN_TIME = 60  # seconds
 QUERYS_TO_ANSWER = 5
 
 class ResultDispatcher(threading.Thread):
-    def __init__(self, rabbitmq_host, results_queue, clients_connected: ClientRegistry):
+    def __init__(self, config, clients_connected: ClientRegistry):
         # Initialize the thread
         super().__init__(daemon=True)
         self._stop_flag = threading.Event()
 
-        self._clients_connected = clients_connected
+        self.config = config
+        self.results_queue = self.config["DEFAULT"]["results_queue"]
+        self.rabbitmq_host = self.config["DEFAULT"]["rabbitmq_host"]
 
-        # RabbitMQ connection parameters
-        self.rabbitmq_host = rabbitmq_host
-        self.channel = None
-        self.connection = None
-        self.results_queue = results_queue
         self._clients_connected = clients_connected
+        self.broker = RabbitMQProcessor(
+            config=config,
+            source_queues=self.results_queue,
+            target_queues=[],  # Not publishing in this component
+            rabbitmq_host=self.rabbitmq_host
+        )
+        connected = self.broker.connect()
+        if not connected:
+            raise RuntimeError("Could not connect to RabbitMQ")
 
     def stop(self):
         self._stop_flag.set()
-        if self.channel and self.channel.is_open:
-            self.channel.close()
-        if self.connection and self.connection.is_open:
-            self.connection.close()
+        self.broker.stop_consuming()
+        self.broker.close()
         logger.info("Result Dispatcher stopped.")
 
     def run(self):
         logger.info(f"Result Dispatcher started.")
         try:
-            self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.rabbitmq_host))
-            self.channel = self.connection.channel()
-            self.channel.queue_declare(queue=self.results_queue)
-
             base_cool_down = BASE_COOL_DOWN_TIME
             max_cool_down = MAX_COOL_DOWN_TIME
             cool_down_time = base_cool_down
@@ -66,7 +67,7 @@ class ResultDispatcher(threading.Thread):
                         if not client_id:
                             logger.warning("Missing client_id in result.")
                             if method:
-                                self._ack(method)
+                                self.broker.acknowledge(method)
                             continue
 
                         client = self._clients_connected.get_by_uuid(client_id)
@@ -81,9 +82,10 @@ class ResultDispatcher(threading.Thread):
 
                     except Exception as e:
                         logger.error(f"Error processing result: {e}")
+                        
                     finally:
                         if method:
-                            self._ack(method)
+                            self.broker.acknowledge(method)
                 else:
                     logger.debug("No result to process, sleeping...")
                     time.sleep(cool_down_time)
@@ -99,15 +101,10 @@ class ResultDispatcher(threading.Thread):
     def _get_next_result(self) -> tuple:
         # logger.info("Waiting for next result...")
         try:
-            method, properties, body = self.channel.basic_get(queue=self.results_queue, auto_ack=False)
+            method, properties, body = self.broker.channel.basic_get(queue=self.results_queue, auto_ack=False)
+            return method, properties, body
 
         except Exception as e:
             logger.error(f"Error getting result from queue: {e}")
-            raise e
-        
-        finally:
-            return method, properties, body
-
-    def _ack(self, method):
-        if method:
-            self.channel.basic_ack(delivery_tag=method.delivery_tag)
+            return None, None, None
+            
