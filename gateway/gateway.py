@@ -46,6 +46,8 @@ class Gateway():
     def run(self):
         while not self._was_closed:
             try:
+                self._reap_disconnected_clients()
+
                 new_connected_client = self.__accept_new_connection()
                 if new_connected_client is None:
                     logger.error("Failed to accept new connection")
@@ -72,6 +74,18 @@ class Gateway():
         )
         self._clients_connected.add(new_connected_client)
         return new_connected_client
+
+    def _reap_disconnected_clients(self):
+        try:
+            logger.info("Checking for any disconnected clients...")
+            all_clients = self._clients_connected.get_all()
+            for client in all_clients.values():
+                if not client._client_is_connected():
+                    logger.info(f"Removing disconnected client {client.get_client_id()}")
+                    self._clients_connected.remove(client)
+            logger.info("Done checking.")
+        except Exception as e:
+            logger.error(f"Error during client cleanup: {e}")
 
     def _signal_handler(self, signum, frame):
         logger.info("Signal received, stopping server...")
