@@ -14,6 +14,7 @@ class ClientManager:
             self.clients[key] = ClientState(client_id, self.nodes_to_await)
         return self.clients[key]
     
-    def remove_client(self, client):
-        if client in self.clients:
-            del self.clients[client]
+    def remove_client(self, client_id, request_id):
+        key = (client_id, request_id)
+        if key in self.clients:
+            del self.clients[key]
