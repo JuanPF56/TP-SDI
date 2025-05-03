@@ -132,7 +132,7 @@ class SentimentAnalyzer:
                     )
                     logger.info(f"Sent {len(self.batch_negative)} negative movies to {self.target_queues[1]}")
                     self.batch_negative = []
-                self._send_eos(msg_type, headers)
+                self._send_eos(msg_type, headers, client_state)
                 return
 
             movies_batch = json.loads(body)
