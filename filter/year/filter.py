@@ -5,6 +5,7 @@ from datetime import datetime
 
 from common.logger import get_logger
 from common.mom import RabbitMQProcessor
+from collections import defaultdict
 logger = get_logger("Filter-Year")
 from common.client_state_manager import ClientManager
 from common.client_state_manager import ClientState
@@ -44,8 +45,8 @@ class YearFilter(FilterBase):
         self.target_exchange = defaults.get("movies_arg_post_2000_exchange", "movies_arg_post_2000")
 
         self.processed_batch = {
-            self.source_queues[0]: [],
-            self.source_queues[1]: []
+            self.source_queues[0]: defaultdict(list),
+            self.source_queues[1]: defaultdict(list)
         }
 
     def setup(self):
@@ -122,30 +123,25 @@ class YearFilter(FilterBase):
         logger.debug(f"Received EOS from {input_queue}")
 
         if self.processed_batch.get(input_queue):
-            exchange = False
-            if input_queue == self.source_queues[0]:
-                # Argentine-only movies after 2000
-                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_exchange}")   
-                exchange = True
-            elif input_queue == self.source_queues[1]:
-                # Argentina + Spain movies between 2000-2009
-                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_queue}")
-            else:
-                logger.warning(f"Unknown source queue: {input_queue}")
-                return
-            self.rabbitmq_processor.publish(
-                target=self.target_exchange if exchange else self.target_queue,
-                message=self.processed_batch[input_queue],
-                exchange=exchange,
-                headers=headers
-            )
-            self.processed_batch[input_queue] = []
-
+            for key, batch in self.processed_batch[input_queue].items():
+                if not batch:
+                    continue
+                exchange = input_queue == self.source_queues[0]
+                target = self.target_exchange if exchange else self.target_queue
+                logger.info(f"Publishing {len(batch)} movies to {target} for {key}")
+                self.rabbitmq_processor.publish(
+                    target=target,
+                    message=batch,
+                    exchange=exchange,
+                    headers=headers
+                )
+            self.processed_batch[input_queue].clear()
         self._mark_eos_received(body, input_queue, headers, client_state)
         self._check_eos_flags(headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
-    def _process_movies_batch(self, movies_batch, input_queue):
+    def _process_movies_batch(self, movies_batch, input_queue, client_state: ClientState):
+        key = (client_state.client_id, client_state.request_id)
         for movie in movies_batch:
             title = movie.get("original_title")
             date_str = movie.get("release_date", "")
@@ -154,37 +150,30 @@ class YearFilter(FilterBase):
             logger.debug(f"Processing '{title}' released in {release_year} from queue '{input_queue}'")
 
             if input_queue == self.source_queues[0]:
-                # Argentine-only movies after 2000
                 if release_year and release_year > 2000:
-                    self.processed_batch[input_queue].append(movie)
+                    self.processed_batch[input_queue][key].append(movie)
             elif input_queue == self.source_queues[1]:
-                # Argentina + Spain movies between 2000-2009
                 if release_year and 2000 <= release_year <= 2009:
-                    self.processed_batch[input_queue].append(movie)
+                    self.processed_batch[input_queue][key].append(movie)
             else:
                 logger.warning(f"Unknown source queue: {input_queue}")
 
-    def _publish_ready_batches(self, input_queue, msg_type, headers):
-        if len(self.processed_batch[input_queue]) >= self.batch_size:
-            exchange = False
-            if input_queue == self.source_queues[0]:
-                # Argentine-only movies after 2000
-                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_exchange}")   
-                exchange = True
-            elif input_queue == self.source_queues[1]:
-                # Argentina + Spain movies between 2000-2009
-                logger.info(f"Publishing {len(self.processed_batch[input_queue])} movies to {self.target_queue}")
-            else:
-                logger.warning(f"Unknown source queue: {input_queue}")
-                return
+    def _publish_ready_batches(self, input_queue, msg_type, headers, client_state: ClientState):
+        key = (client_state.client_id, client_state.request_id)
+        if len(self.processed_batch[input_queue][key]) >= self.batch_size:
+            exchange = input_queue == self.source_queues[0]
+            target = self.target_exchange if exchange else self.target_queue
+            logger.info(f"Publishing {len(self.processed_batch[input_queue][key])} movies to {target}")
+
             self.rabbitmq_processor.publish(
-                target=self.target_exchange if exchange else self.target_queue,
-                message=self.processed_batch[input_queue],
+                target=target,
+                message=self.processed_batch[input_queue][key],
                 msg_type=msg_type,
                 exchange=exchange,
                 headers=headers
             )
-            self.processed_batch[input_queue] = []
+            self.processed_batch[input_queue][key] = []
+
 
 
     def callback(self, ch, method, properties, body, input_queue):
@@ -203,8 +192,8 @@ class YearFilter(FilterBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self._process_movies_batch(movies_batch, input_queue)
-            self._publish_ready_batches(input_queue, msg_type, headers)
+            self._process_movies_batch(movies_batch, input_queue, client_state)
+            self._publish_ready_batches(input_queue, msg_type, headers, client_state)
 
         except Exception as e:
             logger.error(f"Error processing message from {input_queue}: {e}")
