@@ -32,15 +32,6 @@ services:
         condition: service_healthy
     networks:
     - testing_net
-    healthcheck:
-      test:
-      - CMD
-      - test
-      - -f
-      - /tmp/gateway_ready
-      interval: 5s
-      timeout: 5s
-      retries: 10
   filter_cleanup_1:
     container_name: filter_cleanup_1
     image: filter_cleanup:latest
@@ -54,7 +45,7 @@ services:
       NODES_OF_TYPE: 1
     depends_on:
       gateway:
-        condition: service_healthy
+        condition: service_started
     networks:
     - testing_net
   filter_year_1:
@@ -70,7 +61,7 @@ services:
       NODES_OF_TYPE: 1
     depends_on:
       gateway:
-        condition: service_healthy
+        condition: service_started
       join_credits_1:
         condition: service_started
       join_ratings_1:
@@ -90,7 +81,7 @@ services:
       NODES_OF_TYPE: 1
     depends_on:
       gateway:
-        condition: service_healthy
+        condition: service_started
     networks:
     - testing_net
   sentiment_analyzer_1:
@@ -105,8 +96,7 @@ services:
       NODES_TO_AWAIT: '1'
       NODES_OF_TYPE: 1
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   join_credits_1:
@@ -122,8 +112,7 @@ services:
     volumes:
     - ./join/credits/config.ini:/app/config.ini
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   join_ratings_1:
@@ -139,8 +128,7 @@ services:
     volumes:
     - ./join/ratings/config.ini:/app/config.ini
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   q1:
@@ -153,8 +141,7 @@ services:
       NODE_TYPE: q1
       NODES_TO_AWAIT: '1'
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   q2:
@@ -167,8 +154,7 @@ services:
       NODE_TYPE: q2
       NODES_TO_AWAIT: '1'
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   q3:
@@ -181,8 +167,7 @@ services:
       NODE_TYPE: q3
       NODES_TO_AWAIT: '1'
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   q4:
@@ -195,8 +180,7 @@ services:
       NODE_TYPE: q4
       NODES_TO_AWAIT: '1'
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   q5:
@@ -209,8 +193,7 @@ services:
       NODE_TYPE: q5
       NODES_TO_AWAIT: '1'
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   client_1:
@@ -225,8 +208,7 @@ services:
       USE_TEST_DATASET: '1'
       REQUESTS_TO_SERVER: '1'
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
   client_2:
@@ -241,8 +223,7 @@ services:
       USE_TEST_DATASET: '1'
       REQUESTS_TO_SERVER: '1'
     depends_on:
-      gateway:
-        condition: service_healthy
+    - gateway
     networks:
     - testing_net
 networks:

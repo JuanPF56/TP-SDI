@@ -64,13 +64,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "condition": "service_healthy"
             }
         },
-        "networks": ["testing_net"], 
-        "healthcheck": {
-            "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
-            "interval": "5s",
-            "timeout": "5s",
-            "retries": 10
-        }
+        "networks": ["testing_net"]
     }
 
     # Filter nodes
@@ -78,17 +72,17 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         if subtype == "cleanup":
             num_nodes = cleanup
             nodes_to_await = 1
-            depends = {"gateway": {"condition": "service_healthy"}}
+            depends = {"gateway": {"condition": "service_started"}}
         elif subtype == "year":
             num_nodes = year
             nodes_to_await = production
-            depends = {"gateway": {"condition": "service_healthy"}}
+            depends = {"gateway": {"condition": "service_started"}}
             for node in j_nodes:
                 depends[node] = {"condition": "service_started"}
         elif subtype == "production":
             num_nodes = production
             nodes_to_await = cleanup
-            depends = {"gateway": {"condition": "service_healthy"}}
+            depends = {"gateway": {"condition": "service_started"}}
         for i in range(1, num_nodes + 1):
             services[f"filter_{subtype}_{i}"] = {
                 "container_name": f"filter_{subtype}_{i}",
@@ -122,11 +116,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": sentiment_analyzer,
             },
-            "depends_on": {
-                "gateway": {
-                    "condition": "service_healthy"
-                }
-            },
+            "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
 
@@ -146,11 +136,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "volumes": [
                 f"./join/credits/config.ini:/app/config.ini"
             ],
-            "depends_on": {
-                "gateway": {
-                    "condition": "service_healthy"
-                }
-            },
+            "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
     for i in range(1, j_ratings + 1):
@@ -168,11 +154,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "volumes": [
                 f"./join/ratings/config.ini:/app/config.ini"
             ],
-            "depends_on": {
-                "gateway": {
-                    "condition": "service_healthy"
-                }
-            },
+            "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
 
@@ -199,11 +181,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "NODE_TYPE": qname,
                 "NODES_TO_AWAIT": str(nodes_to_await[qname])
             },
-            "depends_on": {
-                "gateway": {
-                    "condition": "service_healthy"
-                }
-            },
+            "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
 
@@ -225,11 +203,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "USE_TEST_DATASET": "1" if short_test else "0", 
                 "REQUESTS_TO_SERVER": "1"
             },
-            "depends_on": {
-                "gateway": {
-                    "condition": "service_healthy"
-                }
-            },
+            "depends_on": ["gateway"],
             "networks": ["testing_net"]
         }
 
