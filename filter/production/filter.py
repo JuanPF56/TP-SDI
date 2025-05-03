@@ -3,7 +3,7 @@ import json
 
 from common.logger import get_logger
 logger = get_logger("Filter-Production")
-
+from collections import defaultdict
 from common.filter_base import FilterBase, EOS_TYPE
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
@@ -13,9 +13,7 @@ class ProductionFilter(FilterBase):
         Initialize the ProductionFilter with the provided configuration.
         """
         super().__init__(config)
-        self.batch_arg = []
-        self.batch_solo = []
-        self.batch_arg_spain = []
+        self.batches = defaultdict(lambda: {"arg": [], "solo": [], "arg_spain": []})
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
         self.client_manager = ClientManager(
@@ -92,23 +90,24 @@ class ProductionFilter(FilterBase):
     def _handle_eos(self, queue_name, body, method, headers, client_state):
         logger.debug(f"Received EOS from {queue_name}")
 
-        if len(self.batch_arg) > 0:
-            self._publish_batch(queue=self.target_queues[queue_name][0], batch=self.batch_arg, headers=headers)
-            self.batch_arg = []
+        key = (client_state.client_id, client_state.request_id)
+        batch_set = self.batches[key]
 
-        if len(self.batch_solo) > 0:
-            self._publish_batch(queue=self.target_queues[queue_name][1], batch=self.batch_solo, headers=headers)
-            self.batch_solo = []
+        if batch_set["arg"]:
+            self._publish_batch(queue=self.target_queues[queue_name][0], batch=batch_set["arg"], headers=headers)
+        if batch_set["solo"]:
+            self._publish_batch(queue=self.target_queues[queue_name][1], batch=batch_set["solo"], headers=headers)
+        if batch_set["arg_spain"]:
+            self._publish_batch(queue=self.target_queues[queue_name][2], batch=batch_set["arg_spain"], headers=headers)
 
-        if len(self.batch_arg_spain) > 0:
-            self._publish_batch(queue=self.target_queues[queue_name][2], batch=self.batch_arg_spain, headers=headers)
-            self.batch_arg_spain = []
+        self.batches.pop(key, None)
 
         self._mark_eos_received(body, queue_name, headers, client_state)
         self._send_eos(headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
-    def _process_movies_batch(self, movies_batch):
+    def _process_movies_batch(self, movies_batch, client_state: ClientState):
+        key = (client_state.client_id, client_state.request_id)
         for movie in movies_batch:
             country_dicts = movie.get("production_countries", [])
             country_names = [c.get("name") for c in country_dicts if "name" in c]
@@ -116,26 +115,31 @@ class ProductionFilter(FilterBase):
             logger.debug(f"Production countries: {country_names}")
 
             if "Argentina" in country_names:
-                self.batch_arg.append(movie)
+                self.batches[key]["arg"].append(movie)
 
             if len(country_names) == 1:
-                self.batch_solo.append(movie)
+                self.batches[key]["solo"].append(movie)
 
             if "Argentina" in country_names and "Spain" in country_names:
-                self.batch_arg_spain.append(movie)
+                self.batches[key]["arg_spain"].append(movie)
 
-    def _publish_ready_batches(self, queue_name, headers):
-        if len(self.batch_arg) >= self.batch_size:
-            self._publish_batch(queue=self.target_queues[queue_name][0], batch=self.batch_arg, headers=headers)
-            self.batch_arg = []
 
-        if len(self.batch_solo) >= self.batch_size:
-            self._publish_batch(queue=self.target_queues[queue_name][1], batch=self.batch_solo, headers=headers)
-            self.batch_solo = []
+    def _publish_ready_batches(self, queue_name, headers, client_state: ClientState):
+        key = (client_state.client_id, client_state.request_id)
+        batch_set = self.batches[key]
 
-        if len(self.batch_arg_spain) >= self.batch_size:
-            self._publish_batch(queue=self.target_queues[queue_name][2], batch=self.batch_arg_spain, headers=headers)
-            self.batch_arg_spain = []
+        if len(batch_set["arg"]) >= self.batch_size:
+            self._publish_batch(queue=self.target_queues[queue_name][0], batch=batch_set["arg"], headers=headers)
+            batch_set["arg"].clear()
+
+        if len(batch_set["solo"]) >= self.batch_size:
+            self._publish_batch(queue=self.target_queues[queue_name][1], batch=batch_set["solo"], headers=headers)
+            batch_set["solo"].clear()
+
+        if len(batch_set["arg_spain"]) >= self.batch_size:
+            self._publish_batch(queue=self.target_queues[queue_name][2], batch=batch_set["arg_spain"], headers=headers)
+            batch_set["arg_spain"].clear()
+
 
     def callback(self, ch, method, properties, body, queue_name):
         """
