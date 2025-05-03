@@ -7,14 +7,14 @@ from common.logger import get_logger
 from common.mom import RabbitMQProcessor
 logger = get_logger("Filter-Year")
 from common.client_state_manager import ClientManager
-
+from common.client_state_manager import ClientState
 from common.filter_base import FilterBase, EOS_TYPE
 
 class YearFilter(FilterBase):
     def __init__(self, config):
         super().__init__(config)
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
-        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1")) * 2 # Two queues to await eos from
+        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1")) 
 
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
@@ -52,7 +52,7 @@ class YearFilter(FilterBase):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
 
-    def _mark_eos_received(self, body, input_queue, headers):
+    def _mark_eos_received(self, body, input_queue, headers, client_state: ClientState):
         """
         Mark the end of stream (EOS) for the given input queue
         for the given node.
@@ -66,12 +66,13 @@ class YearFilter(FilterBase):
             logger.error("Failed to decode EOS message")
             return
 
-        if not self.current_client_state.has_queue_received_eos_from_node(input_queue, node_id):
+        if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
             count += 1
+            logger.info("COUNT INCREMENTED" + str(count))
             logger.info(f"EOS count for node {node_id}: {count}")
 
         logger.info(f"EOS received for node {node_id} from input queue {input_queue}")
-        self.current_client_state.mark_eos(input_queue, node_id)
+        client_state.mark_eos(input_queue, node_id)
         logger.info(f"Count of EOS: {count} < {self.nodes_of_type}")
         # If this isn't the last node, send the EOS message back to the input queue
         if count < self.nodes_of_type: 
@@ -83,12 +84,12 @@ class YearFilter(FilterBase):
                 headers=headers
             )
     
-    def _check_eos_flags(self, headers):
+    def _check_eos_flags(self, headers, client_state: ClientState):
         """
         Check if all nodes have sent EOS and propagate to output queues.
         """
         logger.debug(f"EOS to await: {self.eos_to_await}")
-        if self.current_client_state.has_received_all_eos(self.source_queues):
+        if client_state.has_received_all_eos(self.source_queues):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
             self._send_eos(headers)
             self.client_manager.remove_client(self.current_client_state)
@@ -116,7 +117,7 @@ class YearFilter(FilterBase):
         )
         logger.info(f"EOS message sent to {self.target_exchange}")
 
-    def _handle_eos(self, input_queue, body, method, headers):
+    def _handle_eos(self, input_queue, body, method, headers, client_state: ClientState):
         logger.debug(f"Received EOS from {input_queue}")
 
         if self.processed_batch.get(input_queue):
@@ -139,8 +140,8 @@ class YearFilter(FilterBase):
             )
             self.processed_batch[input_queue] = []
 
-        self._mark_eos_received(body, input_queue, headers)
-        self._check_eos_flags(headers)
+        self._mark_eos_received(body, input_queue, headers, client_state)
+        self._check_eos_flags(headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_movies_batch(self, movies_batch, input_queue):
@@ -188,12 +189,11 @@ class YearFilter(FilterBase):
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
-        self.current_client_id = headers.get("client_id")
-        self.current_request_number = headers.get("request_number")
-        self.current_client_state = self.client_manager.add_client(self.current_client_id, self.current_request_number)
+        client_id, request_number = headers.get("client_id"), headers.get("request_number")
+        client_state = self.client_manager.add_client(client_id, request_number)
 
         if msg_type == EOS_TYPE:
-            self._handle_eos(input_queue, body, method, headers)
+            self._handle_eos(input_queue, body, method, headers, client_state)
             return
 
         try:
