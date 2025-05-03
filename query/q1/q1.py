@@ -60,6 +60,7 @@ class ArgSpainGenreQuery:
 
         # Limpieza de datos para liberar memoria
         del self.results_by_request[key]
+        self.client_manager.remove_client(client_id, request_number)
 
     def process_batch(self, movies_batch, client_id, request_number):
         """
@@ -84,7 +85,7 @@ class ArgSpainGenreQuery:
             self.rabbitmq_processor.acknowledge(method)
             return
     
-        self.current_client_state = self.client_manager.add_client(client_id, request_number)
+        client_state = self.client_manager.add_client(client_id, request_number)
 
 
         if msg_type == EOS_TYPE:
@@ -95,14 +96,14 @@ class ArgSpainGenreQuery:
                 logger.error("Failed to decode EOS message")
                 return
 
-            if self.current_client_state.has_queue_received_eos(input_queue):
+            if client_state.has_queue_received_eos(input_queue):
                 logger.warning(f"Duplicated EOS from node {node_id} for request {client_id} and request number {request_number}")
                 return
 
-            self.current_client_state.mark_eos(input_queue, node_id)
+            client_state.mark_eos(input_queue, node_id)
             logger.info(f"EOS received from node {node_id} for request {client_id} and request number {request_number}")
 
-            if self.current_client_state.has_received_all_eos(input_queue):
+            if client_state.has_received_all_eos(input_queue):
                 logger.info(f"All EOS received for request {client_id} and request number {request_number}")
                 self._calculate_and_publish_results(client_id, request_number)
 

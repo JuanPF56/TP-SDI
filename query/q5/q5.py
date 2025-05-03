@@ -7,7 +7,7 @@ from collections import defaultdict
 from common.logger import get_logger
 from common.mom import RabbitMQProcessor
 from common.client_state_manager import ClientManager
-
+from common.client_state_manager import ClientState
 logger = get_logger("SentimentStats")
 EOS_TYPE = "EOS"  # Type of message indicating end of stream
 class SentimentStats:
@@ -36,11 +36,11 @@ class SentimentStats:
             nodes_to_await=self.eos_to_await,
         )  
 
-    def _calculate_and_publish_results(self, client_id, request_number):
+    def _calculate_and_publish_results(self, client_id, request_number, client_state: ClientState):
         """
         Calculate the average rates and publish the results.
         """
-        if self.current_client_state.has_received_all_eos(self.source_queues):
+        if client_state.has_received_all_eos(self.source_queues):
             positives = self.positive_rates[(client_id, request_number)]
             negatives = self.negative_rates[(client_id, request_number)]
 
@@ -73,7 +73,7 @@ class SentimentStats:
                 self.rabbitmq_processor.acknowledge(method)
                 return
         
-            self.current_client_state = self.client_manager.add_client(client_id, request_number)
+            client_state = self.client_manager.add_client(client_id, request_number)
 
 
             if input_queue == self.source_queues[0]:
@@ -90,11 +90,11 @@ class SentimentStats:
                     self.rabbitmq_processor.acknowledge(method)  # Make sure to acknowledge
                     return
                     
-                self.current_client_state.mark_eos(input_queue, node_id)
+                client_state.mark_eos(input_queue, node_id)
                 logger.info(f"EOS received for node {node_id} in {sentiment} queue.")
-                if self.current_client_state.has_received_all_eos(self.source_queues):
+                if client_state.has_received_all_eos(self.source_queues):
                     logger.info("All nodes have sent EOS.")
-                    self._calculate_and_publish_results(client_id, request_number)
+                    self._calculate_and_publish_results(client_id, request_number, client_state)
                 self.rabbitmq_processor.acknowledge(method)
                 return
 

@@ -12,6 +12,7 @@ from common.mom import RabbitMQProcessor
 EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 logger = get_logger("SentimentAnalyzer")
+from common.client_state_manager import ClientState
 from common.client_state_manager import ClientManager
 
 MAX_WORKERS = os.cpu_count() or 4
@@ -64,7 +65,7 @@ class SentimentAnalyzer:
             logger.error(f"Error during sentiment analysis: {e}")
             return "neutral"
 
-    def _mark_eos_received(self, body, channel, headers):
+    def _mark_eos_received(self, body, channel, headers, client_state: ClientState):
         try:
             data = json.loads(body)
             node_id = data.get("node_id")
@@ -72,9 +73,9 @@ class SentimentAnalyzer:
         except json.JSONDecodeError:
             logger.error("Failed to decode EOS message")
             return      
-        if not self.current_client_state.has_queue_received_eos_from_node(self.source_queue, node_id):
+        if not client_state.has_queue_received_eos_from_node(self.source_queue, node_id):
             count += 1
-            self.current_client_state.mark_eos(self.source_queue, node_id)
+            client_state.mark_eos(self.source_queue, node_id)
             logger.debug(f"EOS received for node {node_id}.")
 
         logger.debug(f"EOS count for node {node_id}: {count}")
@@ -88,8 +89,8 @@ class SentimentAnalyzer:
                 headers=headers
             )
         
-    def _send_eos(self, msg_type, headers):
-        if self.current_client_state.has_received_all_eos(self.source_queue):
+    def _send_eos(self, msg_type, headers, client_state: ClientState):
+        if client_state.has_received_all_eos(self.source_queue):
             logger.info("All nodes have sent EOS. Sending EOS to both queues.")
             for queue in self.target_queues:
                 self.rabbitmq_processor.publish(
@@ -111,10 +112,10 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.acknowledge(method)
                 return
         
-            self.current_client_state = self.client_manager.add_client(client_id, request_number)
+            client_state = self.client_manager.add_client(client_id, request_number)
 
             if msg_type == EOS_TYPE:
-                self._mark_eos_received(body, ch, headers)
+                self._mark_eos_received(body, ch, headers, client_state)    
                 if len(self.batch_positive) > 0:
                     self.rabbitmq_processor.publish(
                         target=self.target_queues[0],

@@ -61,6 +61,7 @@ class SoloCountryBudgetQuery:
 
         # Limpieza de memoria
         del self.budget_by_country_by_request[key]
+        self.client_manager.remove_client(client_id, request_number)
 
 
     def callback(self, ch, method, properties, body, input_queue):
@@ -73,7 +74,7 @@ class SoloCountryBudgetQuery:
             self.rabbitmq_processor.acknowledge(method)
             return
         
-        self.current_client_state = self.client_manager.add_client(client_id, request_number)
+        client_state = self.client_manager.add_client(client_id, request_number)
 
         if msg_type == EOS_TYPE:
             try:
@@ -83,14 +84,14 @@ class SoloCountryBudgetQuery:
                 logger.error("Failed to decode EOS message")
                 return
             
-            if self.current_client_state.has_queue_received_eos_from_node(input_queue, node_id):
+            if client_state.has_queue_received_eos_from_node(input_queue, node_id):
                 logger.warning(f"Duplicated EOS from node {node_id} for request {client_id}-{request_number}. Ignoring.")
                 return
 
-            self.current_client_state.mark_eos(input_queue, node_id)
+            client_state.mark_eos(input_queue, node_id)
             logger.info(f"EOS received from node {node_id} for request {client_id}-{request_number}.")
 
-            if self.current_client_state.has_received_all_eos(input_queue):
+            if client_state.has_received_all_eos(input_queue):
                 logger.info(f"All EOS received for request {client_id}-{request_number}.")
                 self._calculate_and_publish_results(client_id, request_number)
 

@@ -41,7 +41,7 @@ class ArgProdRatingsQuery:
             "highest": {"title": None, "rating": 0},
             "lowest": {"title": None, "rating": float("inf")}
         }
-
+ 
         found_valid_ratings = False
         client_movies = self.movie_ratings[client_id][request_number]
 
@@ -56,19 +56,22 @@ class ArgProdRatingsQuery:
                     results["lowest"] = {"title": movie_data["original_title"], "rating": avg}
 
         results_msg = {
+            "client_id": client_id,
+            "request_number": request_number,
             "query": "Q3",
             "results": {} if not found_valid_ratings else results
         }
 
         logger.info(f"RESULTS for client {client_id}, req {request_number}: {results_msg}")
         self.rabbitmq_processor.publish(self.target_queue, results_msg)
+        del self.movie_ratings[client_id][request_number]
+        self.client_manager.remove_client(client_id, request_number)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
         headers = properties.headers or {}
 
-        client_id = headers.get("client_id")
-        request_number = headers.get("request_number")
+        client_id, request_number = headers.get("client_id"),  headers.get("request_number")
 
         if not client_id or request_number is None:
             logger.warning("❌ Missing client_id or request_number in headers. Skipping.")
