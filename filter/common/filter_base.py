@@ -20,7 +20,6 @@ class FilterBase:
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.rabbitmq_processor = None
         self.client_manager = None
-        self.current_client_state = None
 
     def setup(self):
         """

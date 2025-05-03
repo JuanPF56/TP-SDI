@@ -6,7 +6,7 @@ logger = get_logger("Filter-Production")
 
 from common.filter_base import FilterBase, EOS_TYPE
 from common.client_state_manager import ClientManager
-
+from common.client_state import ClientState
 class ProductionFilter(FilterBase):
     def __init__(self, config):
         """
@@ -38,7 +38,7 @@ class ProductionFilter(FilterBase):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
 
-    def _mark_eos_received(self, body, input_queue, headers):
+    def _mark_eos_received(self, body, input_queue, headers, client_state: ClientState):
         """
         Mark the end of stream (EOS) for the given node
         """
@@ -50,10 +50,9 @@ class ProductionFilter(FilterBase):
             logger.error("Failed to decode EOS message")
             return
             
-        if not self.current_client_state.has_queue_received_eos_from_node(input_queue, node_id):
+        if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
             count +=1
         
-        logger.info(f"EOS count for node {node_id}: {count}")
         # If this isn't the last node, send the EOS message back to the input queue
         if count < self.nodes_of_type:
             # Send EOS back to input queue for other production nodes
@@ -65,15 +64,14 @@ class ProductionFilter(FilterBase):
             )
         
 
-        logger.info(f"EOS received for Cleanup node {node_id}")
-        self.current_client_state.mark_eos(input_queue, node_id)
+        client_state.mark_eos(input_queue, node_id)
 
-    def _send_eos(self, headers):
+    def _send_eos(self, headers, client_state: ClientState):
         """
         Propagate the end of stream (EOS) to all output queues if all nodes have sent EOS.
         """
         logger.info("Checking if all nodes have sent EOS")
-        if self.current_client_state.has_received_all_eos(self.source_queues):
+        if client_state.has_received_all_eos(self.source_queues):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
             for queue_list in self.target_queues.values():
                 for queue in queue_list:
@@ -90,7 +88,7 @@ class ProductionFilter(FilterBase):
         self.rabbitmq_processor.publish(target=queue, message=batch, headers=headers)
         logger.debug(f"Sent batch to {queue}")
 
-    def _handle_eos(self, queue_name, body, method, headers):
+    def _handle_eos(self, queue_name, body, method, headers, client_state):
         logger.debug(f"Received EOS from {queue_name}")
 
         if len(self.batch_arg) > 0:
@@ -105,8 +103,8 @@ class ProductionFilter(FilterBase):
             self._publish_batch(queue=self.target_queues[queue_name][2], batch=self.batch_arg_spain, headers=headers)
             self.batch_arg_spain = []
 
-        self._mark_eos_received(body, queue_name, headers)
-        self._send_eos(headers)
+        self._mark_eos_received(body, queue_name, headers, client_state)
+        self._send_eos(headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_movies_batch(self, movies_batch):
@@ -153,10 +151,10 @@ class ProductionFilter(FilterBase):
             self.rabbitmq_processor.acknowledge(method)
             return
     
-        self.current_client_state = self.client_manager.add_client(self.current_client_id, self.current_request_number)
+        client_state = self.client_manager.add_client(self.current_client_id, self.current_request_number)
 
         if msg_type == EOS_TYPE:
-            self._handle_eos(queue_name, body, method, headers)
+            self._handle_eos(queue_name, body, method, headers, client_state)
             return
 
         try:

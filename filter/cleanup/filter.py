@@ -1,6 +1,7 @@
 import configparser
 import json
 from common.client_state_manager import ClientManager
+from common.client_state import ClientState
 from common.logger import get_logger
 logger = get_logger("Filter-Cleanup")
 
@@ -90,7 +91,7 @@ class CleanupFilter(FilterBase):
             "cast": cast,
         }
 
-    def _mark_eos_received(self, body, queue_name, msg_type, headers):
+    def _mark_eos_received(self, body, queue_name, msg_type, headers, client_state: ClientState):
         """
         Mark the end-of-stream (EOS) flag for the specified queue.
         Up the count of the EOS message, if it is not the last node of type put it back to the input queue.
@@ -112,9 +113,9 @@ class CleanupFilter(FilterBase):
         
         # Send EOS back to the input queue for other cleanup nodes
         # only if this is not the last node of type
-        if not self.current_client_state.has_queue_received_eos(queue_name):
+        if not client_state.has_queue_received_eos(queue_name):
             logger.info(f"EOS marked for source queue: {queue_name}")
-            self.current_client_state.mark_eos(queue_name)
+            client_state.mark_eos(queue_name)
             count += 1
         
         logger.info(f"EOS count for queue {queue_name}: {count}")
@@ -149,11 +150,11 @@ class CleanupFilter(FilterBase):
                 logger.info(f"EOS sent to target queue: {targets}")
         logger.info(f"Checking if all EOS have been received for queue {queue_name}")
         
-        if self.current_client_state.has_received_all_eos(self.source_queues):
+        if client_state.has_received_all_eos(self.source_queues):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
-            self.client_manager.remove_client(self.current_client_state)
+            self.client_manager.remove_client(client_state)
 
-    def _handle_eos(self, queue_name, body, method, msg_type, headers):
+    def _handle_eos(self, queue_name, body, method, msg_type, headers, client_state: ClientState):
         if len(self.batch) > 0:
             logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
             logger.info("Publishing remaining batch to target queues.")
@@ -161,7 +162,7 @@ class CleanupFilter(FilterBase):
             logger.info("Clearing batch after publishing.")
             self.batch.clear()
         logger.info("Processing EOS message.")
-        self._mark_eos_received(body, queue_name, msg_type, headers)
+        self._mark_eos_received(body, queue_name, msg_type, headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_cleanup_batch(self, data_batch, queue_name):
@@ -208,10 +209,10 @@ class CleanupFilter(FilterBase):
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
         client_id, request_number = headers.get("client_id"), headers.get("request_number")
-        self.current_client_state = self.client_manager.add_client(client_id, request_number)
+        client_state = self.client_manager.add_client(client_id, request_number)
 
         if msg_type == EOS_TYPE:
-            self._handle_eos(queue_name, body, method, msg_type, headers)
+            self._handle_eos(queue_name, body, method, msg_type, headers, client_state)
             return
 
         try:
