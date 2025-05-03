@@ -4,8 +4,10 @@ import pika
 import multiprocessing
 import signal
 
+from common.client_state import ClientState
+from common.client_state_manager import ClientManager
 from common.mom import RabbitMQProcessor
-from join.common.movies_handler import MoviesHandler
+from common.movies_handler import MoviesHandler
 
 EOS_TYPE = "EOS"
 
@@ -25,8 +27,11 @@ class JoinBase:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
-        self._eos_flags = {}
-
+        self.client_manager = ClientManager(
+            expected_queues=self.input_queue,
+            nodes_to_await=self.eos_to_await,
+        )
+        
         # Initialize the RabbitMQProcessor
         self.rabbitmq_processor = RabbitMQProcessor(config, self.input_queue, self.output_queue)
         self.rabbitmq_processor.connect()
@@ -38,7 +43,7 @@ class JoinBase:
         self.movies_handler = MoviesHandler(
             config=self.config,
             manager=self.manager,
-            ready_event=self.movies_table_ready,
+            ready_event=self.movies_handler_ready,
             node_id=self.node_id,
             year_nodes_to_await= int(os.getenv("YEAR_NODES_TO_AWAIT", "1"))
         )
@@ -81,6 +86,56 @@ class JoinBase:
 
         self.rabbitmq_processor.consume(self.process_batch)
 
+    def _handle_eos(self, queue_name, body, method, headers, client_state):
+        self.log_debug(f"Received EOS from {queue_name}")
+
+        self._mark_eos_received(body, queue_name, headers, client_state)
+        self._send_eos(headers, client_state)
+
+    def _mark_eos_received(self, body, input_queue, headers, client_state: ClientState):
+        """
+        Mark the end of stream (EOS) for the given node
+        """
+        try:
+            data = json.loads(body)
+            node_id = data.get("node_id")
+            count = data.get("count", 0)
+        except json.JSONDecodeError:
+            self.log_error("Failed to decode EOS message")
+            return
+            
+        if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
+            count +=1
+        
+        # If this isn't the last node, send the EOS message back to the input queue
+        if count < self.nodes_of_type:
+            # Send EOS back to input queue for other production nodes
+            self.rabbitmq_processor.publish(
+                target=input_queue,
+                message={"node_id": node_id, "count": count},
+                msg_type=EOS_TYPE,
+                headers=headers
+            )
+        
+        client_state.mark_eos(input_queue, node_id)
+
+    def _send_eos(self, headers, client_state: ClientState):
+        """
+        Propagate the end of stream (EOS) to all output queues if all nodes have sent EOS.
+        """
+        self.log_info("Checking if all nodes have sent EOS")
+        if client_state.has_received_all_eos(self.input_queue):
+            self.log_info("All nodes have sent EOS. Sending EOS to output queues.")
+            self.rabbitmq_processor.publish(
+                target=self.output_queue,
+                message={"node_id": self.node_id, "count": 0},
+                msg_type=EOS_TYPE,
+                headers=headers
+            )
+            self.client_manager.remove_client(self.current_client_id, self.current_request_number)
+            # TODO: Move the removal of the movies table outside of the eos handling so
+            # it can be reused for other nodes
+            self.movies_handler.remove_movies_table(self.current_client_id, self.current_request_number)
 
     def process_batch(self, ch, method, properties, body, input_queue):
         """
@@ -91,44 +146,24 @@ class JoinBase:
         """
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
-            if msg_type == "EOS":
-                try:
-                    data = json.loads(body)
-                    node_id = data.get("node_id")
-                    count = data.get("count")
-                    client_id = 1 # TODO: Handle for each client
-                except json.JSONDecodeError:
-                    self.log_debug("Failed to decode EOS message")
-                    return
-                self.log_debug(f"EOS message received: {data}")
-                if node_id not in self._eos_flags:
-                    count += 1
-                    self._eos_flags[node_id] = True
-                    self.log_debug(f"EOS received for node {node_id}.")
-                if len(self._eos_flags) == int(self.eos_to_await):
-                    self.log_info("All nodes have sent EOS. Sending EOS to output queue.")
-                    self.rabbitmq_processor.publish(
-                        target=self.output_queue,
-                        message={"node_id": self.node_id, "count": 0},
-                        msg_type=msg_type
-                    )
-                    # Remove movies table for the client
-                    self.movies_handler.remove_movies_table(client_id)
-                self.log_debug(f"EOS count for node {node_id}: {count}")
-                self.log_debug(f"Nodes of type: {self.nodes_of_type}")
-                # If this isn't the last node, put the EOS message back to the queue for other nodes
-                if count < self.nodes_of_type:
-                    self.log_debug(f"Sending EOS back to input queue for node {node_id}.")
-                    # Put the EOS message back to the queue for other nodes
-                    self.rabbitmq_processor.publish(
-                        target=input_queue,
-                        message={"node_id": node_id, "count": count},
-                        msg_type=msg_type
-                    )
+    
+            headers = getattr(properties, "headers", {}) or {}
+            self.current_client_id = headers.get("client_id")
+            self.current_request_number = headers.get("request_number")
+
+            if not self.current_client_id or not self.current_request_number:
+                self.log_error("Missing client_id or request_number in headers")
+                return
+        
+            client_state = self.client_manager.add_client(self.current_client_id, self.current_request_number)
+            
+            if msg_type == EOS_TYPE:
+                self._handle_eos(input_queue, body, method, headers, client_state)
+                return
+            
             # Load the data from the incoming message
             try:
                 decoded = json.loads(body)
-                client_id = 1 # TODO: Handle for each client
                 if isinstance(decoded, list):
                     self.log_debug(f"Received list: {decoded}")
                     data = decoded
@@ -142,33 +177,43 @@ class JoinBase:
                 self.log_error(f"Error decoding JSON: {e}")
                 return
             
-            if not self.movies_handler.client_ready(client_id):
+            if not self.movies_handler.client_ready(self.current_client_id, self.current_request_number):
                 # Put the message back to the queue for other nodes
-                self.log_debug(f"Movies table not ready for client {client_id}. Putting message back to queue.")
+                self.log_debug(f"Movies table not ready for: client {self.current_client_id}, \
+                                request_number {self.current_request_number}. \
+                                Publishing to input queue {input_queue}.")
                 self.rabbitmq_processor.publish(
                     target=input_queue,
                     message=body,
-                    msg_type=msg_type
+                    msg_type=msg_type,
+                    headers=headers
                 )
             else:
-                self.log_debug(f"Movies table ready for client {client_id}. Processing batch.")
+                self.log_debug(f"Movies table ready for client {self.current_client_id}, \
+                                request_number {self.current_request_number}. \
+                                Processing batch...")                                
 
                 # Get the movies table for the client
-                movies_table = self.movies_handler.get_movies_table(client_id)
+                movies_table = self.movies_handler.get_movies_table(self.current_client_id, self.current_request_number)
 
+                if not movies_table:
+                    self.log_warning(f"Movies table is empty for client {self.current_client_id}, \
+                                      request_number {self.current_request_number}.")
+                    return
+                
                 # Build a set of movie IDs for fast lookup
                 movies_by_id = {movie["id"]: movie for movie in movies_table}
                 joined_data = self.perform_join(data, movies_by_id)            
 
                 if not joined_data:
                     self.log_debug("No matching movies found in the movies table.")
-                    return
-                
-                self.rabbitmq_processor.publish(
-                    target=self.output_queue,
-                    message=joined_data,
-                    msg_type=msg_type
-                )
+                else:
+                    self.rabbitmq_processor.publish(
+                        target=self.output_queue,
+                        message=joined_data,
+                        msg_type=msg_type,
+                        headers=headers
+                    )
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.stop_consuming()
