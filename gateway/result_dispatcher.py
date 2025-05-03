@@ -8,7 +8,8 @@ logger = get_logger("Result Dispatcher")
 
 from client_registry import ClientRegistry
 
-COOL_DOWN_TIME = 0.5  # seconds
+BASE_COOL_DOWN_TIME = 0.5  # seconds
+MAX_COOL_DOWN_TIME = 60  # seconds
 
 QUERYS_TO_ANSWER = 5
 
@@ -42,6 +43,10 @@ class ResultDispatcher(threading.Thread):
             self.channel = self.connection.channel()
             self.channel.queue_declare(queue=self.results_queue)
 
+            base_cool_down = BASE_COOL_DOWN_TIME
+            max_cool_down = MAX_COOL_DOWN_TIME
+            cool_down_time = base_cool_down
+
             while not self._stop_flag.is_set():
                 method, properties, body = self._get_next_result()
                 if body:
@@ -71,13 +76,19 @@ class ResultDispatcher(threading.Thread):
                         else:
                             logger.warning(f"Client {client_id} not found or disconnected.")
 
+                        # Reset the cool down time if a result is processed successfully
+                        cool_down_time = base_cool_down
+
                     except Exception as e:
                         logger.error(f"Error processing result: {e}")
                     finally:
                         if method:
                             self._ack(method)
                 else:
-                    time.sleep(COOL_DOWN_TIME)
+                    logger.debug("No result to process, sleeping...")
+                    time.sleep(cool_down_time)
+                    # Increase the cool down time exponentially
+                    cool_down_time = min(cool_down_time * 2, max_cool_down)
 
         except Exception as e:
             logger.error(f"Error in ResultDispatcher: {e}")
@@ -85,8 +96,17 @@ class ResultDispatcher(threading.Thread):
         finally:
             self.stop()
 
-    def _get_next_result(self):
-        return self.channel.basic_get(queue=self.results_queue, auto_ack=False)
+    def _get_next_result(self) -> tuple:
+        # logger.info("Waiting for next result...")
+        try:
+            method, properties, body = self.channel.basic_get(queue=self.results_queue, auto_ack=False)
+
+        except Exception as e:
+            logger.error(f"Error getting result from queue: {e}")
+            raise e
+        
+        finally:
+            return method, properties, body
 
     def _ack(self, method):
         if method:
