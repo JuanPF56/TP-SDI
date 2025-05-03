@@ -27,7 +27,7 @@ class ResultReceiver(threading.Thread):
         try:
             while not self._stop_flag.is_set():
                 result = self.protocol.receive_query_response()
-                logger.debug(f"Received result: {result}")
+                logger.info(f"Received result: {result}")
                 if result is not None:
                     if result:
                         query = result.get("query_id")
@@ -87,7 +87,7 @@ class ResultReceiver(threading.Thread):
             lines.append("-" * 77)
             lines.append(f"{'#':<3} {'Película':35} | Géneros")
             lines.append("-" * 77)
-            for idx, (title, genres) in enumerate(rows, start=1):
+            for idx, (title, genres) in enumerate(rows.items(), start=1):
                 genre_str = ", ".join(genres)
                 lines.append(f"{idx:<3} {title:35} | {genre_str}")
             lines.append("-" * 77)

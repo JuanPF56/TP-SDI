@@ -14,6 +14,8 @@ class YearFilter(FilterBase):
     def __init__(self, config):
         super().__init__(config)
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1")) * 2 # Two queues to await eos from
+
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
 
@@ -46,11 +48,6 @@ class YearFilter(FilterBase):
             self.source_queues[1]: []
         }
 
-        self._eos_flags = {
-            self.source_queues[0]: {},
-            self.source_queues[1]: {}
-        }
-
     def setup(self):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
@@ -64,17 +61,19 @@ class YearFilter(FilterBase):
             data = json.loads(body)
             node_id = data.get("node_id")
             count = data.get("count", 0)
+            logger.info(f"Count received: {count}")
         except json.JSONDecodeError:
             logger.error("Failed to decode EOS message")
             return
 
         if not self.current_client_state.has_queue_received_eos_from_node(input_queue, node_id):
             count += 1
+            logger.info(f"EOS count for node {node_id}: {count}")
 
         logger.info(f"EOS received for node {node_id} from input queue {input_queue}")
         self.current_client_state.mark_eos(input_queue, node_id)
+        logger.info(f"Count of EOS: {count} < {self.nodes_of_type}")
         # If this isn't the last node, send the EOS message back to the input queue
-        logger.debug(f"EOS count for node {node_id}: {count}")
         if count < self.nodes_of_type: 
             # Send EOS back to input queue for other year nodes
             self.rabbitmq_processor.publish(
@@ -88,7 +87,6 @@ class YearFilter(FilterBase):
         """
         Check if all nodes have sent EOS and propagate to output queues.
         """
-        logger.debug(f"EOS flags: {self._eos_flags}")
         logger.debug(f"EOS to await: {self.eos_to_await}")
         if self.current_client_state.has_received_all_eos(self.source_queues):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
