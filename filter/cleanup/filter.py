@@ -13,6 +13,7 @@ class CleanupFilter(FilterBase):
         """
         super().__init__(config)
         self._initialize_queues()
+        self.batch = []
         self._initialize_rabbitmq_processor()
         self.client_manager = ClientManager(self.source_queues)
 
@@ -111,14 +112,14 @@ class CleanupFilter(FilterBase):
         
         # Send EOS back to the input queue for other cleanup nodes
         # only if this is not the last node of type
-        if not self.client_manager.get_client(self.current_client_id).has_received_eos(queue_name):
-            logger.debug(f"EOS marked for source queue: {queue_name}")
-            self.client_manager.get_client(self.current_client_id).mark_eos(queue_name)
+        if not self.current_client_state.has_queue_received_eos(queue_name):
+            logger.info(f"EOS marked for source queue: {queue_name}")
+            self.current_client_state.mark_eos(queue_name)
             count += 1
         
-        logger.debug(f"EOS count for queue {queue_name}: {count}")
+        logger.info(f"EOS count for queue {queue_name}: {count}")
         if count < self.nodes_of_type:
-            logger.debug(f"Sending EOS back to input queue: {queue_name}")
+            logger.info(f"Sending EOS back to input queue: {queue_name}")
             self.rabbitmq_processor.publish(
                 target=queue_name,
                 message={"node_id": self.node_id, "count": count},
@@ -137,7 +138,7 @@ class CleanupFilter(FilterBase):
                         headers=headers
                     )
                     
-                    logger.debug(f"EOS sent to target queue: {target}")
+                    logger.info(f"EOS sent to target queue: {target}")
             else:
                 self.rabbitmq_processor.publish(
                     target=targets,
@@ -145,36 +146,40 @@ class CleanupFilter(FilterBase):
                     msg_type=msg_type, 
                     headers=headers
                 )
-                logger.debug(f"EOS sent to target queue: {targets}")
+                logger.info(f"EOS sent to target queue: {targets}")
+        logger.info(f"Checking if all EOS have been received for queue {queue_name}")
         
-        if self.client_manager.get_client(self.current_client_id).all_queues_eos(self.source_queues):
+        if self.current_client_state.has_received_all_eos(self.source_queues):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
-            self.client_manager.remove_client(self.current_client_id)
+            self.client_manager.remove_client(self.current_client_state)
 
     def _handle_eos(self, queue_name, body, method, msg_type, headers):
-        logger.debug(f"Received EOS from {queue_name}")
-        if len(self.client_manager.get_client(self.current_client_id).batches) > 0:
+        if len(self.batch) > 0:
             logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
-            self._publish_batch(queue_name, self.client_manager.get_client(self.current_client_id).batches, headers, None)
-            self.client_manager.get_client(self.current_client_id).clear_batch()
+            logger.info("Publishing remaining batch to target queues.")
+            self._publish_batch(queue_name, self.batch, headers, None)
+            logger.info("Clearing batch after publishing.")
+            self.batch.clear()
+        logger.info("Processing EOS message.")
         self._mark_eos_received(body, queue_name, msg_type, headers)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_cleanup_batch(self, data_batch, queue_name):
         if queue_name == self.source_queues[0]:
-            self.client_manager.get_client(self.current_client_id).add_batch(data_batch)
+            self.batch.extend([self.clean_movie(d) for d in data_batch])
         elif queue_name == self.source_queues[1]:
-            self.client_manager.get_client(self.current_client_id).add_batch(data_batch)
+            self.batch.extend([self.clean_rating(d) for d in data_batch])
         elif queue_name == self.source_queues[2]:
-            self.client_manager.get_client(self.current_client_id).add_batch(data_batch)
+            self.batch.extend([self.clean_credit(d) for d in data_batch])
         else:
             logger.warning(f"Unknown queue name: {queue_name}. Skipping.")
 
     def _publish_ready_batches(self, queue_name, msg_type, headers):
-        batch_sz = self._determine_batch_size(queue_name)
-        if len(self.client_manager.get_client(self.current_client_id).batches) >= batch_sz:
-            self._publish_batch(queue_name, self.client_manager.get_client(self.current_client_id).batches, headers, msg_type)
-            self.client_manager.get_client(self.current_client_id).clear_batch()
+            batch_sz = self._determine_batch_size(queue_name)
+            if self.batch and len(self.batch) >= batch_sz:
+                self._publish_batch(queue_name, self.batch, headers, msg_type)
+                self.batch.clear()
+
 
     def _publish_batch(self, queue_name, batch, headers, msg_type=None):
         target_queues = self.target_queues.get(queue_name, [])
@@ -202,8 +207,8 @@ class CleanupFilter(FilterBase):
         """
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
-        self.current_client_id = headers.get("client_id")
-        self.client_manager.add_client(self.current_client_id)
+        client_id, request_number = headers.get("client_id"), headers.get("request_number")
+        self.current_client_state = self.client_manager.add_client(client_id, request_number)
 
         if msg_type == EOS_TYPE:
             self._handle_eos(queue_name, body, method, msg_type, headers)
