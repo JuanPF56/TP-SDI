@@ -8,7 +8,7 @@ from common.logger import get_logger
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from common.mom import RabbitMQProcessor
-
+from collections import defaultdict
 EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 logger = get_logger("SentimentAnalyzer")
@@ -20,8 +20,8 @@ MAX_WORKERS = os.cpu_count() or 4
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
         self.sentiment_pipeline = pipeline("sentiment-analysis")
-        self.batch_negative = []
-        self.batch_positive = []
+        self.batch_negative = defaultdict(list)
+        self.batch_positive = defaultdict(list)
         self.lock = threading.Lock()
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.node_id = int(os.getenv("NODE_ID", "1"))
@@ -113,27 +113,31 @@ class SentimentAnalyzer:
                 return
         
             client_state = self.client_manager.add_client(client_id, request_number)
-
+            key = (client_id, request_number)
             if msg_type == EOS_TYPE:
-                self._mark_eos_received(body, ch, headers, client_state)    
-                if len(self.batch_positive) > 0:
-                    self.rabbitmq_processor.publish(
-                        target=self.target_queues[0],
-                        message=self.batch_positive,
-                        headers=headers,
-                    )
-                    logger.info(f"Sent {len(self.batch_positive)} positive movies to {self.target_queues[0]}")
-                    self.batch_positive = []
-                if len(self.batch_negative) > 0:
-                    self.rabbitmq_processor.publish(
-                        target=self.target_queues[1],
-                        message=self.batch_negative,
-                        headers=headers,
-                    )
-                    logger.info(f"Sent {len(self.batch_negative)} negative movies to {self.target_queues[1]}")
-                    self.batch_negative = []
+                self._mark_eos_received(body, ch, headers, client_state)
+                with self.lock:
+                    if len(self.batch_positive[key]) > 0:
+                        self.rabbitmq_processor.publish(
+                            target=self.target_queues[0],
+                            message=self.batch_positive[key],
+                            headers=headers,
+                        )
+                        logger.info(f"Sent {len(self.batch_positive[key])} positive movies to {self.target_queues[0]}")
+                        self.batch_positive[key] = []
+
+                    if len(self.batch_negative[key]) > 0:
+                        self.rabbitmq_processor.publish(
+                            target=self.target_queues[1],
+                            message=self.batch_negative[key],
+                            headers=headers,
+                        )
+                        logger.info(f"Sent {len(self.batch_negative[key])} negative movies to {self.target_queues[1]}")
+                        self.batch_negative[key] = []
+
                 self._send_eos(msg_type, headers, client_state)
                 return
+
 
             movies_batch = json.loads(body)
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -154,34 +158,35 @@ class SentimentAnalyzer:
                         elif sentiment == "positive":
                             logger.debug(f"Movie '{movie.get('original_title')}' is positive.")
                             with self.lock:
-                                self.batch_positive.append(movie)
+                                self.batch_positive[key].append(movie)
                         elif sentiment == "negative":
                             logger.debug(f"Movie '{movie.get('original_title')}' is negative.")
                             with self.lock:
-                                self.batch_negative.append(movie)
+                                self.batch_negative[key].append(movie)
 
                     except Exception as e:
                         logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
                         logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
 
 
-            if len(self.batch_positive) >= self.batch_size:
-                self.rabbitmq_processor.publish(
-                    target=self.target_queues[0],
-                    message=self.batch_positive,
-                    headers=headers,
-                )
-                logger.info(f"Sent batch of {len(self.batch_positive)} positive movies.")
-                self.batch_positive = []
+            with self.lock:
+                if len(self.batch_positive[key]) >= self.batch_size:
+                    self.rabbitmq_processor.publish(
+                        target=self.target_queues[0],
+                        message=self.batch_positive[key],
+                        headers=headers,
+                    )
+                    logger.info(f"Sent batch of {len(self.batch_positive[key])} positive movies.")
+                    self.batch_positive[key] = []
 
-            if len(self.batch_negative) >= self.batch_size:
-                self.rabbitmq_processor.publish(
-                    target=self.target_queues[1],
-                    message=self.batch_negative,
-                    headers=headers,
-                )
-                logger.info(f"Sent batch of {len(self.batch_negative)} negative movies.")
-                self.batch_negative = []
+                if len(self.batch_negative[key]) >= self.batch_size:
+                    self.rabbitmq_processor.publish(
+                        target=self.target_queues[1],
+                        message=self.batch_negative[key],
+                        headers=headers,
+                    )
+                    logger.info(f"Sent batch of {len(self.batch_negative[key])} negative movies.")
+                    self.batch_negative[key] = []
 
         except pika.exceptions.StreamLostError as e:
             logger.error(f"Stream lost, reconnecting: {e}")
