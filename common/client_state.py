@@ -4,8 +4,9 @@ from common.logger import get_logger
 logger = get_logger("Client-State")
 
 class ClientState:
-    def __init__(self, client_id, nodes_to_await=1):
+    def __init__(self, client_id, request_id, nodes_to_await=1):
         self.client_id = client_id
+        self.request_id = request_id
         self.eos_flags = {}  # key: queue_name, value: dict(node_id: bool)
         self.amount_of_eos = nodes_to_await
         

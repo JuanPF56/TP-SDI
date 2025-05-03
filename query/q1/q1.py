@@ -105,7 +105,7 @@ class ArgSpainGenreQuery:
 
             if client_state.has_received_all_eos(input_queue):
                 logger.info(f"All EOS received for request {client_id} and request number {request_number}")
-                self._calculate_and_publish_results(client_id, request_number)
+                self._calculate_and_publish_results(client_state.client_id, client_state.request_id)
 
             self.rabbitmq_processor.acknowledge(method)
             return

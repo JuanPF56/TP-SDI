@@ -92,7 +92,8 @@ class YearFilter(FilterBase):
         if client_state.has_received_all_eos(self.source_queues):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
             self._send_eos(headers)
-            self.client_manager.remove_client(client_state)
+            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+
         else:
             logger.debug("Not all nodes have sent EOS yet. Waiting...")
 

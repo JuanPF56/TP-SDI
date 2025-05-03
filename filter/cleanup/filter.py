@@ -152,7 +152,7 @@ class CleanupFilter(FilterBase):
         
         if client_state.has_received_all_eos(self.source_queues):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
-            self.client_manager.remove_client(client_state)
+            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
     def _handle_eos(self, queue_name, body, method, msg_type, headers, client_state: ClientState):
         if len(self.batch) > 0:

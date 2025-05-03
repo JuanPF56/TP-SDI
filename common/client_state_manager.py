@@ -11,10 +11,10 @@ class ClientManager:
     def add_client(self, client_id, request_id) -> ClientState:
         key = (client_id, request_id)
         if key not in self.clients:
-            self.clients[key] = ClientState(client_id, self.nodes_to_await)
+            self.clients[key] = ClientState(client_id, request_id, self.nodes_to_await)
         return self.clients[key]
     
-    def remove_client(self, client_state: ClientState):
-        key = (client_state.client_id, client_state.request_number)
+    def remove_client(self, client_id, request_id):
+        key = (client_id, request_id)
         if key in self.clients:
             del self.clients[key]

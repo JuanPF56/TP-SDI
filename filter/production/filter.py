@@ -82,7 +82,8 @@ class ProductionFilter(FilterBase):
                         headers=headers
                     )
                     logger.debug(f"EOS message sent to {queue}")
-            self.client_manager.remove_client(client_state)
+            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+
 
     def _publish_batch(self, queue, batch, headers):
         self.rabbitmq_processor.publish(target=queue, message=batch, headers=headers)
