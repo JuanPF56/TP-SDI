@@ -102,9 +102,9 @@ class RabbitMQProcessor:
         self.channel.basic_qos(prefetch_count=5)
         for queue in self.source_queues:
             # Create a closure that properly captures the queue variable
-            def create_callback_wrapper(queue_name):
+            def create_callback_wrapper(queue):
                 def wrapped_callback(ch, method, properties, body):
-                    callback(ch, method, properties, body, queue_name)
+                    callback(ch, method, properties, body, queue)
                 return wrapped_callback
             
             # Use the wrapper factory to create a callback with the correct queue captured
