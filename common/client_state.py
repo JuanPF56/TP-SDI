@@ -7,7 +7,6 @@ class ClientState:
     def __init__(self, client_id, nodes_to_await=1):
         self.client_id = client_id
         self.eos_flags = {}  # key: queue_name, value: dict(node_id: bool)  
-        self.results = {} # this is optional, only the query needs it
         self.amount_of_eos = nodes_to_await
 
     def mark_eos(self, queue_name, node_id = 1):
@@ -43,14 +42,4 @@ class ClientState:
                 return False
         logger.info("All EOS received for all queues")
         return True    
-
-
-    def add_result(self, results):
-        for key, value in results.items():
-            if key not in self.results:
-                self.results[key] = 0
-            self.results[key] += value
-
-    def get_results(self):
-        return self.results
 
