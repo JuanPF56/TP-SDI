@@ -99,8 +99,7 @@ class Gateway():
         new_connected_client = ConnectedClient(
             client_id = str(uuid.uuid4()),
             client_socket = accepted_socket,
-            client_addr = accepted_address, 
-            broker = self.rabbitmq, 
+            client_addr = accepted_address,
             config=self.config
         )
         self._clients_connected.add(new_connected_client)

@@ -118,22 +118,28 @@ class RabbitMQProcessor:
         self.channel.start_consuming()
         
     def publish(self, target, message, msg_type=None, exchange=False, headers=None):
+        if self.connection.is_closed:
+            logger.warning("Publish aborted: RabbitMQ connection is closed.")
+            return
+
         logger.debug(f"Publicando mensaje en: {target}, tipo: {msg_type}", extra={"payload": message})
-        
-        # Crear un canal efímero así se puede compartir self.rabbitmq entre clientes
-        channel = self.connection.channel()
-        properties = pika.BasicProperties(
-            type=msg_type,
-            headers=headers
-        )
-        channel.basic_publish(
-            exchange=target if exchange else '',
-            routing_key=target if not exchange else '',
-            body=json.dumps(message),
-            properties=properties
-        )
-        channel.close()  # Cerrar el canal después de publicar
-        logger.debug(f"Mensaje enviado a: {target}, tipo: {msg_type}, headers: {headers}")
+
+        try:
+            channel = self.connection.channel()
+            properties = pika.BasicProperties(
+                type=msg_type,
+                headers=headers
+            )
+            channel.basic_publish(
+                exchange=target if exchange else '',
+                routing_key=target if not exchange else '',
+                body=json.dumps(message),
+                properties=properties
+            )
+            channel.close()
+            logger.debug(f"Mensaje enviado a: {target}, tipo: {msg_type}, headers: {headers}")
+        except Exception as e:
+            logger.error(f"Error publicando mensaje a {target}: {e}")
 
     def stop_consuming(self):
         """

@@ -18,7 +18,7 @@ class ConnectedClient(threading.Thread):
     Class representing a connected client.
     """
 
-    def __init__(self, client_id: str, client_socket: socket.socket, client_addr, broker: RabbitMQProcessor, config):
+    def __init__(self, client_id: str, client_socket: socket.socket, client_addr, config):
         """
         Initialize the ConnectedClient instance.
 
@@ -44,7 +44,7 @@ class ConnectedClient(threading.Thread):
         self._sent_answers = 0
         self._sent_answers_lock = threading.Lock()
 
-        self.broker = broker
+        self.broker = None
 
         self._running = True
         self._stop_flag = threading.Event()
@@ -121,6 +121,19 @@ class ConnectedClient(threading.Thread):
                 return
             
             logger.debug(f"Client {self._client_id} requested {self._requests_to_be_processed} requests.")
+            self.broker = RabbitMQProcessor(
+                config=self.config,
+                source_queues=[],  # Connected client does not consume messages, so empty list
+                target_queues=[
+                    self.config["DEFAULT"]["movies_raw_queue"],
+                    self.config["DEFAULT"]["credits_raw_queue"],
+                    self.config["DEFAULT"]["ratings_raw_queue"]
+                ],
+                rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"]
+            )
+            connected = self.broker.connect()
+            if not connected:
+                raise RuntimeError("Failed to connect to RabbitMQ.")
 
             while self._running and not self._stop_flag.is_set() and not self.was_closed:
                 for i in range(self._requests_to_be_processed):
@@ -145,49 +158,61 @@ class ConnectedClient(threading.Thread):
 
         except Exception as e:
             logger.error(f"Unexpected error in client {self._client_id}: {e}")
+            self._protocol_gateway._stop_client()
             return
         
     def _process_request(self):
-        header = self._protocol_gateway.receive_header()
-        if header is None:
-            logger.error("Header is None")
-            self._protocol_gateway._stop_client()
-            return
-
-        message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len = header
-        logger.debug(f"Message code: {message_code}")
-        
-        if message_code not in TIPO_MENSAJE:
-            logger.error(f"Invalid message code: {message_code}")
-            self._protocol_gateway._stop_client()
-            return
-
-        if message_code == "DISCONNECT":
-            logger.info("Client requested disconnection.")
-            self._protocol_gateway._stop_client()
-            return
-
-        client_id = encoded_id.decode("utf-8")
-        logger.debug(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
-        
-        payload = self._protocol_gateway.receive_payload(payload_len)
-        if not payload or len(payload) != payload_len:
-            logger.error("Failed to receive full payload")
-            self._protocol_gateway._stop_client()
-            return
-        
-        logger.debug(f"Received payload of length {len(payload)}")
-        
-        processed_data = self._protocol_gateway.process_payload(message_code, payload)
-        if processed_data is None:
-            if message_code == "BATCH_CREDITS":
-                # May be a partial batch
-                return
-            else:
-                logger.error("Failed to process payload")
+        try:
+            header = self._protocol_gateway.receive_header()
+            if header is None:
+                logger.error("Header is None")
+                self._protocol_gateway._stop_client()
                 return
 
-        self._publish_message(message_code, client_id, request_number, current_batch, is_last_batch, processed_data)
+            message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len = header
+            logger.debug(f"Message code: {message_code}")
+            
+            if message_code not in TIPO_MENSAJE:
+                logger.error(f"Invalid message code: {message_code}")
+                self._protocol_gateway._stop_client()
+                return
+
+            if message_code == "DISCONNECT":
+                logger.info("Client requested disconnection.")
+                self._protocol_gateway._stop_client()
+                return
+
+            client_id = encoded_id.decode("utf-8")
+            logger.debug(f"client {client_id} - {message_code} - Receiving batch {current_batch}")
+            
+            payload = self._protocol_gateway.receive_payload(payload_len)
+            if not payload or len(payload) != payload_len:
+                logger.error("Failed to receive full payload")
+                self._protocol_gateway._stop_client()
+                return
+            
+            logger.debug(f"Received payload of length {len(payload)}")
+            
+            processed_data = self._protocol_gateway.process_payload(message_code, payload)
+            if processed_data is None:
+                if message_code == "BATCH_CREDITS":
+                    # May be a partial batch
+                    return
+                else:
+                    logger.error("Failed to process payload")
+                    return
+
+            self._publish_message(message_code, client_id, request_number, current_batch, is_last_batch, processed_data)
+        
+        except (socket.error, socket.timeout) as e:
+            logger.error(f"Socket error raised: {e}, from client {self._client_id}")
+            self._protocol_gateway._stop_client()
+            return
+        
+        except Exception as e:
+            logger.error(f"Unexpected error in _processs_request: {e}, from client {self._client_id}")
+            self._protocol_gateway._stop_client()
+            return
 
 
     def _publish_message(self, message_code, client_id, request_number, current_batch, is_last_batch, processed_data):
@@ -219,6 +244,11 @@ class ConnectedClient(threading.Thread):
         except (TypeError, ValueError) as e:
             logger.error(f"Error serializing data to JSON: {e}")
             logger.error(processed_data)
+
+        except Exception as e:
+            logger.error(f"Unexpected error in _publish_message: {e}, from client {self._client_id}")
+            self._protocol_gateway._stop_client()
+            return
 
 
     def _get_queue_key(self, message_code):
