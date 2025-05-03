@@ -23,7 +23,6 @@ class SentimentStats:
             self.config["DEFAULT"].get("movies_positive_queue", "positive_movies"),
             self.config["DEFAULT"].get("movies_negative_queue", "negative_movies")
         ]
-        self.sentiment_results = defaultdict(lambda: defaultdict(int))
 
         self.target_queue = self.config["DEFAULT"].get("results_queue", "results")
         self.rabbitmq_processor = RabbitMQProcessor(
@@ -65,7 +64,6 @@ class SentimentStats:
             )
             del self.positive_rates[(client_id, request_number)]
             del self.negative_rates[(client_id, request_number)]
-            del self.sentiment_results[(client_id, request_number)]
             self.client_manager.remove_client(client_id, request_number)
 
 
