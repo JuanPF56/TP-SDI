@@ -56,14 +56,14 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 #### ✅ Uso recomendado con `generate-compose.sh`
 
 ```bash
-./generate-compose.sh <output_file.yml> [-short_test <cant_lineas>] [-cant_clientes N]
+./generate-compose.sh <output_file.yml> [-test <test_config.yaml>] [-cant_clientes N]
 ```
 
 #### 📌 Parámetros
 
 - `<output_file.yml>`: nombre del archivo de salida (`docker-compose.yaml`, por ejemplo).
 
-- `-short_test <cant_lineas>`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py --test <cant_lineas>`.
+- `-test <test_config.yaml>`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py --test <test_config.yaml>`, donde el archivo YAML indica el porcentaje de cada dataset a usar.
 
 - `-cant_clientes N`: opcional. Define la cantidad de clientes (client_X) que se generan en el sistema.
 
@@ -75,10 +75,10 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 ./generate-compose.sh docker-compose.yaml
 ```
 
-- Generar para pruebas rápidas con 500 líneas:
+- Generar para pruebas rápidas con una config YAML:
 
 ```bash
-./generate-compose.sh docker-compose.yaml -short_test 500
+./generate-compose.sh docker-compose.yaml -test test_config.yaml
 ```
 
 - Generar con 4 clientes:
@@ -90,28 +90,35 @@ El sistema cuenta con un script auxiliar para facilitar la generación del archi
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh docker-compose.yaml -short_test 1000 -cant_clientes 2
+./generate-compose.sh docker-compose.yaml -test test_config.yaml -cant_clientes 2
 ```
 
-> 💡 Internamente, este script llama al generador `python3 docker-compose-generator.py` pasando los argumentos adecuados y ejecuta `download_datasets.py` automáticamente si estás en modo test.
+> 💡 Internamente, este script llama a `download_datasets.py` con el flag `-test <test_config.yaml>` y luego ejecuta `docker-compose-generator.py`.
 
 ---
 
 ### 🧪 Preparar datasets de prueba
 
 ```bash
-python3 download_datasets.py [--test <cant_lineas>]
+python3 download_datasets.py [-test <test_config.yaml>]
 ```
 
 - Por defecto descarga el dataset completo desde Kaggle.
-- Si se pasa el flag `--test`, se recortan los datasets a la cantidad de líneas especificada.
+- Si se pasa el flag `--test`, los archivos se recortan según los porcentajes definidos en el YAML.
 - Los archivos se guardan en la carpeta `./datasets_for_test`.
 
-> 💡 **Requiere instalación de `kagglehub` y `pandas`**:
+**Ejemplo de `test_config.yaml` con todos los datasets al 20%:**:
+
+```yaml
+movies_metadata.csv: 20
+credits.csv: 20
+ratings.csv: 20
+```
+
+> 💡 **Requiere instalación de dependencias**:
 >
 > ```bash
-> pip install kagglehub
-> pip install pandas
+> pip install kagglehub pandas pyyaml
 > ```
 
 ---

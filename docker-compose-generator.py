@@ -227,11 +227,11 @@ def main():
     args = sys.argv[1:]
 
     if not args or args[0].startswith("-"):
-        print("Usage: python3 docker-compose-generator.py <output_file.yml> [-short_test] [-cant_clientes <n>]")
+        print("Usage: python3 docker-compose-generator.py <output_file.yml> [-test] [-cant_clientes <n>]")
         sys.exit(1)
 
     filename = args[0]
-    short_test = "-short_test" in args
+    short_test = "-test" in args
 
     # Obtener cantidad de clientes (default 1)
     cant_clientes = 1

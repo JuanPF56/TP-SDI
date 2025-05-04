@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$#" -lt 1 ]; then
-    echo "Uso: $0 <nombre_archivo> [-cant_clientes <numero>] [-short_test <cant_lineas>]"
+    echo "Uso: $0 <nombre_archivo> [-cant_clientes <numero>] [-test <test_config_path>]"
     exit 1
 fi
 
@@ -13,7 +13,7 @@ args=("$@")  # Guardamos todos los flags originales
 # Valores por defecto
 cant_clientes="1"
 modo_test="No"
-cant_lineas_test=0
+test_config_path=""
 
 # Parseo manual de los flags
 while [[ "$#" -gt 0 ]]; do
@@ -22,10 +22,10 @@ while [[ "$#" -gt 0 ]]; do
             shift
             cant_clientes=$1
             ;;
-        -short_test)
+        -test)
             modo_test="Sí"
             shift
-            cant_lineas_test=$1
+            test_config_path=$1
             ;;
     esac
     shift
@@ -38,8 +38,8 @@ echo "¿Modo test activado?: $modo_test"
 
 # Ejecutamos download_datasets.py si es modo test
 if [ "$modo_test" == "Sí" ]; then
-    echo "Ejecutando download_datasets.py con --test $cant_lineas_test"
-    python3 download_datasets.py --test "$cant_lineas_test"
+    echo "Ejecutando download_datasets.py con -test $test_config_path"
+    python3 download_datasets.py -test "$test_config_path"
 fi
 
 # Generamos el archivo de docker compose

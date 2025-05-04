@@ -1,4 +1,5 @@
 import os
+import yaml
 import logging
 import argparse
 import pandas as pd
@@ -17,7 +18,15 @@ def download_dataset():
         logger.error(f"Failed to download dataset: {e}")
         return None
 
-def prepare_data(test_lines=None):
+def load_config(config_path):
+    try:
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        logger.error(f"Failed to load config file: {e}")
+        return {}
+
+def prepare_data(config_path=None):
     output_dir = "./datasets_for_test"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -27,6 +36,8 @@ def prepare_data(test_lines=None):
     if not dataset_path:
         logger.error("Dataset download failed. Cannot prepare test data.")
         return
+
+    config = load_config(config_path) if config_path else {}
 
     input_files = {
         "movies_metadata.csv": "movies_metadata.csv",
@@ -42,11 +53,18 @@ def prepare_data(test_lines=None):
             logger.info(f"Processing {filename}...")
             try:
                 df = pd.read_csv(full_path, low_memory=False)
-                if test_lines:
-                    df = df.head(test_lines)
-                    logger.info(f"Trimming {filename} to first {test_lines} rows")
+                pct = config.get(filename)
+
+                if pct is not None:
+                    if 0 < pct <= 100:
+                        sample_size = int(len(df) * (pct / 100))
+                        df = df.head(sample_size)
+                        logger.info(f"Trimming {filename} to {pct}% ({sample_size} rows)")
+                    else:
+                        logger.warning(f"Invalid percentage for {filename}: {pct}. Skipping trim.")
                 else:
-                    logger.info(f"Keeping full {filename}")
+                    logger.info(f"No percentage specified for {filename}, keeping full dataset.")
+
                 df.to_csv(output_path, index=False)
                 logger.info(f"Saved {filename} to {output_path}")
             except Exception as e:
@@ -56,7 +74,7 @@ def prepare_data(test_lines=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prepare datasets from Kaggle.")
-    parser.add_argument('--test', type=int, help="Trim datasets to first N rows (optional)")
+    parser.add_argument('-test', type=str, help="Path to YAML test config file with percentages for each dataset.")
     args = parser.parse_args()
 
-    prepare_data(test_lines=args.test)
+    prepare_data(config_path=args.test)
