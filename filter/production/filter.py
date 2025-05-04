@@ -51,6 +51,7 @@ class ProductionFilter(FilterBase):
             return
             
         if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
+            client_state.mark_eos(input_queue, node_id)
             count +=1
         
         # If this isn't the last node, send the EOS message back to the input queue
@@ -64,7 +65,6 @@ class ProductionFilter(FilterBase):
             )
         
 
-        client_state.mark_eos(input_queue, node_id)
 
     def _send_eos(self, headers, client_state: ClientState):
         """
