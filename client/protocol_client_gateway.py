@@ -1,6 +1,5 @@
 import common.receiver as receiver
 import common.sender as sender
-import common.exceptions as exceptions
 import socket
 
 import os
@@ -12,7 +11,7 @@ import json
 from common.logger import get_logger
 logger = get_logger("Protocol Client")
 
-from common.protocol import TIPO_MENSAJE, SIZE_OF_UUID, SIZE_OF_HEADER, SIZE_OF_HEADER_RESULTS
+from common.protocol import TIPO_MENSAJE, SIZE_OF_UUID, SIZE_OF_HEADER, SIZE_OF_HEADER_RESULTS, ProtocolError
 
 TIMEOUT_RECEIVE_ID = 60
 TIMEOUT_ANSWER_HEADER = 3600 # 1 hour (longest timeout for a query)
@@ -36,21 +35,26 @@ class ProtocolClient:
 
             if not client_id_bytes or len(client_id_bytes) != SIZE_OF_UUID:
                 logger.error("Failed to receive client ID from server")
-                raise exceptions.ProtocolError("Failed to receive client ID from server")
+                raise ProtocolError("Failed to receive client ID from server")
             
             self._client_id = client_id_bytes.decode("utf-8")
             logger.info(f"Client ID assigned: {self._client_id}")
             return self._client_id
         
-        except ConnectionError as e:
-            logger.error("Connection closed by server")
+        except TimeoutError:
+            logger.error("Timeout waiting for client ID from server")
             self._connected = False
-            raise exceptions.ProtocolError("Connection closed by server")
+            raise ServerNotConnectedError("Timeout waiting for client ID from server")
+
+        except receiver.ReceiverError as e:
+            logger.error("Receiver error while receiving client ID")
+            self._connected = False
+            raise ProtocolError("Receiver error while receiving client ID")
         
         except Exception as e:
             logger.error(f"Unexpected error receiving client ID: {e}")
             self._connected = False
-            raise exceptions.ProtocolError("Unexpected error receiving client ID")
+            raise ProtocolError("Unexpected error receiving client ID")
 
     def send_amount_of_requests(self, amount_of_requests):
         logger.info(f"Sending amount of requests: {amount_of_requests}")
@@ -63,10 +67,20 @@ class ProtocolClient:
         try:
             sender.send(self._socket, struct.pack(">B", amount_of_requests))
         
-        except ConnectionError as e:
-            logger.error("Connection closed by server")
+        except sender.SenderConnectionLostError as e:
+            logger.error("Sender error while sending amount of requests")
             self._connected = False
-            raise exceptions.ProtocolError("Connection closed by server")
+            raise ProtocolError("Sender error while sending amount of requests")
+        
+        except sender.SenderError as e:
+            logger.error(f"Sender error while sending amount of requests: {e}")
+            self._connected = False
+            raise ProtocolError("Sender error while sending amount of requests")
+
+        except Exception as e:
+            logger.error(f"Unexpected error sending amount of requests: {e}")
+            self._connected = False
+            raise ProtocolError("Unexpected error sending amount of requests")
 
     def _is_connected(self):
         return self._connected
@@ -136,13 +150,14 @@ class ProtocolClient:
                     if current_payload:
                         self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=True)
 
-        except exceptions.ServerNotConnectedError as e:
+        except ServerNotConnectedError as e:
             logger.error(f"Connection closed by server: {e}")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Connection closed by server")
 
         except Exception as e:
             logger.error(f"Error reading/sending CSV: {e}")
+            raise
 
     def _find_utf8_safe_split_point(self, data: bytes, max_len: int) -> int:
         """
@@ -163,7 +178,7 @@ class ProtocolClient:
     def _safe_send_batch(self, *args, **kwargs):
         try:
             self._send_single_batch(*args, **kwargs)
-        except exceptions.ServerNotConnectedError:
+        except ServerNotConnectedError:
             logger.error("Connection closed by server during batch send.")
             self._connected = False
             raise
@@ -188,10 +203,16 @@ class ProtocolClient:
 
         try:
             self.send_batch(header, payload)
-        except exceptions.ServerNotConnectedError:
-            logger.error(f"Connection closed by server")
+
+        except ServerNotConnectedError:
+            logger.error(f"Connection closed by server while sending batch")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Connection closed by server while sending batch")
+        
+        except (ProtocolError, Exception) as e:
+            logger.error(f"Error sending batch: {e}")
+            self._connected = False
+            raise ProtocolError("Error sending batch")
 
     def send_batch(self, header: bytes, payload: bytes):
         try:
@@ -203,23 +224,21 @@ class ProtocolClient:
             try:
                 sender.send(self._socket, header)
                 # logger.info(f"Header sent: {header}")
-            except ConnectionError as e:
-                logger.error(f"Connection closed by server")
+            except sender.SenderConnectionLostError as e:
+                logger.error(f"Connection closed by server when sending batch header")
                 self._connected = False
-                raise exceptions.ServerNotConnectedError("Connection closed by server")
+                raise ServerNotConnectedError("Connection closed by server when sending batch header")
             
             try:
                 sender.send(self._socket, payload)
                 # logger.info(f"Payload sent: {payload}\n(size={len(payload)})")
-            except ConnectionError as e:
-                logger.error(f"Connection closed by server")
+            except sender.SenderConnectionLostError as e:
+                logger.error(f"Connection closed by server when sending batch payload")
                 self._connected = False
-                raise exceptions.ServerNotConnectedError("Connection closed by server")
+                raise ServerNotConnectedError("Connection closed by server when sending batch payload")
 
         except Exception as e:
-            if isinstance(e, exceptions.ServerNotConnectedError):
-                raise
-            logger.error(f"Error sending CSV batch: {e}")
+            raise ProtocolError(f"Error sending batch: {e}")
 
     def receive_query_response(self) -> dict | None:
         logger.info("Awaiting query response from server...")
@@ -231,10 +250,21 @@ class ProtocolClient:
                 SIZE_OF_HEADER_RESULTS,
                 timeout=TIMEOUT_ANSWER_HEADER
             )
-        except ConnectionError as e:
-            logger.error("Connection closed by server")
+
+        except TimeoutError:
+            logger.error("Timeout waiting for header response from server")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Timeout waiting for header response from server")
+
+        except receiver.ReceiverError as e:
+            logger.error("Receiver error while receiving header response")
+            self._connected = False
+            raise ProtocolError("Receiver error while receiving header response")
+        
+        except Exception as e:
+            logger.error(f"Unexpected error receiving header response: {e}")
+            self._connected = False
+            raise ProtocolError("Unexpected error receiving header response")
         
         if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
             return None
@@ -252,10 +282,21 @@ class ProtocolClient:
                 payload_len,
                 timeout=TIMEOUT_ANSWER_PAYLOAD
             )
-        except ConnectionError as e:
-            logger.error("Connection closed by server")
+
+        except TimeoutError:
+            logger.error("Timeout waiting for response payload from server")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Timeout waiting for response payload from server")
+
+        except receiver.ReceiverError as e:
+            logger.error("Receiver error while receiving response payload")
+            self._connected = False
+            raise ProtocolError("Receiver error while receiving response payload")
+        
+        except Exception as e:
+            logger.error(f"Unexpected error receiving response payload: {e}")
+            self._connected = False
+            raise ProtocolError("Unexpected error receiving response payload")
 
         if not payload_bytes or len(payload_bytes) != payload_len:
             return None
@@ -301,7 +342,13 @@ class ProtocolClient:
             sender.send(self._socket, header)
             logger.info("Disconnection message sent")
             
-        except ConnectionError as e:
+        except sender.SenderError as e:
             logger.error(f"Connection closed by server")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Connection closed by server")
+
+
+# Exceptions for errors between client and server
+class ServerNotConnectedError(Exception):
+    """Exception raised when the server is not connected."""
+    pass

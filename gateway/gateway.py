@@ -92,32 +92,39 @@ class Gateway():
         self._stop_server()
 
     def _stop_server(self):
-        try:
-            logger.info("Stopping server...")
-            if self._result_dispatcher:
+        logger.info("Stopping server...")
+
+        if self._result_dispatcher:
+            try:
                 self._result_dispatcher.stop()
                 self._result_dispatcher.join()
                 logger.info("ResultDispatcher stopped.")
+            except Exception as e:
+                logger.warning(f"Error stopping ResultDispatcher: {e}")
 
-            if self._gateway_socket:
-                self._was_closed = True
-                self._close_connected_clients()
-                try:
-                    self._gateway_socket.shutdown(socket.SHUT_RDWR)
-                except OSError as e:
-                    logger.error(f"Socket already shut down")
-                finally:
-                    if self._gateway_socket:
-                        self._gateway_socket.close()
-                        logger.info("Gateway socket closed.")
-                    try:
-                        os.remove("/tmp/gateway_ready")
-                    except FileNotFoundError:
-                        pass
-                    logger.info("Server stopped.")
+        self._was_closed = True
 
+        try:
+            self._close_connected_clients()
         except Exception as e:
-            logger.error(f"Failed to close server properly: {e}")
+            logger.warning(f"Error closing clients: {e}")
+
+        if self._gateway_socket:
+            try:
+                self._gateway_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                logger.warning("Gateway socket already shut down or not connected.")
+            except Exception as e:
+                logger.error(f"Unexpected error during socket shutdown: {e}")
+            finally:
+                try:
+                    self._gateway_socket.close()
+                    logger.info("Gateway socket closed.")
+                except Exception as e:
+                    logger.warning(f"Error closing gateway socket: {e}")
+                self._gateway_socket = None
+
+        logger.info("Server stopped.")
 
     def _close_connected_clients(self):
         logger.info("Closing connected clients...")

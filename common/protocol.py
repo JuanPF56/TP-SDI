@@ -44,3 +44,9 @@ IS_LAST_BATCH_FLAG = 1
         payload_len bytes: data
  """
 SIZE_OF_HEADER_RESULTS = 1 + 1 + 1 + 4  # tipo_de_mensaje (1 byte) + numero_de_consulta (1 byte) + query_id (1 byte) + payload_len (4 bytes)
+
+# Exceptions for protocol errors
+class ProtocolError(Exception):
+    """Exception raised for protocol-related errors."""
+    pass
+

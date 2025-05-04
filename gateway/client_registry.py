@@ -2,6 +2,9 @@ from threading import Lock
 from typing import Dict, Optional
 from connected_client import ConnectedClient
 
+from common.logger import get_logger
+logger = get_logger("ClientRegistry")
+
 class ClientRegistry:
     def __init__(self):
         self._clients: Dict[str, ConnectedClient] = {}
@@ -32,5 +35,8 @@ class ClientRegistry:
     def clear(self):
         with self._lock:
             for client in self._clients.values():
-                client._stop_client()
+                try:
+                    client._stop_client()
+                except Exception as e:
+                    logger.warning(f"Error al detener cliente: {e}")
             self._clients.clear()

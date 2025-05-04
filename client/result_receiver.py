@@ -1,8 +1,7 @@
 import threading
 import json
 
-from protocol_client_gateway import ProtocolClient
-import common.exceptions as exceptions
+from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
 
 from common.logger import get_logger
 logger = get_logger("Results Receiver")
@@ -52,7 +51,7 @@ class ResultReceiver(threading.Thread):
                     self._stop_flag.set()
                     break
 
-        except exceptions.ServerNotConnectedError as e:
+        except ServerNotConnectedError as e:
             logger.error("Server not connected. Exiting thread.")
             self._stop_flag.set()
         

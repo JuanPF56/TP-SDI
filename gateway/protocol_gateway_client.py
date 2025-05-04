@@ -62,12 +62,16 @@ class ProtocolGateway:
             
             sender.send(self._client_socket, encoded_client_id)
 
-        except ConnectionError as e:
+        except sender.SenderConnectionLostError as e:
+            logger.error(f"Connection error while sending client ID: {e}")
+            self._stop_client()
+        
+        except sender.SenderError as e:
             logger.error(f"Connection error while sending client ID: {e}")
             self._stop_client()
 
         except Exception as e:
-            logger.error(f"Failed to send client ID: {e}")
+            logger.error(f"Unexpected error while sending client ID: {e}")
             self._stop_client()
 
     def receive_amount_of_requests(self) -> int | None:
@@ -89,13 +93,18 @@ class ProtocolGateway:
             amount_of_requests = struct.unpack(">B", data)[0]
             return amount_of_requests
 
-        except ConnectionError as e:
+        except TimeoutError:
+            logger.error("Timeout waiting for amount of requests")
+            self._stop_client()
+            return None
+
+        except receiver.ReceiverError as e:
             logger.error(f"Connection error while receiving amount of requests: {e}")
             self._stop_client()
             return None
 
         except Exception as e:
-            logger.error(f"Unexpected error receiving amount of requests: {e}")
+            logger.error(f"Unexpected error while receiving amount of requests: {e}")
             self._stop_client()
             return None
 
@@ -125,13 +134,18 @@ class ProtocolGateway:
 
             return message_code, encoded_id, request_number, current_batch, is_last_batch, payload_len
 
-        except ConnectionError as e:
+        except TimeoutError:
+            logger.error(f"Timeout waiting for receiving header: {e}")
+            self._stop_client()
+            return None
+
+        except receiver.ReceiverError as e:
             logger.error(f"Connection error while receiving header: {e}")
             self._stop_client()
             return None
 
         except Exception as e:
-            logger.error(f"Unexpected error receiving header: {e}")
+            logger.error(f"Unexpected error while receiving header: {e}")
             self._stop_client()
             return None
             
@@ -162,13 +176,18 @@ class ProtocolGateway:
 
             return data
 
-        except ConnectionError as e:
+        except TimeoutError:
+            logger.error(f"Timeout waiting for receiving payload: {e}")
+            self._stop_client()
+            return None
+
+        except receiver.ReceiverError as e:
             logger.error(f"Connection error while receiving payload: {e}")
             self._stop_client()
             return None
 
         except Exception as e:
-            logger.error(f"Unexpected error receiving payload: {e}")
+            logger.error(f"Unexpected error while receiving payload: {e}")
             self._stop_client()
             return None
     
@@ -249,6 +268,19 @@ class ProtocolGateway:
     def send_result(self, result_data: dict) -> None:
         message = self.build_result_message(result_data)
 
-        logger.debug(f"Sending result message: {message}")
-        sender.send(self._client_socket, message)
+        try:
+            logger.debug(f"Sending result message: {message}")
+            sender.send(self._client_socket, message)
+        
+        except sender.SenderConnectionLostError as e:
+            logger.error(f"Connection error while sending result: {e}")
+            self._stop_client()
+            
+        except sender.SenderError as e:
+            logger.error(f"Connection error while sending result: {e}")
+            self._stop_client()
+
+        except Exception as e:
+            logger.error(f"Unexpected error while sending result: {e}")
+            self._stop_client()
     

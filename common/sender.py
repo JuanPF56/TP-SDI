@@ -12,15 +12,25 @@ def send(sock: socket.socket, data: bytes) -> None:
             sock.sendall(data)
         else:
             logger.warning("Attempted to send on a closed socket")
+            raise SenderConnectionLostError("Socket is closed")
         
     except (BrokenPipeError, ConnectionResetError):
         logger.error("Connection closed by receiver")
-        raise ConnectionError("Connection closed by receiver")
+        raise SenderConnectionLostError("Connection closed by receiver")
     
     except socket.error as e:
-        logger.error(f"Socket error: {e}")
-        raise ConnectionError(f"Socket error: {e}")
+        logger.error(f"Error in Socket sender: {e}")
+        raise SenderError(f"Error in Socket sender: {e}")
     
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        raise ConnectionError(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error in sender: {e}")
+        raise SenderError(f"Unexpected error in sender: {e}")
+    
+# Exception classes for the Sender module
+class SenderConnectionLostError(Exception):
+    """Exception raised when the connection is lost during sending."""
+    pass
+
+class SenderError(Exception):
+    """Exception raised for errors in the Sender module."""
+    pass

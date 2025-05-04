@@ -51,10 +51,6 @@ class ConnectedClient(threading.Thread):
 
         self._condition = threading.Condition()
 
-        # Signal handling
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
-
     def add_sent_answer(self):
         """
         Increment the number of sent answers.
@@ -89,22 +85,29 @@ class ConnectedClient(threading.Thread):
         Check if the client is connected
         """
         return self._protocol_gateway._client_is_connected()
-    
-    def _signal_handler(self, signum, frame):
-        logger.info(f"Signal received, stopping client {self._client_id}")
-        self._stop_client()
 
     def _stop_client(self) -> None:
         """
         Close the client socket
         """
+        if self.was_closed:
+            return
+
         logger.info(f"Stopping client {self._client_id}")
         self._stop_flag.set()
         self._running = False
+
         if self.broker:
-            self.broker.close()
-            logger.info("Broker connection closed.")
-        self._protocol_gateway._stop_client()
+            try:
+                self.broker.close()
+            except Exception as e:
+                logger.warning(f"Error al cerrar broker: {e}")
+
+        try:
+            self._protocol_gateway._stop_client()
+        except Exception as e:
+            logger.warning(f"Error al detener protocolo gateway: {e}")
+
         self.was_closed = True
 
     def run(self):
@@ -254,7 +257,6 @@ class ConnectedClient(threading.Thread):
             self._protocol_gateway._stop_client()
             return
 
-
     def _get_queue_key(self, message_code):
         if message_code == "BATCH_MOVIES":
             return self.config["DEFAULT"]["movies_raw_queue"]
@@ -264,11 +266,15 @@ class ConnectedClient(threading.Thread):
             return self.config["DEFAULT"]["ratings_raw_queue"]
         return None
         
-
     def send_result(self, result_data):
         """
         Send the result data to the client.
         """
-        logger.debug(f"Sending result to client {self._client_id}: {result_data}")
-        self._protocol_gateway.send_result(result_data)
-        self.add_sent_answer()
+        try:
+            logger.debug(f"Sending result to client {self._client_id}: {result_data}")
+            self._protocol_gateway.send_result(result_data)
+            self.add_sent_answer()
+        
+        except Exception as e:
+            logger.error(f"Error sending result to client {self._client_id}: {e}")
+            self._protocol_gateway._stop_client()

@@ -1,7 +1,6 @@
 import threading
 import time
 import json
-import pika
 
 from common.logger import get_logger
 logger = get_logger("Result Dispatcher")

@@ -118,28 +118,43 @@ class RabbitMQProcessor:
         self.channel.start_consuming()
         
     def publish(self, target, message, msg_type=None, exchange=False, headers=None):
-        if self.connection.is_closed:
+        if not self.connection or self.connection.is_closed:
             logger.warning("Publish aborted: RabbitMQ connection is closed.")
             return
-
-        logger.debug(f"Publicando mensaje en: {target}, tipo: {msg_type}", extra={"payload": message})
+        
+        channel = None
 
         try:
             channel = self.connection.channel()
+
             properties = pika.BasicProperties(
                 type=msg_type,
                 headers=headers
             )
+
+            exchange_name = target if exchange else ''
+            routing_key = '' if exchange else target
+
             channel.basic_publish(
-                exchange=target if exchange else '',
-                routing_key=target if not exchange else '',
+                exchange=exchange_name,
+                routing_key=routing_key,
                 body=json.dumps(message),
                 properties=properties
             )
-            channel.close()
+
             logger.debug(f"Mensaje enviado a: {target}, tipo: {msg_type}, headers: {headers}")
+
+        except pika.exceptions.AMQPConnectionError as e:
+            logger.error(f"Error de conexión al publicar en {target}: {e}")
+        except pika.exceptions.ChannelClosedByBroker as e:
+            logger.error(f"Canal cerrado por el broker al publicar en {target}: {e}")
         except Exception as e:
             logger.error(f"Error publicando mensaje a {target}: {e}")
+        finally:
+            try:
+                channel.close()
+            except Exception as e:
+                logger.warning(f"No se pudo cerrar el canal correctamente: {e}")
 
     def stop_consuming(self):
         """
@@ -163,9 +178,19 @@ class RabbitMQProcessor:
         """
         Cierra la conexión de RabbitMQ.
         """
-        if self.connection and self.connection.is_open:
-            self.channel.close()
-            self.connection.close()
+        if self.connection:
+            if self.channel and self.channel.is_open:
+                try:
+                    self.channel.close()
+                except Exception as e:
+                    logger.warning(f"No se pudo cerrar el canal: {e}")
+
+            if self.connection.is_open:
+                try:
+                    self.connection.close()
+                except Exception as e:
+                    logger.warning(f"No se pudo cerrar la conexión: {e}")
+
             logger.info("Conexión cerrada con RabbitMQ.")
 
     def reconnect_and_restart(self, callback):

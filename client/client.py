@@ -5,12 +5,11 @@ import time
 from common.logger import get_logger
 logger = get_logger("Client")
 
-from protocol_client_gateway import ProtocolClient
+from common.protocol import ProtocolError
+from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
 from utils import download_dataset, send_datasets_to_server
 
 from result_receiver import ResultReceiver
-
-import common.exceptions as exceptions
 
 MAX_RETRIES = 5
 DELAY_BETWEEN_RETRIES = 10
@@ -100,7 +99,7 @@ class Client:
         try:
             self._client_id = self._protocol.get_client_id()
             logger.info(f"Client ID: {self._client_id}")
-        except exceptions.ProtocolError as e:
+        except ProtocolError as e:
             logger.error(f"Protocol error: {e}")
             self._stop_client()
             return
@@ -125,7 +124,7 @@ class Client:
                 self._results_thread.join()
                 break
 
-            except exceptions.ServerNotConnectedError:
+            except ServerNotConnectedError:
                 logger.error("Connection closed by server")
                 self._results_thread.stop()
                 self._results_thread.join()
