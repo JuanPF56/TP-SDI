@@ -40,7 +40,7 @@ class RabbitMQProcessor:
         delay = RETRY_DELAY
         for attempt in range(1, RETRIES + 1):
             try:
-                logger.info(f"Connecting to RabbitMQ in {self.rabbitmq_host} (attempt {attempt}/{RETRIES})")
+                logger.debug(f"Connecting to RabbitMQ in {self.rabbitmq_host} (attempt {attempt}/{RETRIES})")
                 self.connection = pika.BlockingConnection(pika.ConnectionParameters(
                     host=self.rabbitmq_host,
                     heartbeat=HEARTBEAT,
@@ -83,7 +83,7 @@ class RabbitMQProcessor:
                 return True
 
             except pika.exceptions.AMQPConnectionError as e:
-                logger.warning(f"RabbitMQ connection failed (attempt {attempt}/{RETRIES}): {e}")
+                logger.debug(f"RabbitMQ connection failed (attempt {attempt}/{RETRIES}): {e}")
                 time.sleep(delay)
                 delay *= 2  # Exponential backoff
 
