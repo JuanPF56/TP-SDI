@@ -71,7 +71,7 @@ pip install -r requirements.txt
 
 - `<output_file.yml>`: nombre del archivo de salida (`docker-compose.yaml`, por ejemplo).
 
-- `-test <test_config.yaml>`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py --test <test_config.yaml>`, donde el archivo YAML indica el porcentaje de cada dataset a usar.
+- `-test <test_config.yaml>`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, donde el archivo YAML indica el porcentaje de cada dataset a usar.
 
 - `-cant_clientes N`: opcional. Define la cantidad de clientes (client_X) que se generan en el sistema.
 
@@ -115,7 +115,7 @@ python3 download_datasets.py [-test <test_config.yaml>]
 - Si se pasa el flag `--test`, los archivos se recortan según los porcentajes definidos en el YAML.
 - Los archivos se guardan en la carpeta `./datasets_for_test`.
 
-**Ejemplo de `test_config.yaml` con todos los datasets al 20%:**:
+**Ejemplo de `test_config.yaml` con todos los datasets al 20%:**
 
 ```yaml
 movies_metadata.csv: 20
