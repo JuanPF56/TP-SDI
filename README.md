@@ -53,6 +53,14 @@ join_ratings_nodes = 3
 
 El sistema cuenta con un script auxiliar para facilitar la generación del archivo `docker-compose.yaml` de forma dinámica, según los parámetros que definas.
 
+#### 📦 Instalar dependencias
+
+Antes de ejecutar cualquier script Python, asegurate de instalar las dependencias necesarias:
+
+```bash
+pip install -r requirements.txt
+```
+
 #### ✅ Uso recomendado con `generate-compose.sh`
 
 ```bash
@@ -114,12 +122,6 @@ movies_metadata.csv: 20
 credits.csv: 20
 ratings.csv: 20
 ```
-
-> 💡 **Requiere instalación de dependencias**:
->
-> ```bash
-> pip install kagglehub pandas pyyaml
-> ```
 
 ---
 
