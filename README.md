@@ -112,7 +112,7 @@ python3 download_datasets.py [-test <test_config.yaml>]
 ```
 
 - Por defecto descarga el dataset completo desde Kaggle.
-- Si se pasa el flag `--test`, los archivos se recortan según los porcentajes definidos en el YAML.
+- Si se pasa el flag `-test`, los archivos se recortan según los porcentajes definidos en el YAML.
 - Los archivos se guardan en la carpeta `./datasets_for_test`.
 
 **Ejemplo de `test_config.yaml` con todos los datasets al 20%:**
