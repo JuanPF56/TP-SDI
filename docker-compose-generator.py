@@ -50,40 +50,27 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         }
     }
 
-    # Gateway node
-    services["gateway"] = {
-        "container_name": "gateway",
-        "image": "gateway:latest",
-        "entrypoint": "python3 /app/main.py",
-        "volumes": [
-            "./gateway/config.ini:/app/config.ini",
-            "./resultados:/app/resultados"
-        ],
-        "depends_on": {
-            "rabbitmq": {
-                "condition": "service_healthy"
-            }
-        },
-        "networks": ["testing_net"]
-    }
-
     # Filter nodes
+    depends = {}
+    filter_node_names = []
     for subtype in ["cleanup", "year", "production"]:
         if subtype == "cleanup":
             num_nodes = cleanup
             nodes_to_await = 1
-            depends = {"gateway": {"condition": "service_started"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"}}
         elif subtype == "year":
             num_nodes = year
             nodes_to_await = production
-            depends = {"gateway": {"condition": "service_started"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"}}
             for node in j_nodes:
                 depends[node] = {"condition": "service_started"}
         elif subtype == "production":
             num_nodes = production
             nodes_to_await = cleanup
-            depends = {"gateway": {"condition": "service_started"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"}}
         for i in range(1, num_nodes + 1):
+            name = f"filter_{subtype}_{i}"
+            filter_node_names.append(name)
             services[f"filter_{subtype}_{i}"] = {
                 "container_name": f"filter_{subtype}_{i}",
                 "image": f"filter_{subtype}:latest",
@@ -102,6 +89,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             }
 
     # Sentiment analyzer node
+    sentiment_node_names = []
     for i in range(1, sentiment_analyzer + 1):
         services[f"sentiment_analyzer_{i}"] = {
             "container_name": f"sentiment_analyzer_{i}",
@@ -116,12 +104,17 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": sentiment_analyzer,
             },
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+            },
             "networks": ["testing_net"]
         }
 
     # Join nodes
+    join_node_names = []
     for i in range(1, j_credits + 1):
+        name = f"join_credits_{i}"
+        join_node_names.append(name)
         services[f"join_credits_{i}"] = {
             "container_name": f"join_credits_{i}",
             "image": f"join_credits:latest",
@@ -136,10 +129,14 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "volumes": [
                 f"./join/credits/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+            },
             "networks": ["testing_net"]
         }
     for i in range(1, j_ratings + 1):
+        name = f"join_ratings_{i}"
+        join_node_names.append(name)
         services[f"join_ratings_{i}"] = {
             "container_name": f"join_ratings_{i}",
             "image": f"join_ratings:latest",
@@ -154,11 +151,14 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "volumes": [
                 f"./join/ratings/config.ini:/app/config.ini"
             ],
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+            },
             "networks": ["testing_net"]
         }
 
     # Nodes to await by query
+    query_node_names = []
     nodes_to_await = {
         "q1": year,
         "q2": production,
@@ -170,6 +170,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
     # Query nodes Q1 to Q5
     for i in range(1, 6):
         qname = f"q{i}"
+        query_node_names.append(qname)
         services[qname] = {
             "container_name": qname,
             "image": f"query_{qname}:latest",
@@ -181,9 +182,35 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "NODE_TYPE": qname,
                 "NODES_TO_AWAIT": str(nodes_to_await[qname])
             },
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+            },
             "networks": ["testing_net"]
         }
+
+    # Gateway node
+    full_dependencies = (
+        ["rabbitmq"]
+        + filter_node_names
+        + sentiment_node_names
+        + join_node_names
+        + query_node_names
+    )
+    gateway_depends_on = {
+        dep: {"condition": "service_started"} for dep in full_dependencies if dep != "rabbitmq"
+    }
+    gateway_depends_on["rabbitmq"] = {"condition": "service_healthy"}
+    services["gateway"] = {
+        "container_name": "gateway",
+        "image": "gateway:latest",
+        "entrypoint": "python3 /app/main.py",
+        "volumes": [
+            "./gateway/config.ini:/app/config.ini",
+            "./resultados:/app/resultados"
+        ],
+        "depends_on": gateway_depends_on,
+        "networks": ["testing_net"]
+    }
 
     # Clients nodes
     for i in range(1, cant_clientes + 1):

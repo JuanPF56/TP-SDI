@@ -20,18 +20,6 @@ services:
       retries: 5
     logging:
       driver: none
-  gateway:
-    container_name: gateway
-    image: gateway:latest
-    entrypoint: python3 /app/main.py
-    volumes:
-    - ./gateway/config.ini:/app/config.ini
-    - ./resultados:/app/resultados
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    networks:
-    - testing_net
   filter_cleanup_1:
     container_name: filter_cleanup_1
     image: filter_cleanup:latest
@@ -44,8 +32,8 @@ services:
       NODES_TO_AWAIT: '1'
       NODES_OF_TYPE: 4
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   filter_cleanup_2:
@@ -60,8 +48,8 @@ services:
       NODES_TO_AWAIT: '1'
       NODES_OF_TYPE: 4
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   filter_cleanup_3:
@@ -76,8 +64,8 @@ services:
       NODES_TO_AWAIT: '1'
       NODES_OF_TYPE: 4
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   filter_cleanup_4:
@@ -92,8 +80,8 @@ services:
       NODES_TO_AWAIT: '1'
       NODES_OF_TYPE: 4
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   filter_year_1:
@@ -108,8 +96,8 @@ services:
       NODES_TO_AWAIT: '2'
       NODES_OF_TYPE: 2
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
       join_credits_1:
         condition: service_started
       join_credits_2:
@@ -136,8 +124,8 @@ services:
       NODES_TO_AWAIT: '2'
       NODES_OF_TYPE: 2
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
       join_credits_1:
         condition: service_started
       join_credits_2:
@@ -164,8 +152,8 @@ services:
       NODES_TO_AWAIT: '4'
       NODES_OF_TYPE: 2
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   filter_production_2:
@@ -180,8 +168,8 @@ services:
       NODES_TO_AWAIT: '4'
       NODES_OF_TYPE: 2
     depends_on:
-      gateway:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   sentiment_analyzer_1:
@@ -196,7 +184,8 @@ services:
       NODES_TO_AWAIT: '4'
       NODES_OF_TYPE: 4
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   sentiment_analyzer_2:
@@ -211,7 +200,8 @@ services:
       NODES_TO_AWAIT: '4'
       NODES_OF_TYPE: 4
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   sentiment_analyzer_3:
@@ -226,7 +216,8 @@ services:
       NODES_TO_AWAIT: '4'
       NODES_OF_TYPE: 4
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   sentiment_analyzer_4:
@@ -241,7 +232,8 @@ services:
       NODES_TO_AWAIT: '4'
       NODES_OF_TYPE: 4
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   join_credits_1:
@@ -257,7 +249,8 @@ services:
     volumes:
     - ./join/credits/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   join_credits_2:
@@ -273,7 +266,8 @@ services:
     volumes:
     - ./join/credits/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   join_credits_3:
@@ -289,7 +283,8 @@ services:
     volumes:
     - ./join/credits/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   join_ratings_1:
@@ -305,7 +300,8 @@ services:
     volumes:
     - ./join/ratings/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   join_ratings_2:
@@ -321,7 +317,8 @@ services:
     volumes:
     - ./join/ratings/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   join_ratings_3:
@@ -337,7 +334,8 @@ services:
     volumes:
     - ./join/ratings/config.ini:/app/config.ini
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   q1:
@@ -350,7 +348,8 @@ services:
       NODE_TYPE: q1
       NODES_TO_AWAIT: '2'
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   q2:
@@ -363,7 +362,8 @@ services:
       NODE_TYPE: q2
       NODES_TO_AWAIT: '2'
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   q3:
@@ -376,7 +376,8 @@ services:
       NODE_TYPE: q3
       NODES_TO_AWAIT: '3'
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   q4:
@@ -389,7 +390,8 @@ services:
       NODE_TYPE: q4
       NODES_TO_AWAIT: '3'
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   q5:
@@ -402,11 +404,77 @@ services:
       NODE_TYPE: q5
       NODES_TO_AWAIT: '4'
     depends_on:
-    - gateway
+      rabbitmq:
+        condition: service_healthy
+    networks:
+    - testing_net
+  gateway:
+    container_name: gateway
+    image: gateway:latest
+    entrypoint: python3 /app/main.py
+    volumes:
+    - ./gateway/config.ini:/app/config.ini
+    - ./resultados:/app/resultados
+    depends_on:
+      filter_cleanup_1:
+        condition: service_started
+      filter_cleanup_2:
+        condition: service_started
+      filter_cleanup_3:
+        condition: service_started
+      filter_cleanup_4:
+        condition: service_started
+      filter_year_1:
+        condition: service_started
+      filter_year_2:
+        condition: service_started
+      filter_production_1:
+        condition: service_started
+      filter_production_2:
+        condition: service_started
+      join_credits_1:
+        condition: service_started
+      join_credits_2:
+        condition: service_started
+      join_credits_3:
+        condition: service_started
+      join_ratings_1:
+        condition: service_started
+      join_ratings_2:
+        condition: service_started
+      join_ratings_3:
+        condition: service_started
+      q1:
+        condition: service_started
+      q2:
+        condition: service_started
+      q3:
+        condition: service_started
+      q4:
+        condition: service_started
+      q5:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
     - testing_net
   client_1:
     container_name: client_1
+    image: client:latest
+    entrypoint: python3 /app/main.py
+    volumes:
+    - ./client/config.ini:/app/config.ini
+    - ./resultados:/app/resultados
+    - ./datasets_for_test:/datasets
+    environment:
+      USE_TEST_DATASET: '1'
+      REQUESTS_TO_SERVER: '1'
+    depends_on:
+    - gateway
+    networks:
+    - testing_net
+  client_2:
+    container_name: client_2
     image: client:latest
     entrypoint: python3 /app/main.py
     volumes:
