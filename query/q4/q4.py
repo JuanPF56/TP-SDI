@@ -76,6 +76,7 @@ class ArgProdActorsQuery:
             target=self.config["DEFAULT"]["results_queue"],
             message=results_msg
         )
+        # TODO: Clean up memory
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
