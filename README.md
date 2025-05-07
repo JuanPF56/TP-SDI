@@ -1,6 +1,5 @@
-# TODOS:
+# TODOS
 
-- [] Actualizar docker compose para que espere a que los nodos estén conectados a RabbitMQ antes de iniciar el gateway.
 - [] Checkear manejo de flags para docker kill en todos los nodos.
 - [] Remover clientes correctamente al recibir EOS (se debe esperar a que todos los nodos de un mismo tipo reciban los EOS antes de "cerrar" el cliente, quizas el gateway envía un mensaje al final cuando terminaron todas las queries y ese mensaje se maneja como EOS).
 - [] Limpieza de memoria en Q4.
