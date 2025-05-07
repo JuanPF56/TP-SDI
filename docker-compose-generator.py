@@ -57,17 +57,20 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         if subtype == "cleanup":
             num_nodes = cleanup
             nodes_to_await = 1
-            depends = {"rabbitmq": {"condition": "service_healthy"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"},
+                       "gateway": {"condition": "service_healthy"}}
         elif subtype == "year":
             num_nodes = year
             nodes_to_await = production
-            depends = {"rabbitmq": {"condition": "service_healthy"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"},
+                       "gateway": {"condition": "service_healthy"}}
             for node in j_nodes:
                 depends[node] = {"condition": "service_started"}
         elif subtype == "production":
             num_nodes = production
             nodes_to_await = cleanup
-            depends = {"rabbitmq": {"condition": "service_healthy"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"},
+                       "gateway": {"condition": "service_healthy"}}
         for i in range(1, num_nodes + 1):
             name = f"filter_{subtype}_{i}"
             filter_node_names.append(name)
@@ -92,6 +95,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
     # Sentiment analyzer node
     sentiment_node_names = []
     for i in range(1, sentiment_analyzer + 1):
+        name = f"sentiment_analyzer_{i}"
+        sentiment_node_names.append(name)
         services[f"sentiment_analyzer_{i}"] = {
             "container_name": f"sentiment_analyzer_{i}",
             "image": "sentiment_analyzer:latest",
@@ -108,6 +113,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
@@ -134,6 +140,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             ],
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
@@ -157,6 +164,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             ],
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
@@ -189,22 +197,13 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
 
     # Gateway node
-    full_dependencies = (
-        ["rabbitmq"]
-        + filter_node_names
-        + sentiment_node_names
-        + join_node_names
-        + query_node_names
-    )
-    gateway_depends_on = {
-        dep: {"condition": "service_started"} for dep in full_dependencies if dep != "rabbitmq"
-    }
-    gateway_depends_on["rabbitmq"] = {"condition": "service_healthy"}
+    full_dependencies = (filter_node_names + sentiment_node_names + join_node_names + query_node_names)
     services["gateway"] = {
         "container_name": "gateway",
         "image": "gateway:latest",
@@ -213,8 +212,19 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "./gateway/config.ini:/app/config.ini",
             "./resultados:/app/resultados"
         ],
-        "depends_on": gateway_depends_on,
-        "networks": ["testing_net"]
+        "environment": {
+            "SYSTEM_NODES": ",".join(full_dependencies),
+        },
+        "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+        },
+        "networks": ["testing_net"],
+        "healthcheck": {
+            "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 10
+        }
     }
 
     # Clients nodes
@@ -235,7 +245,9 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "USE_TEST_DATASET": "1" if short_test else "0", 
                 "REQUESTS_TO_SERVER": "1"
             },
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "gateway": {"condition": "service_healthy"},
+            },
             "networks": ["testing_net"]
         }
 

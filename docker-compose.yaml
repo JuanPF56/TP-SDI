@@ -35,6 +35,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   filter_year_1:
@@ -51,6 +53,8 @@ services:
       NODE_NAME: filter_year_1
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      gateway:
         condition: service_healthy
       join_credits_1:
         condition: service_started
@@ -73,6 +77,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   sentiment_analyzer_1:
@@ -89,6 +95,8 @@ services:
       NODE_NAME: sentiment_analyzer_1
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      gateway:
         condition: service_healthy
     networks:
     - testing_net
@@ -108,6 +116,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   join_ratings_1:
@@ -126,6 +136,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q1:
@@ -140,6 +152,8 @@ services:
       NODE_NAME: q1
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      gateway:
         condition: service_healthy
     networks:
     - testing_net
@@ -156,6 +170,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q3:
@@ -170,6 +186,8 @@ services:
       NODE_NAME: q3
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      gateway:
         condition: service_healthy
     networks:
     - testing_net
@@ -186,6 +204,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   q5:
@@ -201,6 +221,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
   gateway:
@@ -210,31 +232,22 @@ services:
     volumes:
     - ./gateway/config.ini:/app/config.ini
     - ./resultados:/app/resultados
+    environment:
+      SYSTEM_NODES: filter_cleanup_1,filter_year_1,filter_production_1,sentiment_analyzer_1,join_credits_1,join_ratings_1,q1,q2,q3,q4,q5
     depends_on:
-      filter_cleanup_1:
-        condition: service_started
-      filter_year_1:
-        condition: service_started
-      filter_production_1:
-        condition: service_started
-      join_credits_1:
-        condition: service_started
-      join_ratings_1:
-        condition: service_started
-      q1:
-        condition: service_started
-      q2:
-        condition: service_started
-      q3:
-        condition: service_started
-      q4:
-        condition: service_started
-      q5:
-        condition: service_started
       rabbitmq:
         condition: service_healthy
     networks:
     - testing_net
+    healthcheck:
+      test:
+      - CMD
+      - test
+      - -f
+      - /tmp/gateway_ready
+      interval: 5s
+      timeout: 5s
+      retries: 10
   client_1:
     container_name: client_1
     image: client:latest
@@ -247,7 +260,8 @@ services:
       USE_TEST_DATASET: '1'
       REQUESTS_TO_SERVER: '1'
     depends_on:
-    - gateway
+      gateway:
+        condition: service_healthy
     networks:
     - testing_net
 networks:

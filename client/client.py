@@ -12,7 +12,7 @@ from utils import download_dataset, send_datasets_to_server
 from result_receiver import ResultReceiver
 
 MAX_RETRIES = 5
-DELAY_BETWEEN_RETRIES = 10
+DELAY_BETWEEN_RETRIES = 50
 
 QUERYS_EXPECTED = 5
 

@@ -1,5 +1,6 @@
 import os
 import json
+import pika
 
 from common.logger import get_logger
 logger = get_logger("Filter-Base")
@@ -47,6 +48,9 @@ class FilterBase:
         if not self.rabbitmq_processor.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
             return
+        
+        # Tell gateway that this node is online
+        self._notify_gateway()
 
         try:
             logger.info("Starting message consumption...")
@@ -81,3 +85,11 @@ class FilterBase:
 
     def process(self):
         raise NotImplementedError("Subclasses should implement this.")
+    
+    def _notify_gateway(self):
+        self.rabbitmq_processor.channel.queue_declare(queue='nodes_ready', durable=False, arguments={'x-max-priority': 10})
+        self.rabbitmq_processor.publish(
+            target='nodes_ready',
+            message=self.node_name
+        )
+        logger.info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")

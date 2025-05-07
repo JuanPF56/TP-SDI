@@ -35,7 +35,12 @@ class JoinBase:
         
         # Initialize the RabbitMQProcessor
         self.rabbitmq_processor = RabbitMQProcessor(config, self.input_queue, self.output_queue)
-        self.rabbitmq_processor.connect()
+        if not self.rabbitmq_processor.connect():
+            self.log_error("Error connecting to RabbitMQ. Exiting...")
+            return
+        
+        # Tell gateway that this node is online
+        self._notify_gateway()
 
         # Create a movie handler process to receive the movies tables
         self.manager = multiprocessing.Manager()
@@ -52,6 +57,13 @@ class JoinBase:
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
+    def _notify_gateway(self):
+        self.rabbitmq_processor.channel.queue_declare(queue='nodes_ready', durable=False, arguments={'x-max-priority': 10})
+        self.rabbitmq_processor.publish(
+            target='nodes_ready',
+            message=self.node_name
+        )
+        self.log_info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
