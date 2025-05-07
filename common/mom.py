@@ -165,6 +165,10 @@ class RabbitMQProcessor:
             self.channel.stop_consuming()
             logger.info("Detenido el consumo de mensajes.")
 
+    def stop_consuming_threadsafe(self):
+        if self.channel and self.channel.is_open:
+            self.channel.connection.add_callback_threadsafe(self.channel.stop_consuming)
+
     def acknowledge(self, method):
         """
         Reconoce el mensaje procesado.

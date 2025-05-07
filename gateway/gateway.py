@@ -105,6 +105,20 @@ class Gateway():
             wait_time = min(wait_time * 2, max_wait_time)  # Asegura que el tiempo de espera no supere el límite
 
         logger.info("All nodes are connected. Ready to accept connections.")
+
+        # Detener el consumidor
+        if self.rabbitmq_processor.channel and self.rabbitmq_processor.channel.is_open:
+            self.rabbitmq_processor.stop_consuming_threadsafe()
+
+        # Esperar a que el hilo del consumidor termine
+        consumer_thread.join(timeout=5)
+        if consumer_thread.is_alive():
+            logger.warning("Consumer thread did not stop in time.")
+        else:
+            logger.info("Consumer thread stopped successfully.")
+            # Eliminar el hilo del consumidor
+            consumer_thread = None
+
         return True
 
     def callback(self, channel, method_frame, header_frame, body, queue_name):
@@ -215,6 +229,14 @@ class Gateway():
                 except Exception as e:
                     logger.warning(f"Error closing gateway socket: {e}")
                 self._gateway_socket = None
+
+        try:
+            os.remove("/tmp/gateway_ready")
+            logger.info("Healthcheck file removed.")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.error(f"Error removing healthcheck file: {e}")
 
         logger.info("Server stopped.")
 
