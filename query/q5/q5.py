@@ -1,40 +1,26 @@
 import configparser
 import json
-import os
-import pika
 from collections import defaultdict
 
 from common.logger import get_logger
-from common.mom import RabbitMQProcessor
-from common.client_state_manager import ClientManager
-from common.client_state_manager import ClientState
 logger = get_logger("SentimentStats")
-EOS_TYPE = "EOS"  # Type of message indicating end of stream
-class SentimentStats:
+
+from common.client_state_manager import ClientState
+from common.query_base import QueryBase, EOS_TYPE
+
+class SentimentStats(QueryBase):
     """
     Promedio de la tasa ingreso/presupuesto de películas con overview de sentimiento positivo vs. sentimiento negativo
     """
     def __init__(self, config):
-        self.config = config
+        source_queues = [
+            config["DEFAULT"].get("movies_positive_queue", "positive_movies"),
+            config["DEFAULT"].get("movies_negative_queue", "negative_movies")
+        ]
+        super().__init__(config, source_queues, logger_name="q5")
+
         self.positive_rates = defaultdict(list)
         self.negative_rates = defaultdict(list)
-        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
-        self.source_queues = [
-            self.config["DEFAULT"].get("movies_positive_queue", "positive_movies"),
-            self.config["DEFAULT"].get("movies_negative_queue", "negative_movies")
-        ]
-
-        self.target_queue = self.config["DEFAULT"].get("results_queue", "results")
-        self.node_name = os.getenv("NODE_NAME", "unknown")
-        self.rabbitmq_processor = RabbitMQProcessor(
-            config=self.config,
-            source_queues=self.source_queues,
-            target_queues=self.target_queue
-        )
-        self.client_manager = ClientManager(
-            expected_queues=self.source_queues,
-            nodes_to_await=self.eos_to_await,
-        )  
 
     def _calculate_and_publish_results(self, client_id, request_number, client_state: ClientState):
         """

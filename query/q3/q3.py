@@ -1,39 +1,22 @@
 import configparser
 import json
-import os
+
 from collections import defaultdict
+from common.query_base import QueryBase, EOS_TYPE
 
-import pika
-from common.mom import RabbitMQProcessor
-from common.client_state_manager import ClientManager
 from common.logger import get_logger
-
-EOS_TYPE = "EOS"
 logger = get_logger("Query-Arg-Prod-Ratings")
 
-class ArgProdRatingsQuery:
+class ArgProdRatingsQuery(QueryBase):
     """
     Película de producción Argentina estrenada a partir del 2000,
     con mayor y con menor promedio de rating.
     """
     def __init__(self, config):
-        self.config = config
+        source_queue = config["DEFAULT"].get("movies_ratings_queue", "movies_ratings")
+        super().__init__(config, source_queue, logger_name="q3")
+
         self.movie_ratings = defaultdict(lambda: defaultdict(dict))  # ratings[client_id, req_num][movie_id]
-        self.source_queue = config["DEFAULT"].get("movies_ratings_queue", "movies_ratings")
-        self.target_queue = config["DEFAULT"].get("results_queue", "results")
-
-        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
-        self.node_name = os.getenv("NODE_NAME", "unknown")
-        self.client_manager = ClientManager(
-            expected_queues=self.source_queue,
-            nodes_to_await=self.eos_to_await,
-        )
-
-        self.rabbitmq_processor = RabbitMQProcessor(
-            config=config,
-            source_queues=self.source_queue,
-            target_queues=self.target_queue
-        )
 
     def _calculate_and_publish_results(self, client_id, request_number):
         logger.info(f"Calculating results for client {client_id}, request {request_number}...")

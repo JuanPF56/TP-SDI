@@ -1,39 +1,21 @@
 import configparser
 import json
-import os
-from common.mom import RabbitMQProcessor
 from collections import defaultdict
-from common.logger import get_logger
-from common.client_state_manager import ClientManager
 
-EOS_TYPE = "EOS" 
+from common.query_base import QueryBase, EOS_TYPE
+
+from common.logger import get_logger
 logger = get_logger("Query-Top5-Solo-Country-Budgets")
 
-
-class SoloCountryBudgetQuery:
+class SoloCountryBudgetQuery(QueryBase):
     """
     Top 5 de países que más dinero han invertido en producciones sin colaborar con otros países. 
     """
     def __init__(self, config):
-        self.config = config
-
-        self.source_queue = self.config["DEFAULT"].get("movies_solo_queue", "movies_solo")
-        self.target_queue = self.config["DEFAULT"].get("results_queue", "results_queue")
-
-        self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
-        self.node_name = os.getenv("NODE_NAME", "unknown")
+        source_queue = config["DEFAULT"].get("movies_solo_queue", "movies_solo")
+        super().__init__(config, source_queue, logger_name="q2")
 
         self.budget_by_country_by_request = defaultdict(lambda: defaultdict(int))
-
-        self.rabbitmq_processor = RabbitMQProcessor(
-            config=self.config,
-            source_queues=self.source_queue,
-            target_queues=self.target_queue
-        )   
-        self.client_manager = ClientManager(
-            expected_queues=self.source_queue,
-            nodes_to_await=self.eos_to_await,
-        )
 
 
     def _calculate_and_publish_results(self, client_id, request_number):
