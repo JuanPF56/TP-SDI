@@ -11,7 +11,6 @@ class ArgSpainGenreQuery(QueryBase):
     """
     Películas y sus géneros de los años 00' con producción Argentina y Española.
     """
-
     def __init__(self, config):
         source_queue = config["DEFAULT"].get("movies_arg_spain_2000s_queue", "movies_arg_spain_2000s")
         super().__init__(config, source_queue, logger_name="q1")

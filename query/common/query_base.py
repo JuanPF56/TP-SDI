@@ -53,3 +53,15 @@ class QueryBase:
             self.logger.info("Closing RabbitMQ connection...")
             self.rabbitmq_processor.close()
             self.logger.info("Connection closed.")
+
+    def callback(self, ch, method, properties, body, input_queue):
+        """
+        Callback method to be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
+    
+    def _calculate_and_publish_results(self, client_id, request_number):
+        """
+        Calculate and publish results. To be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
