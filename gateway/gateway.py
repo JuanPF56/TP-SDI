@@ -35,11 +35,20 @@ class Gateway():
 
         # Nodes ready queue
         system_nodes_str = os.getenv("SYSTEM_NODES", "")
+        logger.info(f"System nodes: {system_nodes_str}")
         self._system_nodes = len(system_nodes_str.split(",")) if system_nodes_str else 0
         self.source_queues = [self.config["DEFAULT"].get("nodes_ready_queue", "nodes_ready")]
         self.rabbitmq_processor = None
         self._ready_nodes = set()
         self._ready_nodes_lock = threading.Lock()
+        self.rabbitmq_processor = None
+        self._initialize_rabbitmq_processor()
+        try:
+            with open("/tmp/gateway_ready", "w") as f:
+                f.write("ready")
+            logger.info("Gateway is ready. Healthcheck file created.")
+        except Exception as e:
+            logger.error(f"Failed to create healthcheck file: {e}")
 
         # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -62,16 +71,15 @@ class Gateway():
             target_queues={} # Not publishing in this component
         )
 
-    def _wait_for_nodes_to_connect_to_rabbit(self, timeout=3600) -> bool:
-        logger.info(f"Waiting for {self._system_nodes} nodes to connect...")
-        self._initialize_rabbitmq_processor()
-
         if not self.rabbitmq_processor.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
-            return False
-
+            raise Exception("Error connecting to RabbitMQ.")
+        
         logger.info("Connected to RabbitMQ.")
 
+    def _wait_for_nodes_to_connect_to_rabbit(self, timeout=3600) -> bool:
+        logger.info(f"Waiting for {self._system_nodes} nodes to connect...")
+        
         # Iniciar el consumidor en otro hilo
         consumer_thread = threading.Thread(
             target=lambda: self.rabbitmq_processor.consume(self.callback),
@@ -85,7 +93,8 @@ class Gateway():
 
         while len(self._ready_nodes) < self._system_nodes:
             logger.info(f"Connected nodes: {len(self._ready_nodes)} / {self._system_nodes}")
-            
+            logger.info(f"Connected nodes: {self._ready_nodes}")
+
             # Verifica si hemos excedido el tiempo máximo de espera
             if time.time() - start_time > timeout:
                 logger.error("Timeout waiting for nodes to connect.")
@@ -109,6 +118,8 @@ class Gateway():
                 with self._ready_nodes_lock:
                     self._ready_nodes.add(node_name)
                 logger.info(f"Node {node_name} is ready.")
+
+                channel.basic_ack(delivery_tag=method_frame.delivery_tag)
             except json.JSONDecodeError as e:
                 logger.error(f"JSON decode error: {e}")
             except Exception as e:

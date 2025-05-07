@@ -57,17 +57,20 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         if subtype == "cleanup":
             num_nodes = cleanup
             nodes_to_await = 1
-            depends = {"rabbitmq": {"condition": "service_healthy"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"},
+                       "gateway": {"condition": "service_healthy"}}
         elif subtype == "year":
             num_nodes = year
             nodes_to_await = production
-            depends = {"rabbitmq": {"condition": "service_healthy"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"},
+                       "gateway": {"condition": "service_healthy"}}
             for node in j_nodes:
                 depends[node] = {"condition": "service_started"}
         elif subtype == "production":
             num_nodes = production
             nodes_to_await = cleanup
-            depends = {"rabbitmq": {"condition": "service_healthy"}}
+            depends = {"rabbitmq": {"condition": "service_healthy"},
+                       "gateway": {"condition": "service_healthy"}}
         for i in range(1, num_nodes + 1):
             name = f"filter_{subtype}_{i}"
             filter_node_names.append(name)
@@ -110,6 +113,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
@@ -136,6 +140,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             ],
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
@@ -159,6 +164,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             ],
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
@@ -191,6 +197,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"}
             },
             "networks": ["testing_net"]
         }
@@ -211,7 +218,13 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
         },
-        "networks": ["testing_net"]
+        "networks": ["testing_net"],
+        "healthcheck": {
+            "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 10
+        }
     }
 
     # Clients nodes
@@ -232,7 +245,9 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "USE_TEST_DATASET": "1" if short_test else "0", 
                 "REQUESTS_TO_SERVER": "1"
             },
-            "depends_on": ["gateway"],
+            "depends_on": {
+                "gateway": {"condition": "service_healthy"},
+            },
             "networks": ["testing_net"]
         }
 
