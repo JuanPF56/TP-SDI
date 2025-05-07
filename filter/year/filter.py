@@ -93,7 +93,7 @@ class YearFilter(FilterBase):
         if client_state.has_received_all_eos(self.source_queues):
             logger.info("All nodes have sent EOS. Sending EOS to output queues.")
             self._send_eos(headers)
-            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+            #self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
         else:
             logger.debug("Not all nodes have sent EOS yet. Waiting...")
@@ -107,7 +107,8 @@ class YearFilter(FilterBase):
             target=self.target_queue,
             message={"node_id": self.node_id, "count": 0},
             msg_type=EOS_TYPE,
-            headers=headers
+            headers=headers,
+            priority=1
         )
         logger.info(f"EOS message sent to {self.target_queue}")
         self.rabbitmq_processor.publish(
@@ -115,7 +116,8 @@ class YearFilter(FilterBase):
             message={"node_id": self.node_id, "count": 0},
             msg_type=EOS_TYPE,
             exchange=True,
-            headers=headers
+            headers=headers,
+            priority=1
         )
         logger.info(f"EOS message sent to {self.target_exchange}")
 
@@ -133,7 +135,8 @@ class YearFilter(FilterBase):
                     target=target,
                     message=batch,
                     exchange=exchange,
-                    headers=headers
+                    headers=headers,
+                    priority=1
                 )
             self.processed_batch[input_queue].clear()
         self._mark_eos_received(body, input_queue, headers, client_state)

@@ -244,7 +244,8 @@ class ConnectedClient(threading.Thread):
                         target=queue_key,
                         message={},  # Empty message to indicate end of batch
                         msg_type="EOS", 
-                        headers=headers
+                        headers=headers,
+                        priority=1
                     )
                     self._processed_datasets_from_request += 1
 

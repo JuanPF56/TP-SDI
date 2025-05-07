@@ -103,19 +103,22 @@ class JoinBase:
         except json.JSONDecodeError:
             self.log_error("Failed to decode EOS message")
             return
-            
+        
+        self.log_info(f"EOS for node {node_id} {input_queue} count {count} client {self.current_client_id} request {self.current_request_number}")
         if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
             client_state.mark_eos(input_queue, node_id)
             count +=1
         
         # If this isn't the last node, send the EOS message back to the input queue
+        self.log_info(f"EOS count for node {node_id}: {count} < {self.nodes_of_type}")
         if count < self.nodes_of_type:
             # Send EOS back to input queue for other production nodes
             self.rabbitmq_processor.publish(
                 target=input_queue,
                 message={"node_id": node_id, "count": count},
                 msg_type=EOS_TYPE,
-                headers=headers
+                headers=headers,
+                priority=1
             )
         
 
@@ -123,19 +126,20 @@ class JoinBase:
         """
         Propagate the end of stream (EOS) to all output queues if all nodes have sent EOS.
         """
-        self.log_info("Checking if all nodes have sent EOS")
+        self.log_debug("Checking if all nodes have sent EOS")
         if client_state.has_received_all_eos(self.input_queue):
             self.log_info("All nodes have sent EOS. Sending EOS to output queues.")
             self.rabbitmq_processor.publish(
                 target=self.output_queue,
                 message={"node_id": self.node_id, "count": 0},
                 msg_type=EOS_TYPE,
-                headers=headers
+                headers=headers,
+                priority=1
             )
-            self.client_manager.remove_client(self.current_client_id, self.current_request_number)
+            #self.client_manager.remove_client(self.current_client_id, self.current_request_number)
             # TODO: Move the removal of the movies table outside of the eos handling so
             # it can be reused for other nodes
-            self.movies_handler.remove_movies_table(self.current_client_id, self.current_request_number)
+            #self.movies_handler.remove_movies_table(self.current_client_id, self.current_request_number)
 
     def process_batch(self, ch, method, properties, body, input_queue):
         """
@@ -184,7 +188,7 @@ class JoinBase:
                                 Publishing to input queue {input_queue}.")
                 self.rabbitmq_processor.publish(
                     target=input_queue,
-                    message=body,
+                    message=decoded,
                     msg_type=msg_type,
                     headers=headers
                 )
@@ -197,8 +201,8 @@ class JoinBase:
                 movies_table = self.movies_handler.get_movies_table(self.current_client_id, self.current_request_number)
 
                 if not movies_table:
-                    self.log_warning(f"Movies table is empty for client {self.current_client_id}, \
-                                      request_number {self.current_request_number}.")
+                    self.log_debug(f"Movies table is empty for client {self.current_client_id}," +
+                                      "request_number {self.current_request_number}.")
                     return
                 
                 # Build a set of movie IDs for fast lookup

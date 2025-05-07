@@ -61,7 +61,8 @@ class ProductionFilter(FilterBase):
                 target=input_queue,
                 message={"node_id": node_id, "count": count},
                 msg_type=EOS_TYPE,
-                headers=headers
+                headers=headers,
+                priority=1
             )
         
 
@@ -79,10 +80,11 @@ class ProductionFilter(FilterBase):
                         target=queue,
                         message={"node_id": self.node_id, "count": 0},
                         msg_type=EOS_TYPE,
-                        headers=headers
+                        headers=headers,
+                        priority=1
                     )
                     logger.debug(f"EOS message sent to {queue}")
-            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+            #self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
 
     def _publish_batch(self, queue, batch, headers):

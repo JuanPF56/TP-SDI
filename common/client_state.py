@@ -14,12 +14,15 @@ class ClientState:
         if queue_name not in self.eos_flags:
             self.eos_flags[queue_name] = {}
         self.eos_flags[queue_name][node_id] = True
+        logger.info(f"EOS marked for client {self.client_id}, dict: {self.eos_flags}")
         
     def has_queue_received_eos(self, queue_name):
         """Check if the required amount of EOS messages has been received for a queue"""
+        logger.info(f"Current EOS flags: {self.eos_flags}")
         logger.debug(f"Checking if all EOS received for queue {queue_name}")
         eos_received = self.eos_flags.get(queue_name, {})
         logger.debug(f"EOS received: {eos_received}")
+        logger.info(f"Amount of EOS: {self.amount_of_eos}")
         if len(eos_received) == self.amount_of_eos:
             logger.debug(f"All EOS received for queue {queue_name}")
             return True
@@ -41,6 +44,7 @@ class ClientState:
             
     def has_received_all_eos(self, queues):
         """Check if all required EOS messages have been received for all specified queues"""
+        logger.info(f"Checking if all EOS received for queues: {queues}")
         if not isinstance(queues, list):
             queues = [queues]
         for queue in queues:

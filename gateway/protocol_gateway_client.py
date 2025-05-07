@@ -12,8 +12,8 @@ from common.protocol import SIZE_OF_HEADER, SIZE_OF_UINT8, TIPO_MENSAJE, SIZE_OF
 TIPO_MENSAJE_INVERSO = {v: k for k, v in TIPO_MENSAJE.items()}
 
 from common.decoder import Decoder
-TIMEOUT_HEADER = 1
-TIMEOUT_PAYLOAD = 5
+TIMEOUT_HEADER = 3600
+TIMEOUT_PAYLOAD = 3600
 
 class ProtocolGateway:
     def __init__(self, client_socket: socket.socket, client_id: str):

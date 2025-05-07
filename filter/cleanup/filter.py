@@ -118,6 +118,28 @@ class CleanupFilter(FilterBase):
             logger.info(f"EOS marked for source queue: {queue_name}")
             client_state.mark_eos(queue_name)
             count += 1
+            targets = self.target_queues.get(queue_name)
+            if targets:
+                if isinstance(targets, list):
+                    for target in targets:
+                        self.rabbitmq_processor.publish(
+                            target=target,
+                            message={"node_id": self.node_id, "count": 0},
+                            msg_type=msg_type, 
+                            headers=headers,
+                            priority=1
+                        )
+                        
+                        logger.info(f"EOS sent to target queue: {target}")
+                else:
+                    self.rabbitmq_processor.publish(
+                        target=targets,
+                        message={"node_id": self.node_id, "count": 0},
+                        msg_type=msg_type, 
+                        headers=headers,
+                        priority=1
+                    )
+                    logger.info(f"EOS sent to target queue: {targets}")
         
         logger.info(f"EOS count for queue {queue_name}: {count}")
         if count < self.nodes_of_type:
@@ -126,39 +148,20 @@ class CleanupFilter(FilterBase):
                 target=queue_name,
                 message={"node_id": self.node_id, "count": count},
                 msg_type=msg_type, 
-                headers=headers
+                headers=headers,
+                priority=1
             )
 
-        targets = self.target_queues.get(queue_name)
-        if targets:
-            if isinstance(targets, list):
-                for target in targets:
-                    self.rabbitmq_processor.publish(
-                        target=target,
-                        message={"node_id": self.node_id, "count": 0},
-                        msg_type=msg_type, 
-                        headers=headers
-                    )
-                    
-                    logger.info(f"EOS sent to target queue: {target}")
-            else:
-                self.rabbitmq_processor.publish(
-                    target=targets,
-                    message={"node_id": self.node_id, "count": 0},
-                    msg_type=msg_type, 
-                    headers=headers
-                )
-                logger.info(f"EOS sent to target queue: {targets}")
         logger.info(f"Checking if all EOS have been received for queue {queue_name}")
         
         if client_state.has_received_all_eos(self.source_queues):
             logger.info("All source queues have sent EOS. Sending EOS to target queues.")
             del self.batches[(client_state.client_id, client_state.request_id)]
-            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+            # self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
     def _handle_eos(self, queue_name, body, method, msg_type, headers, client_state: ClientState):
         key = (client_state.client_id, client_state.request_id)
-        if self.batches[key]:
+        if self.batches[key] and len(self.batches[key]) > 0:
             logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
             self._publish_batch(queue_name, self.batches[key], headers, None)
             self.batches[key].clear()

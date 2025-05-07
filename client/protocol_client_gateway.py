@@ -15,7 +15,7 @@ from common.protocol import TIPO_MENSAJE, SIZE_OF_UUID, SIZE_OF_HEADER, SIZE_OF_
 
 TIMEOUT_RECEIVE_ID = 60
 TIMEOUT_ANSWER_HEADER = 3600 # 1 hour (longest timeout for a query)
-TIMEOUT_ANSWER_PAYLOAD = 5
+TIMEOUT_ANSWER_PAYLOAD = 3600
 
 class ProtocolClient:
     def __init__(self, socket: socket.socket, max_batch_size):

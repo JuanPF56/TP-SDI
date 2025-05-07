@@ -51,27 +51,27 @@ class RabbitMQProcessor:
                 logger.info("Successfully connected to RabbitMQ.")
 
                 for queue in self.source_queues:
-                    self.channel.queue_declare(queue=queue)
+                    self.channel.queue_declare(queue=queue, arguments={'x-max-priority': 10})
 
                 # Handle target_queues being a single item, list, or dict
                 if isinstance(self.target_queues, str):
-                    self.channel.queue_declare(queue=self.target_queues)
+                    self.channel.queue_declare(queue=self.target_queues, arguments={'x-max-priority': 10})
                 elif isinstance(self.target_queues, list):
                     for queue in self.target_queues:
-                        self.channel.queue_declare(queue=queue)
+                        self.channel.queue_declare(queue=queue, arguments={'x-max-priority': 10})
                 elif isinstance(self.target_queues, dict):
                     for target in self.target_queues.values():
                         if isinstance(target, list):
                             for queue in target:
-                                self.channel.queue_declare(queue=queue)
+                                self.channel.queue_declare(queue=queue, arguments={'x-max-priority': 10})
                         else:
-                            self.channel.queue_declare(queue=target)
+                            self.channel.queue_declare(queue=target, arguments={'x-max-priority': 10})
 
                 # Handle source_exchange and target_exchange if provided
                 if self.source_exchange:
                     self.channel.exchange_declare(exchange=self.source_exchange, exchange_type='fanout')
                     # Declare a random exclusive queue for the source exchange
-                    result = self.channel.queue_declare(queue='', exclusive=True)
+                    result = self.channel.queue_declare(queue='', exclusive=True, arguments={'x-max-priority': 10})
                     queue_name = result.method.queue
                     self.channel.queue_bind(exchange=self.source_exchange, queue=queue_name)
                     # Add the queue to the source_queues for consumption
@@ -117,7 +117,7 @@ class RabbitMQProcessor:
         logger.info("Esperando mensajes...")
         self.channel.start_consuming()
         
-    def publish(self, target, message, msg_type=None, exchange=False, headers=None):
+    def publish(self, target, message, msg_type=None, exchange=False, headers=None, priority=10):
         if not self.connection or self.connection.is_closed:
             logger.warning("Publish aborted: RabbitMQ connection is closed.")
             return
@@ -129,7 +129,8 @@ class RabbitMQProcessor:
 
             properties = pika.BasicProperties(
                 type=msg_type,
-                headers=headers
+                headers=headers,
+                priority=priority,
             )
 
             exchange_name = target if exchange else ''

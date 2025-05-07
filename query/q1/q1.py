@@ -60,7 +60,7 @@ class ArgSpainGenreQuery:
 
         # Limpieza de datos para liberar memoria
         del self.results_by_request[key]
-        self.client_manager.remove_client(client_id, request_number)
+        #self.client_manager.remove_client(client_id, request_number)
 
     def process_batch(self, movies_batch, client_id, request_number):
         """
