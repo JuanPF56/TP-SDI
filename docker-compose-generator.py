@@ -83,6 +83,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                     "NODE_TYPE": subtype,
                     "NODES_TO_AWAIT": str(nodes_to_await),
                     "NODES_OF_TYPE": num_nodes,
+                    "NODE_NAME": f"filter_{subtype}_{i}",
                 },
                 "depends_on": deepcopy(depends),
                 "networks": ["testing_net"]
@@ -103,6 +104,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "NODE_TYPE": "sentiment_analyzer",
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": sentiment_analyzer,
+                "NODE_NAME": f"sentiment_analyzer_{i}",
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
@@ -124,7 +126,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "NODE_TYPE": "join_credits",
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": j_credits,
-                "YEAR_NODES_TO_AWAIT": str(year)
+                "YEAR_NODES_TO_AWAIT": str(year),
+                "NODE_NAME": f"join_credits_{i}",
             },
             "volumes": [
                 f"./join/credits/config.ini:/app/config.ini"
@@ -146,7 +149,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "NODE_TYPE": "join_ratings",
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": j_ratings,
-                "YEAR_NODES_TO_AWAIT": str(year)
+                "YEAR_NODES_TO_AWAIT": str(year),
+                "NODE_NAME": f"join_ratings_{i}",
             },
             "volumes": [
                 f"./join/ratings/config.ini:/app/config.ini"
@@ -180,7 +184,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             ],
             "environment": {
                 "NODE_TYPE": qname,
-                "NODES_TO_AWAIT": str(nodes_to_await[qname])
+                "NODES_TO_AWAIT": str(nodes_to_await[qname]),
+                "NODE_NAME": qname,
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},

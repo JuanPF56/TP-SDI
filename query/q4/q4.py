@@ -25,6 +25,7 @@ class ArgProdActorsQuery:
         self.target_queue = self.config["DEFAULT"].get("results_queue", "results")
 
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self.node_name = os.getenv("NODE_NAME", "unknown")
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
             source_queues=self.source_queue,
@@ -34,8 +35,6 @@ class ArgProdActorsQuery:
             expected_queues=self.source_queue,
             nodes_to_await=self.eos_to_await,
         )
-
-
 
     def _calculate_and_publish_results(self, client_state: ClientState):
         logger.info("Calculating results...")

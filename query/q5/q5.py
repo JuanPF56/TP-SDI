@@ -25,6 +25,7 @@ class SentimentStats:
         ]
 
         self.target_queue = self.config["DEFAULT"].get("results_queue", "results")
+        self.node_name = os.getenv("NODE_NAME", "unknown")
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
             source_queues=self.source_queues,

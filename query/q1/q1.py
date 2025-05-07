@@ -23,6 +23,7 @@ class ArgSpainGenreQuery:
         self.target_queue = self.config["DEFAULT"].get("results_queue", "results_queue")
 
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
+        self.node_name = os.getenv("NODE_NAME", "unknown")
 
         self.results_by_request = defaultdict(list)
 

@@ -7,6 +7,7 @@ from collections import defaultdict
 from common.filter_base import FilterBase, EOS_TYPE
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
+
 class ProductionFilter(FilterBase):
     def __init__(self, config):
         """

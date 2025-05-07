@@ -26,6 +26,7 @@ class SentimentAnalyzer:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
+        self.node_name = os.getenv("NODE_NAME", "unknown")
 
         self.config = ConfigParser()
         self.config.read(config_path)
