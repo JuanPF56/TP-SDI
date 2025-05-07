@@ -194,17 +194,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         }
 
     # Gateway node
-    full_dependencies = (
-        ["rabbitmq"]
-        + filter_node_names
-        + sentiment_node_names
-        + join_node_names
-        + query_node_names
-    )
-    gateway_depends_on = {
-        dep: {"condition": "service_started"} for dep in full_dependencies if dep != "rabbitmq"
-    }
-    gateway_depends_on["rabbitmq"] = {"condition": "service_healthy"}
+    full_dependencies = (filter_node_names + sentiment_node_names + join_node_names + query_node_names)
     services["gateway"] = {
         "container_name": "gateway",
         "image": "gateway:latest",
@@ -213,7 +203,12 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "./gateway/config.ini:/app/config.ini",
             "./resultados:/app/resultados"
         ],
-        "depends_on": gateway_depends_on,
+        "environment": {
+            "SYSTEM_NODES": ",".join(full_dependencies),
+        },
+        "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+        },
         "networks": ["testing_net"]
     }
 

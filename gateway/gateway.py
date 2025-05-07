@@ -1,7 +1,10 @@
 import socket
 import signal
-import os
+import json
 import uuid
+import os
+import threading
+import time
 
 from common.logger import get_logger
 logger = get_logger("Gateway")
@@ -9,6 +12,7 @@ logger = get_logger("Gateway")
 from client_registry import ClientRegistry
 from connected_client import ConnectedClient
 from result_dispatcher import ResultDispatcher
+from common.mom import RabbitMQProcessor
 
 class Gateway():
     def __init__(self, config):
@@ -29,6 +33,14 @@ class Gateway():
         self._result_dispatcher = None
         self._setup_result_dispatcher()
 
+        # Nodes ready queue
+        system_nodes_str = os.getenv("SYSTEM_NODES", "")
+        self._system_nodes = len(system_nodes_str.split(",")) if system_nodes_str else 0
+        self.source_queues = [self.config["DEFAULT"].get("nodes_ready_queue", "nodes_ready")]
+        self.rabbitmq_processor = None
+        self._ready_nodes = set()
+        self._ready_nodes_lock = threading.Lock()
+
         # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -43,7 +55,69 @@ class Gateway():
         )
         self._result_dispatcher.start()
 
+    def _initialize_rabbitmq_processor(self):
+        self.rabbitmq_processor = RabbitMQProcessor(
+            config=self.config,
+            source_queues=self.source_queues,
+            target_queues={} # Not publishing in this component
+        )
+
+    def _wait_for_nodes_to_connect_to_rabbit(self, timeout=3600) -> bool:
+        logger.info(f"Waiting for {self._system_nodes} nodes to connect...")
+        self._initialize_rabbitmq_processor()
+
+        if not self.rabbitmq_processor.connect():
+            logger.error("Error connecting to RabbitMQ. Exiting...")
+            return False
+
+        logger.info("Connected to RabbitMQ.")
+
+        # Iniciar el consumidor en otro hilo
+        consumer_thread = threading.Thread(
+            target=lambda: self.rabbitmq_processor.consume(self.callback),
+            daemon=True
+        )
+        consumer_thread.start()
+
+        start_time = time.time()
+        wait_time = 1  # Tiempo inicial de espera (1 segundo)
+        max_wait_time = 60  # Tiempo máximo de espera (en segundos)
+
+        while len(self._ready_nodes) < self._system_nodes:
+            logger.info(f"Connected nodes: {len(self._ready_nodes)} / {self._system_nodes}")
+            
+            # Verifica si hemos excedido el tiempo máximo de espera
+            if time.time() - start_time > timeout:
+                logger.error("Timeout waiting for nodes to connect.")
+                return False
+            
+            # Espera exponencial: duplicar el tiempo de espera en cada iteración
+            time.sleep(wait_time)
+            wait_time = min(wait_time * 2, max_wait_time)  # Asegura que el tiempo de espera no supere el límite
+
+        logger.info("All nodes are connected. Ready to accept connections.")
+        return True
+
+    def callback(self, channel, method_frame, header_frame, body, queue_name):
+        """
+        Callback function to handle messages from the nodes_ready queue.
+        """
+        logger.info(f"Received message from nodes_ready queue: {body}")
+        if body:
+            try:
+                node_name = json.loads(body)
+                with self._ready_nodes_lock:
+                    self._ready_nodes.add(node_name)
+                logger.info(f"Node {node_name} is ready.")
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error: {e}")
+            except Exception as e:
+                logger.error(f"Error processing message: {e}")
+
     def run(self):
+        if self._wait_for_nodes_to_connect_to_rabbit() is False:
+            logger.error("Error waiting for nodes to connect to RabbitMQ. Exiting...")
+            return
         while not self._was_closed:
             try:
                 self._reap_disconnected_clients()
@@ -101,6 +175,13 @@ class Gateway():
                 logger.info("ResultDispatcher stopped.")
             except Exception as e:
                 logger.warning(f"Error stopping ResultDispatcher: {e}")
+
+        if self.rabbitmq_processor:
+            try:
+                self.rabbitmq_processor.close()
+                logger.info("RabbitMQ connection closed.")
+            except Exception as e:
+                logger.warning(f"Error closing RabbitMQ connection: {e}")
 
         self._was_closed = True
 

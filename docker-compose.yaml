@@ -210,27 +210,9 @@ services:
     volumes:
     - ./gateway/config.ini:/app/config.ini
     - ./resultados:/app/resultados
+    environment:
+      SYSTEM_NODES: filter_cleanup_1,filter_year_1,filter_production_1,join_credits_1,join_ratings_1,q1,q2,q3,q4,q5
     depends_on:
-      filter_cleanup_1:
-        condition: service_started
-      filter_year_1:
-        condition: service_started
-      filter_production_1:
-        condition: service_started
-      join_credits_1:
-        condition: service_started
-      join_ratings_1:
-        condition: service_started
-      q1:
-        condition: service_started
-      q2:
-        condition: service_started
-      q3:
-        condition: service_started
-      q4:
-        condition: service_started
-      q5:
-        condition: service_started
       rabbitmq:
         condition: service_healthy
     networks:

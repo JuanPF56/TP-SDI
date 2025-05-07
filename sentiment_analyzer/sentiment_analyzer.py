@@ -218,6 +218,9 @@ class SentimentAnalyzer:
         if not self.rabbitmq_processor.connect():
             logger.error("Error al conectar a RabbitMQ. Saliendo.")
             return
+        
+        # Tell gateway that this node is online
+        self._notify_gateway()
 
         try:
             logger.info("Starting message consumption...")
@@ -233,6 +236,13 @@ class SentimentAnalyzer:
             self.rabbitmq_processor.close()
             logger.info("Connection closed.")
 
+    def _notify_gateway(self):
+        self.rabbitmq_processor.channel.queue_declare(queue='nodes_ready', durable=False, arguments={'x-max-priority': 10})
+        self.rabbitmq_processor.publish(
+            target='nodes_ready',
+            message=self.node_name
+        )
+        logger.info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")
 
 if __name__ == "__main__":
     analyzer = SentimentAnalyzer()
