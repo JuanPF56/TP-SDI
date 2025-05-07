@@ -32,3 +32,24 @@ class QueryBase:
         )
 
         self.logger = get_logger(logger_name)
+
+    def process(self):
+        self.logger.info("Node is online")
+
+        for key, value in self.config["DEFAULT"].items():
+            self.logger.info(f"{key}: {value}")
+
+        if not self.rabbitmq_processor.connect():
+            self.logger.error("Error al conectar a RabbitMQ. Saliendo.")
+            return
+
+        try:
+            self.logger.info("Starting message consumption...")
+            self.rabbitmq_processor.consume(self.callback)
+        except KeyboardInterrupt:
+            self.logger.info("Shutting down gracefully...")
+            self.rabbitmq_processor.stop_consuming()
+        finally:
+            self.logger.info("Closing RabbitMQ connection...")
+            self.rabbitmq_processor.close()
+            self.logger.info("Connection closed.")

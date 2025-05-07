@@ -57,6 +57,15 @@ class ArgSpainGenreQuery(QueryBase):
             self.results_by_request[key].append((title, genres))
 
     def callback(self, ch, method, properties, body, input_queue):
+        """
+        Reads from the input queue (movies_arg_spain_2000s_queue).
+
+        Collects:
+        - title
+        - genres (list of names)
+
+        Publishes the results after processing a batch.
+        """
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
         headers = getattr(properties, "headers", {}) or {}
         client_id, request_number = headers.get("client_id"), headers.get("request_number")
@@ -107,34 +116,6 @@ class ArgSpainGenreQuery(QueryBase):
             return
 
         self.rabbitmq_processor.acknowledge(method)
-
-    def process(self):
-        """
-        Reads from the input queue (movies_arg_spain_2000s_queue).
-
-        Collects:
-        - title
-        - genres (list of names)
-
-        Publishes the results after processing a batch.
-        """
-        logger.info("Node is online")
-
-        if not self.rabbitmq_processor.connect():
-            logger.error("Error al conectar a RabbitMQ. Saliendo.")
-            return
-
-        try:
-            logger.info("Starting message consumption...")
-            self.rabbitmq_processor.consume(self.callback)
-        except KeyboardInterrupt:
-            logger.info("Shutting down gracefully...")
-            self.rabbitmq_processor.stop_consuming()
-        finally:
-            logger.info("Closing RabbitMQ connection...")
-            self.rabbitmq_processor.close()
-            logger.info("Connection closed.")
-
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

@@ -115,27 +115,6 @@ class ArgProdActorsQuery(QueryBase):
 
         self.rabbitmq_processor.acknowledge(method)
 
-
-    def process(self):
-        logger.info("Node is online")
-        logger.info("Node is online")
-
-        if not self.rabbitmq_processor.connect():
-            logger.error("Error al conectar a RabbitMQ. Saliendo.")
-            return
-
-        try:
-            logger.info("Starting message consumption...")
-            self.rabbitmq_processor.consume(self.callback)
-        except KeyboardInterrupt:
-            logger.info("Shutting down gracefully...")
-            self.rabbitmq_processor.stop_consuming()
-        finally:
-            logger.info("Closing RabbitMQ connection...")
-            self.rabbitmq_processor.close()
-            logger.info("Connection closed.")
-
-
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")

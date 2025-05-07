@@ -48,6 +48,18 @@ class SoloCountryBudgetQuery(QueryBase):
 
 
     def callback(self, ch, method, properties, body, input_queue):
+        """
+        Reads from:
+        - movies_solo queue (already filtered for productions with a single country)
+
+        Collects:
+        - country
+        - total budget
+
+        At the end, logs and stores top 5 countries that invested the most (without co-producing).
+
+        NEXT: When receiving the end of stream flag, publish the results to a results queue.
+        """
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
         headers = properties.headers or {}
 
@@ -106,43 +118,6 @@ class SoloCountryBudgetQuery(QueryBase):
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
-
-
-    def process(self):
-        """
-        Reads from:
-        - movies_solo queue (already filtered for productions with a single country)
-
-        Collects:
-        - country
-        - total budget
-
-        At the end, logs and stores top 5 countries that invested the most (without co-producing).
-
-        NEXT: When receiving the end of stream flag, publish the results to a results queue.
-        """
-        logger.info("Node is online")
-
-
-        for key, value in self.config["DEFAULT"].items():
-            logger.info(f"{key}: {value}")
-
-        if not self.rabbitmq_processor.connect():
-            logger.error("Error al conectar a RabbitMQ. Saliendo.")
-            return
-
-        try:
-            logger.info("Starting message consumption...")
-            self.rabbitmq_processor.consume(self.callback)
-        except KeyboardInterrupt:
-            logger.info("Shutting down gracefully...")
-            self.rabbitmq_processor.stop_consuming()
-        finally:
-            logger.info("Closing RabbitMQ connection...")
-            self.rabbitmq_processor.close()
-            logger.info("Connection closed.")
-
-
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()
