@@ -92,6 +92,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
     # Sentiment analyzer node
     sentiment_node_names = []
     for i in range(1, sentiment_analyzer + 1):
+        name = f"sentiment_analyzer_{i}"
+        sentiment_node_names.append(name)
         services[f"sentiment_analyzer_{i}"] = {
             "container_name": f"sentiment_analyzer_{i}",
             "image": "sentiment_analyzer:latest",
