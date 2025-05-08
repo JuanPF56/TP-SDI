@@ -38,7 +38,7 @@ class ClientState:
             logger.debug(f"EOS received from node {node_id} for queue {queue_name}")
             return True
         else:
-            logger.debug(f"EOS not received from node {node_id} for queue {queue_name}")
+            logger.info(f"EOS not received from node {node_id} for queue {queue_name}")
             return False
             
     def has_received_all_eos(self, queues):

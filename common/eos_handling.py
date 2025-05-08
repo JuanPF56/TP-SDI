@@ -1,13 +1,13 @@
 import json
-import logging
 from typing import Dict, Any
 from common.client_state import ClientState
 from common.client_state_manager import ClientManager
 from common.mom import RabbitMQProcessor
+from common.logger import get_logger
 
 EOS_TYPE = "EOS"
 
-logger = logging.getLogger("EOS-Handling")
+logger = get_logger("EOS-Handling")
 
 """
 This module handles the End of Stream (EOS) messages in a RabbitMQ-based system.
@@ -54,8 +54,8 @@ def mark_eos_received(body, node_id, input_queue, source_queues, headers,
                         client_state, client_manager, target_queues, target_exchanges,
                         extra_steps)
 
-    logger.debug(f"EOS received for node {n_id} from input queue {input_queue}")
-    logger.debug(f"Count of EOS: {count} < {nodes_of_type}")
+    logger.info(f"EOS received for node {n_id} from input queue {input_queue}")
+    logger.info(f"Count of EOS: {count} < {nodes_of_type}")
     # If this isn't the last node, send the EOS message back to the input queue
     if count < nodes_of_type: 
         # Send EOS back to input queue for other year nodes
@@ -63,7 +63,8 @@ def mark_eos_received(body, node_id, input_queue, source_queues, headers,
             target=input_queue,
             message={"node_id": n_id, "count": count},
             msg_type=EOS_TYPE,
-            headers=headers
+            headers=headers,
+            priority=1
         )
 
 def check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
@@ -75,7 +76,7 @@ def check_eos_flags(headers, node_id, source_queues, rabbitmq_processor,
     if client_state.has_received_all_eos(source_queues):
         logger.info("All nodes have sent EOS. Sending EOS to output queues.")
         send_eos(headers, node_id, rabbitmq_processor, target_queues, target_exchanges)
-        free_resources(client_state, client_manager, extra_steps)
+        #free_resources(client_state, client_manager, extra_steps)
     else:
         logger.debug("Not all nodes have sent EOS yet. Waiting...")
 

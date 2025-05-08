@@ -71,9 +71,10 @@ class YearFilter(FilterBase):
                     priority=1
                 )
                 self.processed_batch[input_queue][key] = []
-        mark_eos_received(body, self.node_id, input_queue, self.source_queues, headers, self.nodes_of_type,
+        mark_eos_received(body, self.node_id, input_queue, input_queue, headers, self.nodes_of_type,
                           self.rabbitmq_processor, client_state, self.client_manager,
-                          target_queues=self.target_queue, target_exchanges=self.target_exchange)
+                          target_queues=self.target_queue if input_queue == self.source_queues[1] else None,
+                          target_exchanges=self.target_exchange if input_queue == self.source_queues[0] else None)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_movies_batch(self, movies_batch, input_queue, client_state: ClientState):

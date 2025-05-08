@@ -108,8 +108,9 @@ class CleanupFilter(FilterBase):
         self.rabbitmq_processor.acknowledge(method)
 
     def _delete_batch(self, client_state: ClientState): 
-        try:       
-            del self.batches[(client_state.client_id, client_state.request_id)]
+        try:
+            if client_state.has_received_all_eos(self.source_queues):  
+                del self.batches[(client_state.client_id, client_state.request_id)]
         except KeyError:
             logger.warning(f"Batch not found for client {client_state.client_id} and request {client_state.request_id}.")
 
