@@ -32,7 +32,6 @@ class ArgSpainGenreQuery(QueryBase):
         }
 
         logger.info(f"RESULTS for {key}: {results}")
-        logger.info(f"All results: {self.results_by_request}")
 
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"],
@@ -41,7 +40,7 @@ class ArgSpainGenreQuery(QueryBase):
 
         # Limpieza de datos para liberar memoria
         del self.results_by_request[key]
-        #self.client_manager.remove_client(client_id, request_number)
+        self.client_manager.remove_client(client_id, request_number)
 
     def process_batch(self, movies_batch, client_id, request_number):
         """

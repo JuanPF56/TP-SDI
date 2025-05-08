@@ -44,7 +44,7 @@ class SoloCountryBudgetQuery(QueryBase):
 
         # Limpieza de memoria
         del self.budget_by_country_by_request[key]
-        #self.client_manager.remove_client(client_id, request_number)
+        self.client_manager.remove_client(client_id, request_number)
 
 
     def callback(self, ch, method, properties, body, input_queue):

@@ -58,7 +58,8 @@ class ArgProdActorsQuery(QueryBase):
             target=self.config["DEFAULT"]["results_queue"],
             message=results_msg
         )
-        # TODO: Clean up memory
+        del self.actor_participations[key]
+        self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
