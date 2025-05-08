@@ -15,53 +15,67 @@ It provides functions to mark the EOS for a given input queue, check if all node
 have sent EOS, and propagate the EOS to output queues and exchanges.
 """
 
-def mark_eos_received(body, input_queue, source_queues, headers,
+def mark_eos_received(body, node_id, input_queue, source_queues, headers,
                       nodes_of_type, rabbitmq_processor: RabbitMQProcessor, 
                       client_state: ClientState, client_manager: ClientManager,
-                      target_queues=None, target_exchanges=None):
+                      target_queues=None, target_exchanges=None, extra_steps=None):
     """
     Mark the end of stream (EOS) for the given input queue
     for the given node.
+    Parameters:
+    - body: The message body containing the EOS information.
+    - node_id: The ID of the current node.
+    - input_queue: The input queue from which the EOS message was received.
+    - source_queues: The list of source queues to check for EOS.
+    - headers: The headers of the message.
+    - nodes_of_type: The number of nodes of this type.
+    - rabbitmq_processor: The RabbitMQ processor instance.
+    - client_state: The client state instance.
+    - client_manager: The client manager instance.
+    - target_queues: The target queues to send the EOS message to.
+    - target_exchanges: The target exchanges to send the EOS message to.
+    - extra_steps: Any extra steps to perform after sending EOS.
     """
     try:
         data = json.loads(body)
-        node_id = data.get("node_id")
-        count = data.get("count", 0)
+        n_id = data.get("node_id", 1) # ID of the node that sent the EOS message
+        count = data.get("count", 0) # Count of nodes that have acknowledged EOS message
         logger.debug(f"Count received: {count}")
     except json.JSONDecodeError:
         logger.error("Failed to decode EOS message")
         return
 
-    if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
-        count += 1
-        logger.debug("COUNT INCREMENTED " + str(count))
-        logger.debug(f"EOS count for node {node_id}: {count}")
-        client_state.mark_eos(input_queue, node_id)
-        check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
-                        client_state, client_manager, target_queues, target_exchanges)
+    if client_state and not client_state.has_queue_received_eos_from_node(input_queue, n_id):
+            count += 1
+            logger.debug("COUNT INCREMENTED " + str(count))
+            logger.debug(f"EOS count for node {n_id}: {count}")
+            client_state.mark_eos(input_queue, n_id)
+            check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
+                            client_state, client_manager, target_queues, target_exchanges,
+                            extra_steps)
 
-    logger.debug(f"EOS received for node {node_id} from input queue {input_queue}")
+    logger.debug(f"EOS received for node {n_id} from input queue {input_queue}")
     logger.debug(f"Count of EOS: {count} < {nodes_of_type}")
     # If this isn't the last node, send the EOS message back to the input queue
     if count < nodes_of_type: 
         # Send EOS back to input queue for other year nodes
         rabbitmq_processor.publish(
             target=input_queue,
-            message={"node_id": node_id, "count": count},
+            message={"node_id": n_id, "count": count},
             msg_type=EOS_TYPE,
             headers=headers
         )
 
 def check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                     client_state: ClientState, client_manager: ClientManager,
-                    target_queues=None, target_exchanges=None):
+                    target_queues=None, target_exchanges=None, extra_steps=None):
     """
     Check if all nodes have sent EOS and propagate to output queues.
     """
     if client_state.has_received_all_eos(source_queues):
         logger.info("All nodes have sent EOS. Sending EOS to output queues.")
         send_eos(headers, node_id, rabbitmq_processor, target_queues, target_exchanges)
-        client_manager.remove_client(client_state.client_id, client_state.request_id)
+        free_resources(client_state, client_manager, extra_steps)
     else:
         logger.debug("Not all nodes have sent EOS yet. Waiting...")
 
@@ -102,6 +116,13 @@ def send_eos(headers, node_id, rabbitmq_processor: RabbitMQProcessor,
             logger.info(f"EOS message sent to {target_exchange}")
 
 
-
+def free_resources(client_state: ClientState, client_manager: ClientManager, extra_steps=None):
+    """
+    Free resources associated with the client state.
+    """
+    logger.debug(f"Freeing resources for client {client_state.client_id} and request {client_state.request_id}")
+    client_manager.remove_client(client_state.client_id, client_state.request_id)
+    if extra_steps:
+        extra_steps(client_state)
 
 

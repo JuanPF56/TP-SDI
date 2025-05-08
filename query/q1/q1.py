@@ -50,8 +50,7 @@ class ArgSpainGenreQuery(QueryBase):
 
         key = (client_id, request_number)
         
-        logger.info(f"Processing batch of {len(movies_batch)} movies for {key}")
-        logger.info(f"Batch content: {movies_batch}")
+        logger.debug(f"Processing batch of {len(movies_batch)} movies for {key}")
 
         for movie in movies_batch:
             title = movie.get("original_title")
@@ -78,7 +77,6 @@ class ArgSpainGenreQuery(QueryBase):
             return
     
         client_state = self.client_manager.add_client(client_id, request_number)
-
 
         if msg_type == EOS_TYPE:
             try:

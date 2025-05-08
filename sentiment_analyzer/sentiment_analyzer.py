@@ -4,6 +4,7 @@ import time
 import os
 from configparser import ConfigParser
 from transformers import pipeline
+from common.eos_handling import mark_eos_received
 from common.logger import get_logger
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -66,79 +67,48 @@ class SentimentAnalyzer:
             logger.error(f"Error during sentiment analysis: {e}")
             return "neutral"
 
-    def _mark_eos_received(self, body, channel, headers, client_state: ClientState):
-        try:
-            data = json.loads(body)
-            node_id = data.get("node_id")
-            count = data.get("count", 0)
-        except json.JSONDecodeError:
-            logger.error("Failed to decode EOS message")
-            return      
-        if not client_state.has_queue_received_eos_from_node(self.source_queue, node_id):
-            count += 1
-            client_state.mark_eos(self.source_queue, node_id)
-            logger.debug(f"EOS received for node {node_id}.")
+    def _handle_eos(self, input_queue, body, method, headers, client_state: ClientState):
+        if client_state:
+            key = (client_state.client_id, client_state.request_id)
+            with self.lock:
+                if len(self.batch_positive[key]) > 0:
+                    self.rabbitmq_processor.publish(
+                        target=self.target_queues[0],
+                        message=self.batch_positive[key],
+                        headers=headers,
+                    )
+                    logger.info(f"Sent {len(self.batch_positive[key])} positive movies to {self.target_queues[0]}")
+                    self.batch_positive[key] = []
 
-        logger.debug(f"EOS count for node {node_id}: {count}")
-        # If this isn't the last node, send the EOS message back to the source queue
-        if count < self.nodes_of_type:
-            # Send EOS back to the source queue for other sentiment analyzers
-            self.rabbitmq_processor.publish(
-                target=self.source_queue,
-                message={"node_id": node_id, "count": count},
-                msg_type=EOS_TYPE,
-                headers=headers
-            )
-        
-    def _send_eos(self, msg_type, headers, client_state: ClientState):
-        if client_state.has_received_all_eos(self.source_queue):
-            logger.info("All nodes have sent EOS. Sending EOS to both queues.")
-            for queue in self.target_queues:
-                self.rabbitmq_processor.publish(
-                    target=queue,
-                    message={"node_id": self.node_id},
-                    msg_type=msg_type,
-                    headers=headers,
-                )
-            logger.debug("Sent EOS message to both queues.")
+                if len(self.batch_negative[key]) > 0:
+                    self.rabbitmq_processor.publish(
+                        target=self.target_queues[1],
+                        message=self.batch_negative[key],
+                        headers=headers,
+                    )
+                    logger.info(f"Sent {len(self.batch_negative[key])} negative movies to {self.target_queues[1]}")
+                    self.batch_negative[key] = []
+        mark_eos_received(body, self.node_id, input_queue, self.source_queue, headers, self.nodes_of_type,
+                          self.rabbitmq_processor, client_state, self.client_manager,
+                          target_queues=self.target_queues)
 
     def callback(self, ch, method, properties, body, input_queue):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             headers = getattr(properties, "headers", {}) or {}
             client_id, request_number = headers.get("client_id"), headers.get("request_number")
-
+            
             if not client_id or not request_number:
                 logger.error("Missing client_id or request_number in headers")
                 self.rabbitmq_processor.acknowledge(method)
                 return
         
-            client_state = self.client_manager.add_client(client_id, request_number)
             key = (client_id, request_number)
+            client_state = self.client_manager.add_client(client_id, request_number, msg_type==EOS_TYPE)
+            
             if msg_type == EOS_TYPE:
-                self._mark_eos_received(body, ch, headers, client_state)
-                with self.lock:
-                    if len(self.batch_positive[key]) > 0:
-                        self.rabbitmq_processor.publish(
-                            target=self.target_queues[0],
-                            message=self.batch_positive[key],
-                            headers=headers,
-                        )
-                        logger.info(f"Sent {len(self.batch_positive[key])} positive movies to {self.target_queues[0]}")
-                        self.batch_positive[key] = []
-
-                    if len(self.batch_negative[key]) > 0:
-                        self.rabbitmq_processor.publish(
-                            target=self.target_queues[1],
-                            message=self.batch_negative[key],
-                            headers=headers,
-                        )
-                        logger.info(f"Sent {len(self.batch_negative[key])} negative movies to {self.target_queues[1]}")
-                        self.batch_negative[key] = []
-
-                self._send_eos(msg_type, headers, client_state)
+                self._handle_eos(input_queue, body, method, headers, client_state)
                 return
-
 
             movies_batch = json.loads(body)
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
