@@ -1,21 +1,21 @@
-# Usa una imagen base de Hugging Face que ya tiene transformers y torch
-FROM huggingface/transformers-pytorch-cpu
+FROM base_node:latest
 
-# Usa Python 3.9 explícitamente (si es posible, verificar en base image)
-# Ya viene instalado en esta imagen base
-
-# Establece el directorio de trabajo
 WORKDIR /app
 
-# Instalá las dependencias
-RUN pip install --no-cache-dir pika
+# Dependencys
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# ⚠️ Predescarga el modelo para evitar fallos al iniciar
+RUN pip install --no-cache-dir \
+    torch \
+    transformers \
+    pika
+
 RUN python3 -c "from transformers import pipeline; pipeline('sentiment-analysis')"
 
-# Copia el código fuente
-COPY sentiment_analyzer/ ./
+COPY sentiment_analyzer/ ./ 
 COPY common/ ./common/
+COPY sentiment_analyzer/benchmark.py /app/benchmark.py
 
-# Ejecuta el servicio
 CMD ["python3", "sentiment_analyzer.py"]

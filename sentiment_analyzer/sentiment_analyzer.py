@@ -2,6 +2,7 @@ import json
 import pika
 import os
 import threading
+import sys
 from configparser import ConfigParser
 from transformers import pipeline
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -17,20 +18,33 @@ EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 MAX_WORKERS = os.cpu_count() or 4
 
+# Global variable for model in each process
+sentiment_pipe = None
+
+def init_sentiment_model():
+    global sentiment_pipe
+    sentiment_pipe = pipeline(
+        "sentiment-analysis",
+        model="distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+        revision="714eb0f"
+    )
+
 def analyze_sentiment_process(text: str) -> str:
+    global sentiment_pipe
     if not text or not text.strip():
         return "neutral"
     try:
-        pipe = pipeline("sentiment-analysis")
-        result = pipe(text, truncation=True)[0]
+        result = sentiment_pipe(text, truncation=True)[0]
         label = result["label"].lower()
         logger.debug(f"Sentiment analysis result: {label} for text: {text[:50]}...")
         return label if label in {"positive", "negative"} else "neutral"
-    except Exception:
+    except Exception as e:
+        logger.error(f"Sentiment analysis error: {e}")
         return "neutral"
 
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
+        logger.info(f"****     Running Python {sys.version}   ********")
         self.batch_negative = defaultdict(list)
         self.batch_positive = defaultdict(list)
         self.lock = threading.Lock()
@@ -59,7 +73,10 @@ class SentimentAnalyzer:
             nodes_to_await=self.eos_to_await,
         )
 
-        self.executor = ProcessPoolExecutor(max_workers=MAX_WORKERS)
+        self.executor = ProcessPoolExecutor(
+            max_workers=MAX_WORKERS,
+            initializer=init_sentiment_model
+        )
 
     def _mark_eos_received(self, body, channel, headers, client_state: ClientState):
         try:
@@ -136,12 +153,13 @@ class SentimentAnalyzer:
 
 
             movies_batch = json.loads(body)
-            future_to_movie = {
-                self.executor.submit(analyze_sentiment_process, movie.get("overview")): movie
-                for movie in movies_batch
+            overview_to_movie = {movie["overview"]: movie for movie in movies_batch if movie.get("overview")}
+            future_to_overview  = {
+                self.executor.submit(analyze_sentiment_process, overview): overview
+                for overview in overview_to_movie
             }
-            for future in as_completed(future_to_movie):
-                movie = future_to_movie[future]
+            for future in as_completed(future_to_overview):
+                movie = overview_to_movie[future_to_overview[future]]
                 try:
                     sentiment = future.result()
                     logger.debug(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
