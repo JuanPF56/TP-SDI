@@ -68,8 +68,12 @@ docker-compose-logs-to-file:
 # Kill all running containers
 docker-kill:
 	@echo "🛑 Deteniendo todos los contenedores..."
-	docker kill $(docker ps -q) --signal=SIGTERM
-	@echo "✅ Todos los contenedores detenidos."
+	@if [ -n "$$(docker ps -q)" ]; then \
+		docker kill $$(docker ps -q) --signal=SIGTERM; \
+		echo "✅ Todos los contenedores detenidos."; \
+	else \
+		echo "⚠️  No hay contenedores en ejecución."; \
+	fi
 .PHONY: docker-kill
 
 # Clean up previous logs
