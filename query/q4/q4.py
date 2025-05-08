@@ -58,7 +58,8 @@ class ArgProdActorsQuery(QueryBase):
             target=self.config["DEFAULT"]["results_queue"],
             message=results_msg
         )
-        # TODO: Clean up memory
+        del self.actor_participations[key]
+        self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
@@ -78,6 +79,7 @@ class ArgProdActorsQuery(QueryBase):
                 node_id = data.get("node_id")
             except json.JSONDecodeError:
                 logger.error("Failed to decode EOS message")
+                self.rabbitmq_processor.acknowledge(method)
                 return
             if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
                 client_state.mark_eos(input_queue, node_id)

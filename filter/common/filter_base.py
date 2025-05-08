@@ -1,5 +1,6 @@
 import os
 import json
+import signal
 import pika
 
 from common.logger import get_logger
@@ -23,6 +24,8 @@ class FilterBase:
         self.client_manager = None
         self.node_name = os.getenv("NODE_NAME", "unknown")
 
+        signal.signal(signal.SIGTERM, self.__handleSigterm)
+
     def setup(self):
         """
         Método que cada subclase debe implementar para definir:
@@ -31,6 +34,17 @@ class FilterBase:
         - inicializar rabbitmq_processor
         """
         raise NotImplementedError()
+    
+    def __handleSigterm(self, signum, frame):
+        print("SIGTERM signal received. Closing connection...")
+        try:
+            if self.rabbitmq_processor:
+                logger.info("Stopping message consumption...")
+                self.rabbitmq_processor.stop_consuming()
+                logger.info("Closing RabbitMQ connection...")
+                self.rabbitmq_processor.close()
+        except Exception as e:
+            logger.error(f"Error closing connection: {e}")
 
     def _initialize_rabbitmq_processor(self):
         self.rabbitmq_processor = RabbitMQProcessor(

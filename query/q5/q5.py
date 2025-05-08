@@ -51,7 +51,7 @@ class SentimentStats(QueryBase):
             )
             del self.positive_rates[(client_id, request_number)]
             del self.negative_rates[(client_id, request_number)]
-            #self.client_manager.remove_client(client_id, request_number)
+            self.client_manager.remove_client(client_id, request_number)
 
 
     def callback(self, ch, method, properties, body, input_queue):

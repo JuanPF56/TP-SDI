@@ -3,6 +3,7 @@ import json
 from collections import defaultdict
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
+from common.eos_handling import handle_eos
 from common.logger import get_logger
 logger = get_logger("Filter-Cleanup")
 
@@ -92,80 +93,27 @@ class CleanupFilter(FilterBase):
             "cast": cast,
         }
 
-    def _mark_eos_received(self, body, queue_name, msg_type, headers, client_state: ClientState):
-        """
-        Mark the end-of-stream (EOS) flag for the specified queue.
-        Up the count of the EOS message, if it is not the last node of type put it back to the input queue.
-        If all source queues have received EOS, forward the EOS to the target queues.
-        Args:
-            body (str): The message body received from RabbitMQ.
-            queue_name (str): The name of the source queue that received EOS.
-            msg_type (str): The type of message received (should be "EOS").
-        """
-        try:
-            if body:
-                data = json.loads(body)
-                count = data.get("count", 0)
-            else:
-                count = 0
-        except json.JSONDecodeError:
-            logger.error("Failed to decode EOS message")
-            return
-        
-        # Send EOS back to the input queue for other cleanup nodes
-        # only if this is not the last node of type
-        if not client_state.has_queue_received_eos(queue_name):
-            logger.info(f"EOS marked for source queue: {queue_name}")
-            client_state.mark_eos(queue_name)
-            count += 1
-            targets = self.target_queues.get(queue_name)
-            if targets:
-                if isinstance(targets, list):
-                    for target in targets:
-                        self.rabbitmq_processor.publish(
-                            target=target,
-                            message={"node_id": self.node_id, "count": 0},
-                            msg_type=msg_type, 
-                            headers=headers,
-                            priority=1
-                        )
-                        
-                        logger.info(f"EOS sent to target queue: {target}")
-                else:
-                    self.rabbitmq_processor.publish(
-                        target=targets,
-                        message={"node_id": self.node_id, "count": 0},
-                        msg_type=msg_type, 
-                        headers=headers,
-                        priority=1
-                    )
-                    logger.info(f"EOS sent to target queue: {targets}")
-            logger.info(f"Checking if all EOS have been received for queue {queue_name}")
-            if client_state.has_received_all_eos(self.source_queues):
-                logger.info("All source queues have sent EOS. Sending EOS to target queues.")
-                del self.batches[(client_state.client_id, client_state.request_id)]
-                # self.client_manager.remove_client(client_state.client_id, client_state.request_id)
-        
-        logger.info(f"EOS count for queue {queue_name}: {count}")
-        if count < self.nodes_of_type:
-            logger.info(f"Sending EOS back to input queue: {queue_name}")
-            self.rabbitmq_processor.publish(
-                target=queue_name,
-                message={"node_id": self.node_id, "count": count},
-                msg_type=msg_type, 
-                headers=headers,
-                priority=1
-            )
 
-
-    def _handle_eos(self, queue_name, body, method, msg_type, headers, client_state: ClientState):
-        key = (client_state.client_id, client_state.request_id)
-        if self.batches[key] and len(self.batches[key]) > 0:
-            logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
-            self._publish_batch(queue_name, self.batches[key], headers, None)
-            self.batches[key].clear()
-        self._mark_eos_received(body, queue_name, msg_type, headers, client_state)
+    def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
+        if client_state:
+            key = (client_state.client_id, client_state.request_id)
+            if self.batches[key] and len(self.batches[key]) > 0:
+                logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
+                self._publish_batch(queue_name, self.batches[key], headers, None)
+                self.batches[key].clear()
+        handle_eos(body, self.node_id, queue_name, queue_name, headers, 
+                          self.nodes_of_type, self.rabbitmq_processor, client_state,
+                          target_queues=self.target_queues.get(queue_name))
+        self._free_resources(client_state)
         self.rabbitmq_processor.acknowledge(method)
+
+    def _free_resources(self, client_state: ClientState): 
+        try:
+            if client_state and client_state.has_received_all_eos(self.source_queues):
+                del self.batches[(client_state.client_id, client_state.request_id)]
+                self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+        except KeyError:
+            logger.warning(f"Batch not found for client {client_state.client_id} and request {client_state.request_id}.")
 
     def _process_cleanup_batch(self, data_batch, queue_name, client_state: ClientState):
         key = (client_state.client_id, client_state.request_id)
@@ -213,10 +161,10 @@ class CleanupFilter(FilterBase):
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
         client_id, request_number = headers.get("client_id"), headers.get("request_number")
-        client_state = self.client_manager.add_client(client_id, request_number)
+        client_state = self.client_manager.add_client(client_id, request_number, msg_type==EOS_TYPE)
 
         if msg_type == EOS_TYPE:
-            self._handle_eos(queue_name, body, method, msg_type, headers, client_state)
+            self._handle_eos(queue_name, body, method, headers, client_state)
             return
 
         try:

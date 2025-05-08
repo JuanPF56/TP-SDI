@@ -232,7 +232,7 @@ class ConnectedClient(threading.Thread):
                     "request_number": request_number,
                 }
                 batch_payload = [asdict(item) for item in processed_data]
-                self.broker.publish(
+                success = self.broker.publish(
                     target=queue_key,
                     message=batch_payload,
                     msg_type=message_code, 
@@ -240,7 +240,7 @@ class ConnectedClient(threading.Thread):
                 )
 
                 if is_last_batch == IS_LAST_BATCH_FLAG:
-                    self.broker.publish(
+                    success = self.broker.publish(
                         target=queue_key,
                         message={},  # Empty message to indicate end of batch
                         msg_type="EOS", 
@@ -248,7 +248,11 @@ class ConnectedClient(threading.Thread):
                         priority=1
                     )
                     self._processed_datasets_from_request += 1
-
+                
+                if not success:
+                    logger.error(f"Failed to publish message to queue {queue_key}")
+                    raise Exception("Failed to publish message to queue")
+                
         except (TypeError, ValueError) as e:
             logger.error(f"Error serializing data to JSON: {e}")
             logger.error(processed_data)

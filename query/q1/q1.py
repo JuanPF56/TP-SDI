@@ -40,7 +40,7 @@ class ArgSpainGenreQuery(QueryBase):
 
         # Limpieza de datos para liberar memoria
         del self.results_by_request[key]
-        #self.client_manager.remove_client(client_id, request_number)
+        self.client_manager.remove_client(client_id, request_number)
 
     def process_batch(self, movies_batch, client_id, request_number):
         """
@@ -49,6 +49,8 @@ class ArgSpainGenreQuery(QueryBase):
 
         key = (client_id, request_number)
         
+        logger.debug(f"Processing batch of {len(movies_batch)} movies for {key}")
+
         for movie in movies_batch:
             title = movie.get("original_title")
             genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
@@ -75,17 +77,18 @@ class ArgSpainGenreQuery(QueryBase):
     
         client_state = self.client_manager.add_client(client_id, request_number)
 
-
         if msg_type == EOS_TYPE:
             try:
                 data = json.loads(body)
                 node_id = data.get("node_id")
             except json.JSONDecodeError:
                 logger.error("Failed to decode EOS message")
+                self.rabbitmq_processor.acknowledge(method)
                 return
 
             if client_state.has_queue_received_eos(input_queue):
-                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id} and request number {request_number}")
+                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id} and request number {request_number}")   
+                self.rabbitmq_processor.acknowledge(method)
                 return
 
             client_state.mark_eos(input_queue, node_id)

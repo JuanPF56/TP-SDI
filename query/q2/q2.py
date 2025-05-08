@@ -44,7 +44,7 @@ class SoloCountryBudgetQuery(QueryBase):
 
         # Limpieza de memoria
         del self.budget_by_country_by_request[key]
-        #self.client_manager.remove_client(client_id, request_number)
+        self.client_manager.remove_client(client_id, request_number)
 
 
     def callback(self, ch, method, properties, body, input_queue):
@@ -80,7 +80,8 @@ class SoloCountryBudgetQuery(QueryBase):
                 return
             
             if client_state.has_queue_received_eos_from_node(input_queue, node_id):
-                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id}-{request_number}. Ignoring.")
+                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id}-{request_number}. Ignoring.")  
+                self.rabbitmq_processor.acknowledge(method)
                 return
 
             client_state.mark_eos(input_queue, node_id)

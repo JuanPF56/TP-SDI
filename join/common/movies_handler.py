@@ -25,11 +25,8 @@ class MoviesHandler(multiprocessing.Process):
         self.manager = manager
         self.movies = self.manager.dict()
 
-        # Register signal handler for SIGTERM signal
-        signal.signal(signal.SIGTERM, self.__handleSigterm)
-
         self.node_id = node_id
-        # TODO: Handle for each client
+        
         self.year_eos_flags = self.manager.dict()
         self.year_nodes_to_await = year_nodes_to_await
         self.ready = False
@@ -38,9 +35,10 @@ class MoviesHandler(multiprocessing.Process):
         self.current_client_id = None
         self.current_request_number = None
 
-    def __handleSigterm(self, signum, frame):
+    def terminate(self):
         self.rabbitmq_processor.stop_consuming()
         self.rabbitmq_processor.close()
+        super().terminate()
     
     def run(self):
         """

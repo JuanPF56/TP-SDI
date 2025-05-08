@@ -32,6 +32,7 @@ class ArgProdRatingsQuery(QueryBase):
         for movie_id, movie_data in client_movies.items():
             if movie_data["rating_count"] > 0:
                 found_valid_ratings = True
+                logger.debug(f"Movie ID: {movie_id}, Ratings: {movie_data['rating_count']}, Sum: {movie_data['rating_sum']}")
                 avg = movie_data["rating_sum"] / movie_data["rating_count"]
 
                 if avg > results["highest"]["rating"]:
@@ -49,7 +50,7 @@ class ArgProdRatingsQuery(QueryBase):
         logger.info(f"RESULTS for client {client_id}, req {request_number}: {results_msg}")
         self.rabbitmq_processor.publish(self.target_queue, results_msg)
         del self.movie_ratings[client_id][request_number]
-        #self.client_manager.remove_client(client_id, request_number)
+        self.client_manager.remove_client(client_id, request_number)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
