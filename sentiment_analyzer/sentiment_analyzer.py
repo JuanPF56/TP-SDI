@@ -17,13 +17,6 @@ EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 MAX_WORKERS = os.cpu_count() or 4
 
-# Global variable for model in each process
-sentiment_pipe = None
-
-def init_sentiment_model():
-    global sentiment_pipe
-    sentiment_pipe = pipeline("sentiment-analysis")
-
 def analyze_sentiment_process(text: str) -> str:
     if not text or not text.strip():
         return "neutral"
@@ -66,10 +59,7 @@ class SentimentAnalyzer:
             nodes_to_await=self.eos_to_await,
         )
 
-        self.executor = ProcessPoolExecutor(
-            max_workers=MAX_WORKERS,
-            initializer=init_sentiment_model
-        )
+        self.executor = ProcessPoolExecutor(max_workers=MAX_WORKERS)
 
     def _mark_eos_received(self, body, channel, headers, client_state: ClientState):
         try:
