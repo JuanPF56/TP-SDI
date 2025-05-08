@@ -52,8 +52,8 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
         check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                         client_state, target_queues, target_exchanges)
 
-    logger.info(f"EOS received for node {n_id} from input queue {input_queue}")
-    logger.info(f"Count of EOS: {count} < {nodes_of_type}")
+    logger.debug(f"EOS received for node {n_id} from input queue {input_queue}")
+    logger.debug(f"Count of EOS: {count} < {nodes_of_type}")
     # If this isn't the last node, send the EOS message back to the input queue
     if count < nodes_of_type: 
         # Send EOS back to input queue for other year nodes
