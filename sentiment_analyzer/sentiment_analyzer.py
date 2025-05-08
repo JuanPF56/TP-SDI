@@ -1,4 +1,5 @@
 import json
+import signal
 import pika
 import time
 import os
@@ -49,6 +50,19 @@ class SentimentAnalyzer:
             nodes_to_await=self.eos_to_await,
         )
 
+        signal.signal(signal.SIGTERM, self.__handleSigterm)
+
+    def __handleSigterm(self, signum, frame):
+        print("SIGTERM signal received. Closing connection...")
+        try:
+            if self.rabbitmq_processor:
+                self.logger.info("Stopping message consumption...")
+                self.rabbitmq_processor.stop_consuming()
+                self.logger.info("Closing RabbitMQ connection...")
+                self.rabbitmq_processor.close()
+        except Exception as e:
+            self.logger.error(f"Error closing connection: {e}")
+
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
             logger.debug("Received empty or whitespace-only text for sentiment analysis.")
@@ -95,7 +109,7 @@ class SentimentAnalyzer:
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queue):
             self.client_manager.remove_client(client_state.client_id, client_state.request_id)
-            
+
     def callback(self, ch, method, properties, body, input_queue):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"

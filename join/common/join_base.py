@@ -69,8 +69,11 @@ class JoinBase:
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
         try:
-            self.rabbitmq_processor.stop_consuming()
-            self.rabbitmq_processor.close()
+            if self.rabbitmq_processor:
+                self.log_info("Stopping message consumption...")
+                self.rabbitmq_processor.stop_consuming()
+                self.log_info("Closing RabbitMQ connection...")
+                self.rabbitmq_processor.close()
         except Exception as e:
             self.log_info(f"Error closing connection: {e}")
         finally:

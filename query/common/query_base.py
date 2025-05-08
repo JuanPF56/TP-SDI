@@ -1,4 +1,5 @@
 import os
+import signal
 import pika
 
 from common.mom import RabbitMQProcessor
@@ -33,6 +34,19 @@ class QueryBase:
         )
 
         self.logger = get_logger(logger_name)
+        
+        signal.signal(signal.SIGTERM, self.__handleSigterm)
+
+    def __handleSigterm(self, signum, frame):
+        print("SIGTERM signal received. Closing connection...")
+        try:
+            if self.rabbitmq_processor:
+                self.logger.info("Stopping message consumption...")
+                self.rabbitmq_processor.stop_consuming()
+                self.logger.info("Closing RabbitMQ connection...")
+                self.rabbitmq_processor.close()
+        except Exception as e:
+            self.logger.error(f"Error closing connection: {e}")
 
     def process(self):
         self.logger.info("Node is online")
