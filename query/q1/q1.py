@@ -32,6 +32,7 @@ class ArgSpainGenreQuery(QueryBase):
         }
 
         logger.info(f"RESULTS for {key}: {results}")
+        logger.info(f"All results: {self.results_by_request}")
 
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"],
@@ -46,9 +47,11 @@ class ArgSpainGenreQuery(QueryBase):
         """
         Process a batch of movies.
         """
-        logger.debug(f"Processing batch of {len(movies_batch)} movies...")
 
         key = (client_id, request_number)
+        
+        logger.info(f"Processing batch of {len(movies_batch)} movies for {key}")
+        logger.info(f"Batch content: {movies_batch}")
 
         for movie in movies_batch:
             title = movie.get("original_title")

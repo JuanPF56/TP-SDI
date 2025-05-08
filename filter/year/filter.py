@@ -125,21 +125,21 @@ class YearFilter(FilterBase):
     def _handle_eos(self, input_queue, body, method, headers, client_state: ClientState):
         logger.debug(f"Received EOS from {input_queue}")
 
-        if self.processed_batch.get(input_queue):
-            for key, batch in self.processed_batch[input_queue].items():
-                if not batch:
-                    continue
-                exchange = input_queue == self.source_queues[0]
-                target = self.target_exchange if exchange else self.target_queue
-                logger.info(f"Publishing {len(batch)} movies to {target} for {key}")
-                self.rabbitmq_processor.publish(
-                    target=target,
-                    message=batch,
-                    exchange=exchange,
-                    headers=headers,
-                    priority=1
-                )
-            self.processed_batch[input_queue].clear()
+        key = (client_state.client_id, client_state.request_id)
+
+        if self.processed_batch[input_queue] and self.processed_batch[input_queue][key]:
+            batch = self.processed_batch[input_queue][key]
+            exchange = input_queue == self.source_queues[0]
+            target = self.target_exchange if exchange else self.target_queue
+            logger.info(f"Publishing {len(batch)} movies to {target} for {key}")
+            self.rabbitmq_processor.publish(
+                target=target,
+                message=batch,
+                exchange=exchange,
+                headers=headers,
+                priority=1
+            )
+            self.processed_batch[input_queue][key] = []
         self._mark_eos_received(body, input_queue, headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
