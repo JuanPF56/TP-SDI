@@ -46,13 +46,13 @@ def mark_eos_received(body, node_id, input_queue, source_queues, headers,
         return
 
     if client_state and not client_state.has_queue_received_eos_from_node(input_queue, n_id):
-            count += 1
-            logger.debug("COUNT INCREMENTED " + str(count))
-            logger.debug(f"EOS count for node {n_id}: {count}")
-            client_state.mark_eos(input_queue, n_id)
-            check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
-                            client_state, client_manager, target_queues, target_exchanges,
-                            extra_steps)
+        count += 1
+        logger.debug("COUNT INCREMENTED " + str(count))
+        logger.debug(f"EOS count for node {n_id}: {count}")
+        client_state.mark_eos(input_queue, n_id)
+        check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
+                        client_state, client_manager, target_queues, target_exchanges,
+                        extra_steps)
 
     logger.debug(f"EOS received for node {n_id} from input queue {input_queue}")
     logger.debug(f"Count of EOS: {count} < {nodes_of_type}")

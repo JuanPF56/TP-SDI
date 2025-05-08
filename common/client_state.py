@@ -21,10 +21,9 @@ class ClientState:
         logger.debug(f"Current EOS flags: {self.eos_flags}")
         logger.debug(f"Checking if all EOS received for queue {queue_name}")
         eos_received = self.eos_flags.get(queue_name, {})
-        logger.debug(f"EOS received: {eos_received}")
-        logger.debug(f"Amount of EOS: {self.amount_of_eos}")
+        logger.info(f"EOS received: {eos_received}, amount expected: {self.amount_of_eos}")
         if len(eos_received) == self.amount_of_eos:
-            logger.debug(f"All EOS received for queue {queue_name}")
+            logger.info(f"All EOS received for queue {queue_name}")
             return True
         else:
             logger.debug(f"Not all EOS received for queue {queue_name}")
