@@ -3,10 +3,7 @@ import kagglehub
 from common.logger import get_logger
 logger = get_logger("Client")
 
-from protocol_client_gateway import ProtocolClient
-from common.protocol import ACK, ERROR
-
-import common.exceptions as exceptions
+from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
 
 def download_dataset():
     try:
@@ -18,7 +15,8 @@ def download_dataset():
         logger.error(f"Failed to download dataset: {e}")
         return None
 
-def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
+def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient, request_number: int):
+    logger.info("Sending datasets to server...")
     datasets = [
         ("movies_metadata", "BATCH_MOVIES", "movies"),
         ("credits", "BATCH_CREDITS", "actors"),
@@ -27,7 +25,7 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
     for filename, tag, description in datasets:
         try:
             logger.info(f"Sending {description} dataset...")
-            protocol.send_dataset(datasets_path, filename, tag)
+            protocol.send_dataset(datasets_path, filename, tag, request_number)
 
             """
             confirmation = protocol.receive_confirmation()
@@ -38,8 +36,12 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
 
             logger.info(f"{description.capitalize()} dataset sent successfully.")
 
-        except exceptions.ServerNotConnectedError:
+        except ServerNotConnectedError:
             logger.error("Connection closed by server")
+            raise
+
+        except Exception as e:
+            logger.error(f"Failed to send {description} dataset: {e}")
             raise
 
     logger.info("All datasets were sent successfully.")

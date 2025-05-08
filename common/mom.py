@@ -40,7 +40,7 @@ class RabbitMQProcessor:
         delay = RETRY_DELAY
         for attempt in range(1, RETRIES + 1):
             try:
-                logger.info(f"Connecting to RabbitMQ in {self.rabbitmq_host} (attempt {attempt}/{RETRIES})")
+                logger.debug(f"Connecting to RabbitMQ in {self.rabbitmq_host} (attempt {attempt}/{RETRIES})")
                 self.connection = pika.BlockingConnection(pika.ConnectionParameters(
                     host=self.rabbitmq_host,
                     heartbeat=HEARTBEAT,
@@ -51,27 +51,27 @@ class RabbitMQProcessor:
                 logger.info("Successfully connected to RabbitMQ.")
 
                 for queue in self.source_queues:
-                    self.channel.queue_declare(queue=queue)
+                    self.channel.queue_declare(queue=queue, arguments={'x-max-priority': 10})
 
                 # Handle target_queues being a single item, list, or dict
                 if isinstance(self.target_queues, str):
-                    self.channel.queue_declare(queue=self.target_queues)
+                    self.channel.queue_declare(queue=self.target_queues, arguments={'x-max-priority': 10})
                 elif isinstance(self.target_queues, list):
                     for queue in self.target_queues:
-                        self.channel.queue_declare(queue=queue)
+                        self.channel.queue_declare(queue=queue, arguments={'x-max-priority': 10})
                 elif isinstance(self.target_queues, dict):
                     for target in self.target_queues.values():
                         if isinstance(target, list):
                             for queue in target:
-                                self.channel.queue_declare(queue=queue)
+                                self.channel.queue_declare(queue=queue, arguments={'x-max-priority': 10})
                         else:
-                            self.channel.queue_declare(queue=target)
+                            self.channel.queue_declare(queue=target, arguments={'x-max-priority': 10})
 
                 # Handle source_exchange and target_exchange if provided
                 if self.source_exchange:
                     self.channel.exchange_declare(exchange=self.source_exchange, exchange_type='fanout')
                     # Declare a random exclusive queue for the source exchange
-                    result = self.channel.queue_declare(queue='', exclusive=True)
+                    result = self.channel.queue_declare(queue='', exclusive=True, arguments={'x-max-priority': 10})
                     queue_name = result.method.queue
                     self.channel.queue_bind(exchange=self.source_exchange, queue=queue_name)
                     # Add the queue to the source_queues for consumption
@@ -83,7 +83,7 @@ class RabbitMQProcessor:
                 return True
 
             except pika.exceptions.AMQPConnectionError as e:
-                logger.warning(f"RabbitMQ connection failed (attempt {attempt}/{RETRIES}): {e}")
+                logger.debug(f"RabbitMQ connection failed (attempt {attempt}/{RETRIES}): {e}")
                 time.sleep(delay)
                 delay *= 2  # Exponential backoff
 
@@ -102,9 +102,9 @@ class RabbitMQProcessor:
         self.channel.basic_qos(prefetch_count=5)
         for queue in self.source_queues:
             # Create a closure that properly captures the queue variable
-            def create_callback_wrapper(queue_name):
+            def create_callback_wrapper(queue):
                 def wrapped_callback(ch, method, properties, body):
-                    callback(ch, method, properties, body, queue_name)
+                    callback(ch, method, properties, body, queue)
                 return wrapped_callback
             
             # Use the wrapper factory to create a callback with the correct queue captured
@@ -117,18 +117,45 @@ class RabbitMQProcessor:
         logger.info("Esperando mensajes...")
         self.channel.start_consuming()
         
-    def publish(self, target, message, msg_type=None, exchange=False):
-        """
-        Publishes a message to the specified target.
-        """        
-        logger.debug(f"Publicando mensaje en: {target}, tipo: {msg_type}", extra={"payload": message})
-        self.channel.basic_publish(
-            exchange=target if exchange else '',
-            routing_key=target if not exchange else '',
-            body=json.dumps(message),
-            properties=pika.BasicProperties(type=msg_type)
-        )
-        logger.debug(f"Mensaje enviado a: {target}, tipo: {msg_type}")
+    def publish(self, target, message, msg_type=None, exchange=False, headers=None, priority=10):
+        if not self.connection or self.connection.is_closed:
+            logger.warning("Publish aborted: RabbitMQ connection is closed.")
+            return
+        
+        channel = None
+
+        try:
+            channel = self.connection.channel()
+
+            properties = pika.BasicProperties(
+                type=msg_type,
+                headers=headers,
+                priority=priority,
+            )
+
+            exchange_name = target if exchange else ''
+            routing_key = '' if exchange else target
+
+            channel.basic_publish(
+                exchange=exchange_name,
+                routing_key=routing_key,
+                body=json.dumps(message),
+                properties=properties
+            )
+
+            logger.debug(f"Mensaje enviado a: {target}, tipo: {msg_type}, headers: {headers}")
+
+        except pika.exceptions.AMQPConnectionError as e:
+            logger.error(f"Error de conexión al publicar en {target}: {e}")
+        except pika.exceptions.ChannelClosedByBroker as e:
+            logger.error(f"Canal cerrado por el broker al publicar en {target}: {e}")
+        except Exception as e:
+            logger.error(f"Error publicando mensaje a {target}: {e}")
+        finally:
+            try:
+                channel.close()
+            except Exception as e:
+                logger.warning(f"No se pudo cerrar el canal correctamente: {e}")
 
     def stop_consuming(self):
         """
@@ -137,6 +164,10 @@ class RabbitMQProcessor:
         if self.channel:
             self.channel.stop_consuming()
             logger.info("Detenido el consumo de mensajes.")
+
+    def stop_consuming_threadsafe(self):
+        if self.channel and self.channel.is_open:
+            self.channel.connection.add_callback_threadsafe(self.channel.stop_consuming)
 
     def acknowledge(self, method):
         """
@@ -152,9 +183,19 @@ class RabbitMQProcessor:
         """
         Cierra la conexión de RabbitMQ.
         """
-        if self.connection and self.connection.is_open:
-            self.channel.close()
-            self.connection.close()
+        if self.connection:
+            if self.channel and self.channel.is_open:
+                try:
+                    self.channel.close()
+                except Exception as e:
+                    logger.warning(f"No se pudo cerrar el canal: {e}")
+
+            if self.connection.is_open:
+                try:
+                    self.connection.close()
+                except Exception as e:
+                    logger.warning(f"No se pudo cerrar la conexión: {e}")
+
             logger.info("Conexión cerrada con RabbitMQ.")
 
     def reconnect_and_restart(self, callback):

@@ -1,6 +1,5 @@
 import common.receiver as receiver
 import common.sender as sender
-import common.exceptions as exceptions
 import socket
 
 import os
@@ -12,21 +11,81 @@ import json
 from common.logger import get_logger
 logger = get_logger("Protocol Client")
 
-from common.protocol import TIPO_MENSAJE, SIZE_OF_HEADER, SIZE_OF_UINT8, SIZE_OF_HEADER_RESULTS
+from common.protocol import TIPO_MENSAJE, SIZE_OF_UUID, SIZE_OF_HEADER, SIZE_OF_HEADER_RESULTS, ProtocolError
 
+TIMEOUT_RECEIVE_ID = 60
 TIMEOUT_ANSWER_HEADER = 3600 # 1 hour (longest timeout for a query)
-TIMEOUT_ANSWER_PAYLOAD = 5
+TIMEOUT_ANSWER_PAYLOAD = 3600
 
 class ProtocolClient:
     def __init__(self, socket: socket.socket, max_batch_size):
+        self._client_id = None
         self._socket = socket
         self._max_batch_size = max_batch_size
         self._connected = True
 
+    def get_client_id(self):
+        logger.info("Waiting for server to assign client ID...")
+        try:
+            client_id_bytes = receiver.receive_data(
+                self._socket,
+                SIZE_OF_UUID,
+                timeout=TIMEOUT_RECEIVE_ID
+            )
+
+            if not client_id_bytes or len(client_id_bytes) != SIZE_OF_UUID:
+                logger.error("Failed to receive client ID from server")
+                raise ProtocolError("Failed to receive client ID from server")
+            
+            self._client_id = client_id_bytes.decode("utf-8")
+            logger.info(f"Client ID assigned: {self._client_id}")
+            return self._client_id
+        
+        except TimeoutError:
+            logger.error("Timeout waiting for client ID from server")
+            self._connected = False
+            raise ServerNotConnectedError("Timeout waiting for client ID from server")
+
+        except receiver.ReceiverError as e:
+            logger.error("Receiver error while receiving client ID")
+            self._connected = False
+            raise ProtocolError("Receiver error while receiving client ID")
+        
+        except Exception as e:
+            logger.error(f"Unexpected error receiving client ID: {e}")
+            self._connected = False
+            raise ProtocolError("Unexpected error receiving client ID")
+
+    def send_amount_of_requests(self, amount_of_requests):
+        logger.info(f"Sending amount of requests: {amount_of_requests}")
+        if amount_of_requests <= 0:
+            logger.error("Invalid amount of requests")
+            raise ValueError("Invalid amount of requests")
+        if amount_of_requests > 255:
+            logger.error("Amount of requests exceeds maximum limit (255)")
+            raise ValueError("Amount of requests exceeds maximum limit (255)")
+        try:
+            sender.send(self._socket, struct.pack(">B", amount_of_requests))
+        
+        except sender.SenderConnectionLostError as e:
+            logger.error("Sender error while sending amount of requests")
+            self._connected = False
+            raise ProtocolError("Sender error while sending amount of requests")
+        
+        except sender.SenderError as e:
+            logger.error(f"Sender error while sending amount of requests: {e}")
+            self._connected = False
+            raise ProtocolError("Sender error while sending amount of requests")
+
+        except Exception as e:
+            logger.error(f"Unexpected error sending amount of requests: {e}")
+            self._connected = False
+            raise ProtocolError("Unexpected error sending amount of requests")
+
     def _is_connected(self):
         return self._connected
 
-    def send_dataset(self, dataset_path, dataset_name, message_type_str):
+    def send_dataset(self, dataset_path, dataset_name, message_type_str, request_number):
         logger.debug(f"Sending dataset {dataset_name} as {message_type_str}...")
 
         csv_path = os.path.join(dataset_path, f"{dataset_name}.csv")
@@ -53,7 +112,7 @@ class ProtocolClient:
                                 chunk = line_bytes[start:start + safe_end]
 
                                 if current_payload and len(current_payload) + 1 + len(chunk) > max_payload_size:
-                                    self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                    self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=False)
                                     batch_number += 1
                                     current_payload = bytearray()
 
@@ -63,14 +122,14 @@ class ProtocolClient:
                         else:
                             extra_bytes = b"\n" if current_payload else b""
                             if len(current_payload) + len(extra_bytes) + len(line_bytes) > max_payload_size:
-                                self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
+                                self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=False)
                                 batch_number += 1
                                 current_payload = bytearray()
 
                             current_payload += line_bytes
 
                     if current_payload:
-                        self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=True)
+                        self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=True)
                 
                 else:
                     reader = csv.reader(csvfile, quotechar='"', delimiter=',', skipinitialspace=True)
@@ -82,22 +141,23 @@ class ProtocolClient:
                         encoded_line = (line + "\n").encode("utf-8")
 
                         if len(current_payload) + len(encoded_line) > max_payload_size:
-                            self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=False)
+                            self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=False)
                             batch_number += 1
                             current_payload = bytearray()
 
                         current_payload += encoded_line
 
                     if current_payload:
-                        self._safe_send_batch(message_type_str, batch_number, current_payload, is_last=True)
+                        self._safe_send_batch(request_number, message_type_str, batch_number, current_payload, is_last=True)
 
-        except exceptions.ServerNotConnectedError as e:
+        except ServerNotConnectedError as e:
             logger.error(f"Connection closed by server: {e}")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Connection closed by server")
 
         except Exception as e:
             logger.error(f"Error reading/sending CSV: {e}")
+            raise
 
     def _find_utf8_safe_split_point(self, data: bytes, max_len: int) -> int:
         """
@@ -118,15 +178,23 @@ class ProtocolClient:
     def _safe_send_batch(self, *args, **kwargs):
         try:
             self._send_single_batch(*args, **kwargs)
-        except exceptions.ServerNotConnectedError:
+        except ServerNotConnectedError:
             logger.error("Connection closed by server during batch send.")
             self._connected = False
             raise
 
-    def _send_single_batch(self, message_type_str, batch_number, payload: bytes, is_last: bool):
+    def _send_single_batch(self, request_number, message_type_str, batch_number, payload: bytes, is_last: bool):
+        # Prepare header
         tipo_de_mensaje = TIPO_MENSAJE[message_type_str]
+
+        encoded_id = self._client_id.encode("utf-8")
+        if len(encoded_id) != SIZE_OF_UUID:
+            logger.error(f"Client ID size {len(encoded_id)} does not match expected {SIZE_OF_UUID}")
+            raise ValueError(f"Client ID size {len(encoded_id)} does not match expected {SIZE_OF_UUID}")
+        
         is_last_batch = 1 if is_last else 0
-        header = struct.pack(">BI B I", tipo_de_mensaje, batch_number, is_last_batch, len(payload))
+
+        header = struct.pack(">B36sBIBI", tipo_de_mensaje, encoded_id, request_number, batch_number, is_last_batch, len(payload))
 
         if len(header) != SIZE_OF_HEADER:
             raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
@@ -135,10 +203,16 @@ class ProtocolClient:
 
         try:
             self.send_batch(header, payload)
-        except exceptions.ServerNotConnectedError:
-            logger.error(f"Connection closed by server")
+
+        except ServerNotConnectedError:
+            logger.error(f"Connection closed by server while sending batch")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Connection closed by server while sending batch")
+        
+        except (ProtocolError, Exception) as e:
+            logger.error(f"Error sending batch: {e}")
+            self._connected = False
+            raise ProtocolError("Error sending batch")
 
     def send_batch(self, header: bytes, payload: bytes):
         try:
@@ -150,40 +224,21 @@ class ProtocolClient:
             try:
                 sender.send(self._socket, header)
                 # logger.info(f"Header sent: {header}")
-            except ConnectionError as e:
-                logger.error(f"Connection closed by server")
+            except sender.SenderConnectionLostError as e:
+                logger.error(f"Connection closed by server when sending batch header")
                 self._connected = False
-                raise exceptions.ServerNotConnectedError("Connection closed by server")
+                raise ServerNotConnectedError("Connection closed by server when sending batch header")
             
             try:
                 sender.send(self._socket, payload)
                 # logger.info(f"Payload sent: {payload}\n(size={len(payload)})")
-            except ConnectionError as e:
-                logger.error(f"Connection closed by server")
+            except sender.SenderConnectionLostError as e:
+                logger.error(f"Connection closed by server when sending batch payload")
                 self._connected = False
-                raise exceptions.ServerNotConnectedError("Connection closed by server")
+                raise ServerNotConnectedError("Connection closed by server when sending batch payload")
 
         except Exception as e:
-            if isinstance(e, exceptions.ServerNotConnectedError):
-                raise
-            logger.error(f"Error sending CSV batch: {e}")
-
-    """
-    def receive_confirmation(self):
-    
-        # Receives a confirmation message from the server.
-        # The confirmation message is expected to be a 1-byte unsigned integer.
-
-        logger.info("Awaiting confirmation from server...")
-        try:
-            data = receiver.receive_data(self._socket, SIZE_OF_UINT8)
-            confirmation = int.from_bytes(data, byteorder="big")
-            logger.debug(f"Received confirmation: {confirmation}")
-            return confirmation
-        except Exception as e:
-            logger.error(f"Error receiving confirmation: {e}")
-            return None
-    """
+            raise ProtocolError(f"Error sending batch: {e}")
 
     def receive_query_response(self) -> dict | None:
         logger.info("Awaiting query response from server...")
@@ -195,23 +250,30 @@ class ProtocolClient:
                 SIZE_OF_HEADER_RESULTS,
                 timeout=TIMEOUT_ANSWER_HEADER
             )
-        except ConnectionError as e:
-            logger.error("Connection closed by server")
+
+        except TimeoutError:
+            logger.error("Timeout waiting for header response from server")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Timeout waiting for header response from server")
+
+        except receiver.ReceiverError as e:
+            logger.error("Receiver error while receiving header response")
+            self._connected = False
+            raise ProtocolError("Receiver error while receiving header response")
+        
+        except Exception as e:
+            logger.error(f"Unexpected error receiving header response: {e}")
+            self._connected = False
+            raise ProtocolError("Unexpected error receiving header response")
         
         if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
             return None
 
-        tipo_mensaje, query_id, payload_len = struct.unpack(">BBI", header_bytes)
+        tipo_mensaje, numero_de_consulta, query_id, payload_len = struct.unpack(">BBBI", header_bytes)
 
         if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
             logger.error(f"Unexpected message type: {tipo_mensaje}")
             return None
-
-        logger.debug(f"Received message type: {TIPO_MENSAJE['RESULTS']}")
-        logger.debug(f"Received query ID: {query_id}")
-        logger.debug(f"Received payload length: {payload_len}")
 
         # Recibir payload
         try:
@@ -220,10 +282,21 @@ class ProtocolClient:
                 payload_len,
                 timeout=TIMEOUT_ANSWER_PAYLOAD
             )
-        except ConnectionError as e:
-            logger.error("Connection closed by server")
+
+        except TimeoutError:
+            logger.error("Timeout waiting for response payload from server")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Timeout waiting for response payload from server")
+
+        except receiver.ReceiverError as e:
+            logger.error("Receiver error while receiving response payload")
+            self._connected = False
+            raise ProtocolError("Receiver error while receiving response payload")
+        
+        except Exception as e:
+            logger.error(f"Unexpected error receiving response payload: {e}")
+            self._connected = False
+            raise ProtocolError("Unexpected error receiving response payload")
 
         if not payload_bytes or len(payload_bytes) != payload_len:
             return None
@@ -231,9 +304,23 @@ class ProtocolClient:
         logger.debug(f"Received payload size: {len(payload_bytes)}")
 
         try:
-            result = json.loads(payload_bytes.decode())
-            logger.debug(f"Received JSON response: {result}")
-            return result
+            result_of_query = json.loads(payload_bytes.decode())
+            logger.debug(f"Received JSON response: {result_of_query}")
+
+            # Armar la estructura respuesta:
+            """
+            {
+                "numero_de_consulta": 1,
+                "query_id": "Q4",
+                "results": { ... }
+            }
+            """
+            return {
+                    "numero_de_consulta": numero_de_consulta,
+                    "query_id": f"Q{query_id}",
+                    "results": result_of_query
+                    }
+        
         except json.JSONDecodeError:
             logger.error("Failed to decode JSON response")
             return None
@@ -241,10 +328,12 @@ class ProtocolClient:
     def disconnect(self):
         logger.info("Disconnecting from server...")
         tipo_de_mensaje = TIPO_MENSAJE["DISCONNECT"]
+        encoded_id = self._client_id.encode("utf-8")
+        request_number = 0
         batch_number = 0
         payload = b""
         is_last = True
-        header = struct.pack(">BI B I", tipo_de_mensaje, batch_number, is_last, len(payload))
+        header = struct.pack(">B36sBIBI", tipo_de_mensaje, encoded_id, request_number, batch_number, is_last, len(payload))
 
         if len(header) != SIZE_OF_HEADER:
             raise ValueError(f"Header size {len(header)} does not match expected {SIZE_OF_HEADER}")
@@ -253,7 +342,13 @@ class ProtocolClient:
             sender.send(self._socket, header)
             logger.info("Disconnection message sent")
             
-        except ConnectionError as e:
+        except sender.SenderError as e:
             logger.error(f"Connection closed by server")
             self._connected = False
-            raise exceptions.ServerNotConnectedError("Connection closed by server")
+            raise ServerNotConnectedError("Connection closed by server")
+
+
+# Exceptions for errors between client and server
+class ServerNotConnectedError(Exception):
+    """Exception raised when the server is not connected."""
+    pass

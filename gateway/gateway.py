@@ -1,57 +1,48 @@
 import socket
 import signal
-import pika
 import json
+import uuid
 import os
+import threading
 import time
-from dataclasses import asdict
 
 from common.logger import get_logger
 logger = get_logger("Gateway")
 
-from protocol_gateway_client import ProtocolGateway
-from common.protocol import TIPO_MENSAJE, SUCCESS, ERROR, IS_LAST_BATCH_FLAG
-from common.mom import RabbitMQProcessor
-
+from client_registry import ClientRegistry
+from connected_client import ConnectedClient
 from result_dispatcher import ResultDispatcher
+from common.mom import RabbitMQProcessor
 
 class Gateway():
     def __init__(self, config):
         self.config = config
+
+        # Initialize gateway socket
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._gateway_socket.bind(('', int(config["DEFAULT"]["GATEWAY_PORT"])))
         self._gateway_socket.listen(int(config["DEFAULT"]["LISTEN_BACKLOG"]))
-        self._was_closed = False
-        self._clients_conected = []
-        self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
-        self._datasets_received = 0
-
-        # Connect to RabbitMQ with retry
-        self.rabbitmq = RabbitMQProcessor(
-            config=config,
-            source_queues=[],  # Gateway does not consume messages, so empty list
-            target_queues=[
-                config["DEFAULT"]["movies_raw_queue"],
-                config["DEFAULT"]["credits_raw_queue"],
-                config["DEFAULT"]["ratings_raw_queue"],
-                config["DEFAULT"]["results_queue"],
-            ],
-            rabbitmq_host=config["DEFAULT"]["rabbitmq_host"]
-        )
-        connected = self.rabbitmq.connect()
-        if not connected:
-            raise RuntimeError("Failed to connect to RabbitMQ.")
-
         logger.info(f"Gateway listening on port {config['DEFAULT']['GATEWAY_PORT']}")
+        self._was_closed = False
 
-        # Initialize ResultDispatcher
-        self.result_dispatcher = ResultDispatcher(
-            config["DEFAULT"]["rabbitmq_host"],
-            config["DEFAULT"]["results_queue"],
-            self._clients_conected
-        )
-        self.result_dispatcher.start()
+        # Initialize connected clients registry that monitors the connected clients
+        self._clients_connected = ClientRegistry()
+        self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
 
+        # Initialize and start the ResultDispatcher
+        self._result_dispatcher = None
+        self._setup_result_dispatcher()
+
+        # Nodes ready queue
+        system_nodes_str = os.getenv("SYSTEM_NODES", "")
+        logger.info(f"System nodes: {system_nodes_str}")
+        self._system_nodes = len(system_nodes_str.split(",")) if system_nodes_str else 0
+        self.source_queues = [self.config["DEFAULT"].get("nodes_ready_queue", "nodes_ready")]
+        self.rabbitmq_processor = None
+        self._ready_nodes = set()
+        self._ready_nodes_lock = threading.Lock()
+        self.rabbitmq_processor = None
+        self._initialize_rabbitmq_processor()
         try:
             with open("/tmp/gateway_ready", "w") as f:
                 f.write("ready")
@@ -59,14 +50,111 @@ class Gateway():
         except Exception as e:
             logger.error(f"Failed to create healthcheck file: {e}")
 
+        # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
+    def _setup_result_dispatcher(self):
+        """
+        Set up the ResultDispatcher.
+        """
+        self._result_dispatcher = ResultDispatcher(
+            self.config,
+            clients_connected=self._clients_connected
+        )
+        self._result_dispatcher.start()
+
+    def _initialize_rabbitmq_processor(self):
+        self.rabbitmq_processor = RabbitMQProcessor(
+            config=self.config,
+            source_queues=self.source_queues,
+            target_queues={} # Not publishing in this component
+        )
+
+        if not self.rabbitmq_processor.connect():
+            logger.error("Error connecting to RabbitMQ. Exiting...")
+            raise Exception("Error connecting to RabbitMQ.")
+        
+        logger.info("Connected to RabbitMQ.")
+
+    def _wait_for_nodes_to_connect_to_rabbit(self, timeout=3600) -> bool:
+        logger.info(f"Waiting for {self._system_nodes} nodes to connect...")
+        
+        # Iniciar el consumidor en otro hilo
+        consumer_thread = threading.Thread(
+            target=lambda: self.rabbitmq_processor.consume(self.callback),
+            daemon=True
+        )
+        consumer_thread.start()
+
+        start_time = time.time()
+        wait_time = 1  # Tiempo inicial de espera (1 segundo)
+        max_wait_time = 60  # Tiempo máximo de espera (en segundos)
+
+        while len(self._ready_nodes) < self._system_nodes:
+            logger.info(f"Connected nodes: {len(self._ready_nodes)} / {self._system_nodes}")
+            logger.info(f"Connected nodes: {self._ready_nodes}")
+
+            # Verifica si hemos excedido el tiempo máximo de espera
+            if time.time() - start_time > timeout:
+                logger.error("Timeout waiting for nodes to connect.")
+                return False
+            
+            # Espera exponencial: duplicar el tiempo de espera en cada iteración
+            time.sleep(wait_time)
+            wait_time = min(wait_time * 2, max_wait_time)  # Asegura que el tiempo de espera no supere el límite
+
+        logger.info("All nodes are connected. Ready to accept connections.")
+
+        # Detener el consumidor
+        if self.rabbitmq_processor.channel and self.rabbitmq_processor.channel.is_open:
+            self.rabbitmq_processor.stop_consuming_threadsafe()
+
+        # Esperar a que el hilo del consumidor termine
+        consumer_thread.join(timeout=5)
+        if consumer_thread.is_alive():
+            logger.warning("Consumer thread did not stop in time.")
+        else:
+            logger.info("Consumer thread stopped successfully.")
+            # Eliminar el hilo del consumidor
+            consumer_thread = None
+
+        return True
+
+    def callback(self, channel, method_frame, header_frame, body, queue_name):
+        """
+        Callback function to handle messages from the nodes_ready queue.
+        """
+        logger.info(f"Received message from nodes_ready queue: {body}")
+        if body:
+            try:
+                node_name = json.loads(body)
+                with self._ready_nodes_lock:
+                    self._ready_nodes.add(node_name)
+                logger.info(f"Node {node_name} is ready.")
+
+                channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error: {e}")
+            except Exception as e:
+                logger.error(f"Error processing message: {e}")
+
     def run(self):
+        if self._wait_for_nodes_to_connect_to_rabbit() is False:
+            logger.error("Error waiting for nodes to connect to RabbitMQ. Exiting...")
+            return
         while not self._was_closed:
             try:
-                protocol_gateway = self.__accept_new_connection()
-                self.__handle_client_connection(protocol_gateway)
+                self._reap_disconnected_clients()
+
+                new_connected_client = self.__accept_new_connection()
+                if new_connected_client is None:
+                    logger.error("Failed to accept new connection")
+                    continue
+
+                logger.info(f"New client connected: {new_connected_client.get_client_id()}")
+                new_connected_client.start()
+
             except OSError as e:
                 if self._was_closed:
                     break
@@ -74,148 +162,87 @@ class Gateway():
 
     def __accept_new_connection(self):
         logger.info("Waiting for new connections...")
-        c, addr = self._gateway_socket.accept()
-        protocol_gateway = ProtocolGateway(c)
-        self._clients_conected.append(protocol_gateway)
-        logger.info(f"New connection from {addr}")
-        return protocol_gateway
+        accepted_socket, accepted_address = self._gateway_socket.accept()
+        logger.info(f"New connection from {accepted_address}")
 
-    def __handle_client_connection(self, protocol_gateway: ProtocolGateway):
+        new_connected_client = ConnectedClient(
+            client_id = str(uuid.uuid4()),
+            client_socket = accepted_socket,
+            client_addr = accepted_address,
+            config=self.config
+        )
+        self._clients_connected.add(new_connected_client)
+        return new_connected_client
+
+    def _reap_disconnected_clients(self):
         try:
-            while protocol_gateway._client_is_connected():
-                logger.debug("Waiting for message...")
-
-                header = protocol_gateway.receive_header()
-                if header is None:
-                    logger.error("Header is None")
-                    protocol_gateway._stop_client()
-                    break
-
-                message_code, current_batch, is_last_batch, payload_len = header
-                logger.debug(f"Message code: {message_code}")
-                if message_code not in TIPO_MENSAJE:
-                    logger.error(f"Invalid message code: {message_code}")
-                    protocol_gateway._stop_client()
-                    break
-
-                if message_code == "DISCONNECT":
-                    logger.info("Client requested disconnection.")
-                    protocol_gateway._stop_client()
-                    break
-
-                logger.debug(f"{message_code} - Receiving batch {current_batch}")
-                payload = protocol_gateway.receive_payload(payload_len)
-                if not payload or len(payload) != payload_len:
-                    logger.error("Failed to receive full payload")
-                    protocol_gateway._stop_client()
-                    break
-                logger.debug(f"Received payload of length {len(payload)}")
-
-                processed_data = protocol_gateway.process_payload(message_code, payload)
-                if processed_data is None:
-                    if message_code == "BATCH_CREDITS":
-                        # May be a partial batch
-                        continue
-                    else:
-                        logger.error("Failed to process payload")
-                        break
-
-                try:
-                    queue_key = None
-                    if message_code == "BATCH_MOVIES":
-                        queue_key = self.config["DEFAULT"]["movies_raw_queue"]
-                    elif message_code == "BATCH_CREDITS":
-                        queue_key = self.config["DEFAULT"]["credits_raw_queue"]
-                    elif message_code == "BATCH_RATINGS":
-                        queue_key = self.config["DEFAULT"]["ratings_raw_queue"]
-
-                    if queue_key:
-                        batch_payload = [asdict(item) for item in processed_data]
-                        self.rabbitmq.publish(
-                            target=queue_key,
-                            message=batch_payload,
-                            msg_type=message_code
-                        )
-
-                        if is_last_batch == IS_LAST_BATCH_FLAG:
-                            self.rabbitmq.publish(
-                                target=queue_key,
-                                message={}, # Empty message to indicate end of batch
-                                msg_type="EOS"
-                            )
-
-                except (TypeError, ValueError) as e:
-                    logger.error(f"Error serializing data to JSON: {e}")
-                    logger.error(processed_data)
-                    break
-
-                if is_last_batch == IS_LAST_BATCH_FLAG:
-                    if message_code == "BATCH_MOVIES":
-                        total_lines = protocol_gateway._decoder.get_decoded_movies()
-                        dataset_name = "movies"
-                    elif message_code == "BATCH_CREDITS":
-                        total_lines = protocol_gateway._decoder.get_decoded_credits()
-                        dataset_name = "credits"
-                    elif message_code == "BATCH_RATINGS":
-                        total_lines = protocol_gateway._decoder.get_decoded_ratings()
-                        dataset_name = "ratings"
-
-                    logger.info(f"Received {total_lines} lines from {dataset_name}")
-                    self._datasets_received += 1
-
-                if self._datasets_received == self._datasets_expected:
-                    logger.info("All datasets received, processing queries.")
-                    self.result_dispatcher.join()
-                    break
-
-        except OSError as e:
-            if not protocol_gateway._client_is_connected():
-                logger.error(f"Client disconnected: {e}")
-                return
-
+            logger.info("Checking for any disconnected clients...")
+            all_clients = self._clients_connected.get_all()
+            for client in all_clients.values():
+                if not client._client_is_connected():
+                    logger.info(f"Removing disconnected client {client.get_client_id()}")
+                    self._clients_connected.remove(client)
+            logger.info("Done checking.")
         except Exception as e:
-            logger.error(f"Error handling client connection: {e}")
-            return
+            logger.error(f"Error during client cleanup: {e}")
 
     def _signal_handler(self, signum, frame):
         logger.info("Signal received, stopping server...")
         self._stop_server()
 
     def _stop_server(self):
-        try:
-            if self.result_dispatcher:
-                self.result_dispatcher.stop()
-                self.result_dispatcher.join()
-                logger.info("Result dispatcher thread stopped.")
-            
-            if self.rabbitmq:
-                self.rabbitmq.close()
+        logger.info("Stopping server...")
+
+        if self._result_dispatcher:
+            try:
+                self._result_dispatcher.stop()
+                self._result_dispatcher.join()
+                logger.info("ResultDispatcher stopped.")
+            except Exception as e:
+                logger.warning(f"Error stopping ResultDispatcher: {e}")
+
+        if self.rabbitmq_processor:
+            try:
+                self.rabbitmq_processor.close()
                 logger.info("RabbitMQ connection closed.")
+            except Exception as e:
+                logger.warning(f"Error closing RabbitMQ connection: {e}")
 
-            if self._gateway_socket:
-                self._was_closed = True
-                self._close_connected_clients()
-                try:
-                    self._gateway_socket.shutdown(socket.SHUT_RDWR)
-                except OSError as e:
-                    logger.error(f"Socket already shut down")
-                finally:
-                    if self._gateway_socket:
-                        self._gateway_socket.close()
-                        logger.info("Gateway socket closed.")
-                    try:
-                        os.remove("/tmp/gateway_ready")
-                    except FileNotFoundError:
-                        pass
-                    logger.info("Server stopped.")
+        self._was_closed = True
 
+        try:
+            self._close_connected_clients()
         except Exception as e:
-            logger.error(f"Failed to close server properly: {e}")
+            logger.warning(f"Error closing clients: {e}")
+
+        if self._gateway_socket:
+            try:
+                self._gateway_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                logger.warning("Gateway socket already shut down or not connected.")
+            except Exception as e:
+                logger.error(f"Unexpected error during socket shutdown: {e}")
+            finally:
+                try:
+                    self._gateway_socket.close()
+                    logger.info("Gateway socket closed.")
+                except Exception as e:
+                    logger.warning(f"Error closing gateway socket: {e}")
+                self._gateway_socket = None
+
+        try:
+            os.remove("/tmp/gateway_ready")
+            logger.info("Healthcheck file removed.")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.error(f"Error removing healthcheck file: {e}")
+
+        logger.info("Server stopped.")
 
     def _close_connected_clients(self):
-        for client in self._clients_conected:
-            try:
-                client._stop_client()
-            except Exception as e:
-                logger.error(f"Error closing client socket: {e}")
-        self._clients_conected.clear()
+        logger.info("Closing connected clients...")
+        try:
+            self._clients_connected.clear()
+        except Exception as e:
+            logger.error(f"Error closing client socket: {e}")

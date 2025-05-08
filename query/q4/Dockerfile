@@ -3,6 +3,7 @@ WORKDIR /app
 
 # Copy common code
 COPY common/ ./common/
+COPY query/common/ ./common/
 
 # Copy specific code
 COPY query/q4/ .

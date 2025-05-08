@@ -1,3 +1,10 @@
+# TODOS
+
+- [] Checkear manejo de flags para docker kill en todos los nodos.
+- [] Remover clientes correctamente al recibir EOS (se debe esperar a que todos los nodos de un mismo tipo reciban los EOS antes de "cerrar" el cliente, quizas el gateway envía un mensaje al final cuando terminaron todas las queries y ese mensaje se maneja como EOS).
+- [] Limpieza de memoria en Q4.
+- [] Quitar prints en general.
+
 # TP-SDI
 
 Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
@@ -21,6 +28,10 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 - Debe soportar el escalado horizontal al incrementar nodos de cómputo.
 - Se requiere el desarrollo de un Middleware para abstraer la comunicación basada en grupos.
 - Debe soportar una única ejecución del procesamiento y permitir un apagado limpio ante señales `SIGTERM`.
+- Soporte para varias ejecuciones de las consultas por parte de un cliente, sin reinicio del servidor.
+- Ejecución con varios clientes de forma concurrente.
+- Correcta limpieza de los recursos luego de cada ejecución.
+- Se asume que no existen fallas de los sistemas.
 
 ---
 
@@ -28,7 +39,7 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
 ### ⚙️ Configurar cantidad de nodos
 
-Antes de generar el archivo docker-compose.yaml, podés editar el archivo global_config.ini para ajustar la cantidad de nodos que tendrá cada componente del sistema:
+Antes de generar el archivo docker-compose.yaml, podés editar el archivo `global_config.ini` para ajustar la cantidad de nodos que tendrá cada componente del sistema:
 
 ```ini
 [DEFAULT]
@@ -47,31 +58,77 @@ join_ratings_nodes = 3
 
 ### 🔧 Generar el `docker-compose.yaml`
 
+El sistema cuenta con un script auxiliar para facilitar la generación del archivo `docker-compose.yaml` de forma dinámica, según los parámetros que definas.
+
+#### 📦 Instalar dependencias
+
+Antes de ejecutar cualquier script Python, asegurate de instalar las dependencias necesarias:
+
 ```bash
-python3 docker-compose-generator.py <output_file.yml> [-short_test]
+pip install -r requirements.txt
 ```
 
-- El flag `-short_test` monta el volumen `./datasets_for_test:/datasets` para correr el sistema con datasets reducidos (útil para pruebas rápidas).
-- Ej de uso: `python3 docker-compose-generator.py docker-compose.yaml`
+#### ✅ Uso recomendado con `generate-compose.sh`
+
+```bash
+./generate-compose.sh <output_file.yml> [-test <test_config.yaml>] [-cant_clientes N]
+```
+
+#### 📌 Parámetros
+
+- `<output_file.yml>`: nombre del archivo de salida (`docker-compose.yaml`, por ejemplo).
+
+- `-test <test_config.yaml>`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, donde el archivo YAML indica el porcentaje de cada dataset a usar.
+
+- `-cant_clientes N`: opcional. Define la cantidad de clientes (client_X) que se generan en el sistema.
+
+#### 🧪 Ejemplos
+
+- Generar configuración completa:
+
+```bash
+./generate-compose.sh docker-compose.yaml
+```
+
+- Generar para pruebas rápidas con una config YAML:
+
+```bash
+./generate-compose.sh docker-compose.yaml -test test_config.yaml
+```
+
+- Generar con 4 clientes:
+
+```bash
+./generate-compose.sh docker-compose.yaml -cant_clientes 4
+```
+
+- Combinar ambos:
+
+```bash
+./generate-compose.sh docker-compose.yaml -test test_config.yaml -cant_clientes 2
+```
+
+> 💡 Internamente, este script llama a `download_datasets.py` con el flag `-test <test_config.yaml>` y luego ejecuta `docker-compose-generator.py`.
 
 ---
 
 ### 🧪 Preparar datasets de prueba
 
 ```bash
-python3 download_datasets.py [--test <cant_lineas>]
+python3 download_datasets.py [-test <test_config.yaml>]
 ```
 
 - Por defecto descarga el dataset completo desde Kaggle.
-- Si se pasa el flag `--test`, se recortan los datasets a la cantidad de líneas especificada.
+- Si se pasa el flag `-test`, los archivos se recortan según los porcentajes definidos en el YAML.
 - Los archivos se guardan en la carpeta `./datasets_for_test`.
 
-> 💡 **Requiere instalación de `kagglehub` y `pandas`**:
->
-> ```bash
-> pip install kagglehub
-> pip install pandas
-> ```
+**Ejemplo de `test_config.yaml` con todos los datasets al 20%:**
+
+```yaml
+movies_metadata.csv: 20
+credits.csv: 20
+ratings.csv: 20
+```
 
 ---
 
@@ -100,7 +157,7 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ---
 
-## Construido con 🛠️
+## 🛠️ Construido con
 
 - [Python](https://www.python.org/)
 - [Docker](https://www.docker.com/)
@@ -110,7 +167,7 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ---
 
-## Autores ✒️
+## ✒️ Autores
 
 - **Juan Pablo Fresia** - 102.396 - [JuanPF56](https://github.com/JuanPF56)
 - **Nathalia Lucia Encinoza Vilela** - 106.295 - [nathencinoza](https://github.com/nathencinoza)
@@ -118,7 +175,7 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ---
 
-## Documentación 📑
+## 📑 Documentación
 
 - [Informe](https://docs.google.com/document/d/18aTTPUsk92PdTrNy6LHbvxGXs0G7jUu8EUrdss36D48/edit?usp=sharing)
 - [Diagramas](https://drive.google.com/file/d/15dcFuXlb_mMzxmrfxLuxFFdnBSae8ah3/view?usp=sharing)
