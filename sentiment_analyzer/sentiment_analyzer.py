@@ -1,25 +1,43 @@
 import json
 import pika
-import time
 import os
+import threading
 from configparser import ConfigParser
 from transformers import pipeline
-from common.logger import get_logger
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from common.mom import RabbitMQProcessor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from collections import defaultdict
+
+from common.logger import get_logger
+logger = get_logger("SentimentAnalyzer")
+
+from common.mom import RabbitMQProcessor
+from common.client_state_manager import ClientState, ClientManager
+
 EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
-logger = get_logger("SentimentAnalyzer")
-from common.client_state_manager import ClientState
-from common.client_state_manager import ClientManager
-
 MAX_WORKERS = os.cpu_count() or 4
+
+# Global variable for model in each process
+sentiment_pipe = None
+
+def init_sentiment_model():
+    global sentiment_pipe
+    sentiment_pipe = pipeline("sentiment-analysis")
+
+def analyze_sentiment_process(text: str) -> str:
+    if not text or not text.strip():
+        return "neutral"
+    try:
+        pipe = pipeline("sentiment-analysis")
+        result = pipe(text, truncation=True)[0]
+        label = result["label"].lower()
+        logger.debug(f"Sentiment analysis result: {label} for text: {text[:50]}...")
+        return label if label in {"positive", "negative"} else "neutral"
+    except Exception:
+        return "neutral"
 
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
-        self.sentiment_pipeline = pipeline("sentiment-analysis")
         self.batch_negative = defaultdict(list)
         self.batch_positive = defaultdict(list)
         self.lock = threading.Lock()
@@ -48,23 +66,10 @@ class SentimentAnalyzer:
             nodes_to_await=self.eos_to_await,
         )
 
-    def analyze_sentiment(self, text: str) -> str:
-        if not text or not text.strip():
-            logger.debug("Received empty or whitespace-only text for sentiment analysis.")
-            return "neutral"
-        try:
-            result = self.sentiment_pipeline(text, truncation=True)[0]
-            label = result["label"].lower()
-
-            if label in {"positive", "negative"}:
-                logger.debug(f"Sentiment analysis result: {label} for text: {text[:50]}...")
-                return label
-            else:
-                logger.debug(f"Unexpected sentiment label '{label}' for text: {text[:50]}...")
-                return "neutral"
-        except Exception as e:
-            logger.error(f"Error during sentiment analysis: {e}")
-            return "neutral"
+        self.executor = ProcessPoolExecutor(
+            max_workers=MAX_WORKERS,
+            initializer=init_sentiment_model
+        )
 
     def _mark_eos_received(self, body, channel, headers, client_state: ClientState):
         try:
@@ -141,33 +146,27 @@ class SentimentAnalyzer:
 
 
             movies_batch = json.loads(body)
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                future_to_movie = {
-                    executor.submit(self.analyze_sentiment, movie.get("overview")): movie
-                    for movie in movies_batch
-                }
+            future_to_movie = {
+                self.executor.submit(analyze_sentiment_process, movie.get("overview")): movie
+                for movie in movies_batch
+            }
+            for future in as_completed(future_to_movie):
+                movie = future_to_movie[future]
+                try:
+                    sentiment = future.result()
+                    logger.debug(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
 
-                for future in as_completed(future_to_movie):
-                    movie = future_to_movie[future]
-                    try:
-                        sentiment = future.result()
-                        logger.debug(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
+                    if sentiment == "neutral":
+                        continue
+                    elif sentiment == "positive":
+                        with self.lock:
+                            self.batch_positive[key].append(movie)
+                    elif sentiment == "negative":
+                        with self.lock:
+                            self.batch_negative[key].append(movie)
 
-                        if sentiment == "neutral":
-                            logger.debug(f"Movie '{movie.get('original_title')}' is neutral, skipping.")
-                            continue
-                        elif sentiment == "positive":
-                            logger.debug(f"Movie '{movie.get('original_title')}' is positive.")
-                            with self.lock:
-                                self.batch_positive[key].append(movie)
-                        elif sentiment == "negative":
-                            logger.debug(f"Movie '{movie.get('original_title')}' is negative.")
-                            with self.lock:
-                                self.batch_negative[key].append(movie)
-
-                    except Exception as e:
-                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
-                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
+                except Exception as e:
+                    logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
 
 
             with self.lock:
