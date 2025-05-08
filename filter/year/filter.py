@@ -62,20 +62,15 @@ class YearFilter(FilterBase):
             data = json.loads(body)
             node_id = data.get("node_id")
             count = data.get("count", 0)
-            logger.info(f"Count received: {count}")
         except json.JSONDecodeError:
             logger.error("Failed to decode EOS message")
             return
 
         if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
             count += 1
-            logger.info("COUNT INCREMENTED" + str(count))
-            logger.info(f"EOS count for node {node_id}: {count}")
             client_state.mark_eos(input_queue, node_id)
             self._check_eos_flags(headers, client_state)
 
-        logger.info(f"EOS received for node {node_id} from input queue {input_queue}")
-        logger.info(f"Count of EOS: {count} < {self.nodes_of_type}")
         # If this isn't the last node, send the EOS message back to the input queue
         if count < self.nodes_of_type: 
             # Send EOS back to input queue for other year nodes
@@ -103,7 +98,6 @@ class YearFilter(FilterBase):
         """
         Propagate the end of stream (EOS) to all output queues.
         """
-        logger.debug("Sending EOS to output queue and exchange")
         self.rabbitmq_processor.publish(
             target=self.target_queue,
             message={"node_id": self.node_id, "count": 0},
@@ -111,7 +105,6 @@ class YearFilter(FilterBase):
             headers=headers,
             priority=1
         )
-        logger.info(f"EOS message sent to {self.target_queue}")
         self.rabbitmq_processor.publish(
             target=self.target_exchange,
             message={"node_id": self.node_id, "count": 0},
@@ -120,7 +113,6 @@ class YearFilter(FilterBase):
             headers=headers,
             priority=1
         )
-        logger.info(f"EOS message sent to {self.target_exchange}")
 
     def _handle_eos(self, input_queue, body, method, headers, client_state: ClientState):
         logger.debug(f"Received EOS from {input_queue}")
@@ -131,7 +123,6 @@ class YearFilter(FilterBase):
             batch = self.processed_batch[input_queue][key]
             exchange = input_queue == self.source_queues[0]
             target = self.target_exchange if exchange else self.target_queue
-            logger.info(f"Publishing {len(batch)} movies to {target} for {key}")
             self.rabbitmq_processor.publish(
                 target=target,
                 message=batch,
@@ -166,7 +157,6 @@ class YearFilter(FilterBase):
         if len(self.processed_batch[input_queue][key]) >= self.batch_size:
             exchange = input_queue == self.source_queues[0]
             target = self.target_exchange if exchange else self.target_queue
-            logger.info(f"Publishing {len(self.processed_batch[input_queue][key])} movies to {target}")
 
             self.rabbitmq_processor.publish(
                 target=target,

@@ -81,7 +81,6 @@ class ArgProdActorsQuery(QueryBase):
                 return
             if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
                 client_state.mark_eos(input_queue, node_id)
-                logger.info(f"EOS received for node {node_id}.")
             else:
                 logger.warning(f"EOS message for node {node_id} already received. Ignoring duplicate.")
                 self.rabbitmq_processor.acknowledge(method)

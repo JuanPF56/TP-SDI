@@ -32,7 +32,6 @@ class ArgSpainGenreQuery(QueryBase):
         }
 
         logger.info(f"RESULTS for {key}: {results}")
-        logger.info(f"All results: {self.results_by_request}")
 
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"],
@@ -50,9 +49,6 @@ class ArgSpainGenreQuery(QueryBase):
 
         key = (client_id, request_number)
         
-        logger.info(f"Processing batch of {len(movies_batch)} movies for {key}")
-        logger.info(f"Batch content: {movies_batch}")
-
         for movie in movies_batch:
             title = movie.get("original_title")
             genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
