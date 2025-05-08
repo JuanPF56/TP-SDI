@@ -28,6 +28,7 @@ class JoinBase:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.stopped = False
 
         self.client_manager = ClientManager(
             expected_queues=self.input_queue,
@@ -69,17 +70,13 @@ class JoinBase:
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
         try:
-            if self.rabbitmq_processor:
-                self.log_info("Stopping message consumption...")
-                self.rabbitmq_processor.stop_consuming()
-                self.log_info("Closing RabbitMQ connection...")
-                self.rabbitmq_processor.close()
+            self._close_connection()
         except Exception as e:
             self.log_info(f"Error closing connection: {e}")
         finally:
             self.manager.shutdown()
-            os.kill(self.movies_handler.pid, signal.SIGTERM)
-            self.movies_handler.join()
+            self.movies_handler.terminate()
+            self.movies_handler.join(timeout=1)
 
     def process(self):
         # Start the process to receive the movies table
@@ -88,7 +85,8 @@ class JoinBase:
         # Start the loop to receive the batches
         self.receive_batch()
 
-        self.movies_handler.join()
+        self.movies_handler.terminate()
+        self.movies_handler.join(timeout=1)
 
     def receive_batch(self):
         """
@@ -96,12 +94,27 @@ class JoinBase:
         This method will wait for the movies table to be ready before 
         starting to consume messages.
         """
+        try:
         # Wait for the movies table to be ready
-        self.movies_handler_ready.wait()
+            self.movies_handler_ready.wait()
 
-        self.log_info("Movies table is ready for at least 1 client. Starting to receive batches...")
+            self.log_info("Movies table is ready for at least 1 client. Starting to receive batches...")
 
-        self.rabbitmq_processor.consume(self.process_batch)
+            self.rabbitmq_processor.consume(self.process_batch)
+        except KeyboardInterrupt:
+            self.log_info("Shutting down gracefully...")
+        except Exception as e:
+            self.log_error(f"Error during consumption: {e}")
+        finally:
+            self._close_connection()
+
+    def _close_connection(self):
+        if not self.stopped:
+            self.log_info("Closing RabbitMQ connection...")
+            self.rabbitmq_processor.stop_consuming()
+            self.rabbitmq_processor.close()
+            self.log_info("Connection closed.")   
+            self.stopped = True
 
     def _handle_eos(self, queue_name, body, method, headers, client_state):
         self.log_debug(f"Received EOS from {queue_name}")
@@ -193,10 +206,7 @@ class JoinBase:
                     )
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
-            self.rabbitmq_processor.stop_consuming()
-            self.rabbitmq_processor.close()
-            self.rabbitmq_processor.connect()
-            self.receive_batch()
+            self.rabbitmq_processor.reconnect_and_restart(self.process_batch)
         except Exception as e:
             self.log_error(f"[ERROR] Unexpected error in process_batch: {e}")
         finally:

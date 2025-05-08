@@ -80,7 +80,8 @@ class SoloCountryBudgetQuery(QueryBase):
                 return
             
             if client_state.has_queue_received_eos_from_node(input_queue, node_id):
-                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id}-{request_number}. Ignoring.")
+                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id}-{request_number}. Ignoring.")  
+                self.rabbitmq_processor.acknowledge(method)
                 return
 
             client_state.mark_eos(input_queue, node_id)

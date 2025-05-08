@@ -83,10 +83,12 @@ class ArgSpainGenreQuery(QueryBase):
                 node_id = data.get("node_id")
             except json.JSONDecodeError:
                 logger.error("Failed to decode EOS message")
+                self.rabbitmq_processor.acknowledge(method)
                 return
 
             if client_state.has_queue_received_eos(input_queue):
-                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id} and request number {request_number}")
+                logger.warning(f"Duplicated EOS from node {node_id} for request {client_id} and request number {request_number}")   
+                self.rabbitmq_processor.acknowledge(method)
                 return
 
             client_state.mark_eos(input_queue, node_id)

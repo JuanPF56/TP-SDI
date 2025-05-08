@@ -56,12 +56,12 @@ class SentimentAnalyzer:
         print("SIGTERM signal received. Closing connection...")
         try:
             if self.rabbitmq_processor:
-                self.logger.info("Stopping message consumption...")
+                logger.info("Stopping message consumption...")
                 self.rabbitmq_processor.stop_consuming()
-                self.logger.info("Closing RabbitMQ connection...")
+                logger.info("Closing RabbitMQ connection...")
                 self.rabbitmq_processor.close()
         except Exception as e:
-            self.logger.error(f"Error closing connection: {e}")
+            logger.error(f"Error closing connection: {e}")
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():

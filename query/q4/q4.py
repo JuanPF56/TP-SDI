@@ -79,6 +79,7 @@ class ArgProdActorsQuery(QueryBase):
                 node_id = data.get("node_id")
             except json.JSONDecodeError:
                 logger.error("Failed to decode EOS message")
+                self.rabbitmq_processor.acknowledge(method)
                 return
             if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
                 client_state.mark_eos(input_queue, node_id)

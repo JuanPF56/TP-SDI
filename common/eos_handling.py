@@ -56,7 +56,7 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
     logger.debug(f"Count of EOS: {count} < {nodes_of_type}")
     # If this isn't the last node, send the EOS message back to the input queue
     if count < nodes_of_type: 
-        # Send EOS back to input queue for other year nodes
+        # Send EOS back to input queue for other nodes
         rabbitmq_processor.publish(
             target=input_queue,
             message={"node_id": n_id, "count": count},
@@ -64,7 +64,7 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
             headers=headers,
             priority=1
         )
-
+        
 def check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                     client_state: ClientState, target_queues=None, target_exchanges=None):
     """
@@ -87,7 +87,7 @@ def send_eos(headers, node_id, rabbitmq_processor: RabbitMQProcessor,
             targets = [target_queues]
         else:
             targets = target_queues
-        for target_queue in targets:     
+        for target_queue in targets:
             rabbitmq_processor.publish(
                 target=target_queue,
                 message={"node_id": node_id, "count": 0},
@@ -111,6 +111,7 @@ def send_eos(headers, node_id, rabbitmq_processor: RabbitMQProcessor,
                 priority=1
             )
             logger.info(f"EOS message sent to {target_exchange}")
+        
 
 
 

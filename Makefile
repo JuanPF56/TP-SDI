@@ -65,6 +65,13 @@ docker-compose-logs-to-file:
 	done
 .PHONY: docker-compose-logs-to-file
 
+# Kill all running containers
+docker-kill:
+	@echo "🛑 Deteniendo todos los contenedores..."
+	docker kill $(docker ps -q) --signal=SIGTERM
+	@echo "✅ Todos los contenedores detenidos."
+.PHONY: docker-kill
+
 # Clean up previous logs
 clean-logs:
 	@echo "🧽 Borrando todos los logs en ./logs/..."

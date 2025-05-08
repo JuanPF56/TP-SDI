@@ -113,16 +113,23 @@ class RabbitMQProcessor:
                 on_message_callback=create_callback_wrapper(queue),
                 auto_ack=False
             )
-
-        logger.info("Esperando mensajes...")
-        self.channel.start_consuming()
+        try:
+            logger.info("Esperando mensajes...")
+            self.channel.start_consuming()
+        except pika.exceptions.AMQPConnectionError as e:
+            logger.error(f"Error de conexión al consumir mensajes: {e}")
+        except pika.exceptions.ChannelClosedByBroker as e:
+            logger.warning(f"Canal cerrado por el broker: {e}")
+        except Exception as e:
+            logger.error(f"Error inesperado al consumir mensajes: {e}")
         
     def publish(self, target, message, msg_type=None, exchange=False, headers=None, priority=10):
         if not self.connection or self.connection.is_closed:
             logger.warning("Publish aborted: RabbitMQ connection is closed.")
-            return
+            return False
         
         channel = None
+        success = False
 
         try:
             channel = self.connection.channel()
@@ -143,6 +150,7 @@ class RabbitMQProcessor:
                 properties=properties
             )
 
+            success = True
             logger.debug(f"Mensaje enviado a: {target}, tipo: {msg_type}, headers: {headers}")
 
         except pika.exceptions.AMQPConnectionError as e:
@@ -156,6 +164,8 @@ class RabbitMQProcessor:
                 channel.close()
             except Exception as e:
                 logger.warning(f"No se pudo cerrar el canal correctamente: {e}")
+                return False
+            return success
 
     def stop_consuming(self):
         """
