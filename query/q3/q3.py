@@ -32,6 +32,7 @@ class ArgProdRatingsQuery(QueryBase):
         for movie_id, movie_data in client_movies.items():
             if movie_data["rating_count"] > 0:
                 found_valid_ratings = True
+                logger.debug(f"Movie ID: {movie_id}, Ratings: {movie_data['rating_count']}, Sum: {movie_data['rating_sum']}")
                 avg = movie_data["rating_sum"] / movie_data["rating_count"]
 
                 if avg > results["highest"]["rating"]:
