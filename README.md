@@ -1,7 +1,3 @@
-# TODOS
-
-- [] Checkear manejo de flags para docker kill en todos los nodos.
-
 # TP-SDI
 
 Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
