@@ -6,7 +6,7 @@ import signal
 
 from common.client_state import ClientState
 from common.client_state_manager import ClientManager
-from common.eos_handling import mark_eos_received
+from common.eos_handling import handle_eos
 from common.mom import RabbitMQProcessor
 from common.movies_handler import MoviesHandler
 
@@ -102,12 +102,14 @@ class JoinBase:
 
     def _handle_eos(self, queue_name, body, method, headers, client_state):
         self.log_debug(f"Received EOS from {queue_name}")
-        mark_eos_received(body, self.node_id, queue_name, self.input_queue, headers, self.nodes_of_type,
-                          self.rabbitmq_processor, client_state, self.client_manager,
-                          target_queues=self.output_queue, extra_steps=self._delete_table)
+        handle_eos(body, self.node_id, queue_name, self.input_queue, headers, self.nodes_of_type,
+                          self.rabbitmq_processor, client_state, target_queues=self.output_queue)
+        self._free_resources(client_state)
     
-    def _delete_table(self, client_state: ClientState):
-        self.movies_handler.remove_movies_table(client_state.client_id, client_state.request_id)
+    def _free_resources(self, client_state: ClientState):
+        if client_state and client_state.has_received_all_eos(self.input_queue):
+            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+            self.movies_handler.remove_movies_table(client_state.client_id, client_state.request_id)
 
     def process_batch(self, ch, method, properties, body, input_queue):
         """

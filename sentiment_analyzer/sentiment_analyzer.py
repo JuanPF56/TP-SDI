@@ -4,7 +4,7 @@ import time
 import os
 from configparser import ConfigParser
 from transformers import pipeline
-from common.eos_handling import mark_eos_received
+from common.eos_handling import handle_eos
 from common.logger import get_logger
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -88,10 +88,14 @@ class SentimentAnalyzer:
                     )
                     logger.info(f"Sent {len(self.batch_negative[key])} negative movies to {self.target_queues[1]}")
                     self.batch_negative[key] = []
-        mark_eos_received(body, self.node_id, input_queue, self.source_queue, headers, self.nodes_of_type,
-                          self.rabbitmq_processor, client_state, self.client_manager,
-                          target_queues=self.target_queues)
+        handle_eos(body, self.node_id, input_queue, self.source_queue, headers, self.nodes_of_type,
+                          self.rabbitmq_processor, client_state, target_queues=self.target_queues)
+        self._free_resources(client_state)
 
+    def _free_resources(self, client_state: ClientState):
+        if client_state and client_state.has_received_all_eos(self.source_queue):
+            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+            
     def callback(self, ch, method, properties, body, input_queue):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"

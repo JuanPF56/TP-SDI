@@ -3,7 +3,7 @@ import json
 from collections import defaultdict
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
-from common.eos_handling import mark_eos_received
+from common.eos_handling import handle_eos
 from common.logger import get_logger
 logger = get_logger("Filter-Cleanup")
 
@@ -101,16 +101,17 @@ class CleanupFilter(FilterBase):
                 logger.warning("Batch not empty when EOS received. Publishing remaining batch.")
                 self._publish_batch(queue_name, self.batches[key], headers, None)
                 self.batches[key].clear()
-        mark_eos_received(body, self.node_id, queue_name, queue_name, headers, self.nodes_of_type,
-                          self.rabbitmq_processor, client_state, self.client_manager,
-                          target_queues=self.target_queues.get(queue_name),
-                          extra_steps=self._delete_batch)
+        handle_eos(body, self.node_id, queue_name, queue_name, headers, 
+                          self.nodes_of_type, self.rabbitmq_processor, client_state,
+                          target_queues=self.target_queues.get(queue_name))
+        self._free_resources(client_state)
         self.rabbitmq_processor.acknowledge(method)
 
-    def _delete_batch(self, client_state: ClientState): 
+    def _free_resources(self, client_state: ClientState): 
         try:
-            if client_state.has_received_all_eos(self.source_queues):  
+            if client_state and client_state.has_received_all_eos(self.source_queues):
                 del self.batches[(client_state.client_id, client_state.request_id)]
+                self.client_manager.remove_client(client_state.client_id, client_state.request_id)
         except KeyError:
             logger.warning(f"Batch not found for client {client_state.client_id} and request {client_state.request_id}.")
 

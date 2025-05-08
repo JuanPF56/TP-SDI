@@ -1,7 +1,7 @@
 import configparser
 import json
 
-from common.eos_handling import mark_eos_received
+from common.eos_handling import handle_eos
 from common.logger import get_logger
 logger = get_logger("Filter-Production")
 from collections import defaultdict
@@ -57,10 +57,15 @@ class ProductionFilter(FilterBase):
             if len(self.batch_arg_spain[key]) > 0:
                 self._publish_batch(queue=self.target_queues[queue_name][2], batch=self.batch_arg_spain[key], headers=headers)
                 self.batch_arg_spain[key] = []
-        mark_eos_received(body, self.node_id, queue_name, self.source_queues, headers, self.nodes_of_type,
-                          self.rabbitmq_processor, client_state, self.client_manager,
+        handle_eos(body, self.node_id, queue_name, self.source_queues, headers,
+                          self.nodes_of_type, self.rabbitmq_processor, client_state,
                           target_queues=self.target_queues.get(queue_name))
+        self._free_resources(client_state)
         self.rabbitmq_processor.acknowledge(method)
+
+    def _free_resources(self, client_state: ClientState): 
+        if client_state and client_state.has_received_all_eos(self.source_queues):
+            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
     def _process_movies_batch(self, movies_batch, client_state):
         key = (client_state.client_id, client_state.request_id)
