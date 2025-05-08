@@ -39,9 +39,9 @@ echo "¿Modo test activado?: $modo_test"
 # Ejecutamos download_datasets.py si es modo test
 if [ "$modo_test" == "Sí" ]; then
     echo "Ejecutando download_datasets.py con -test $test_config_path"
-    python download_datasets.py -test "$test_config_path"
+    python3 download_datasets.py -test "$test_config_path"
 fi
 
 # Generamos el archivo de docker compose
-python docker-compose-generator.py "$filename" "${args[@]}"
+python3 docker-compose-generator.py "$filename" "${args[@]}"
 echo "Archivo generado con éxito."
