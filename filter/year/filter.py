@@ -71,9 +71,10 @@ class YearFilter(FilterBase):
             count += 1
             logger.info("COUNT INCREMENTED" + str(count))
             logger.info(f"EOS count for node {node_id}: {count}")
+            client_state.mark_eos(input_queue, node_id)
+            self._check_eos_flags(headers, client_state)
 
         logger.info(f"EOS received for node {node_id} from input queue {input_queue}")
-        client_state.mark_eos(input_queue, node_id)
         logger.info(f"Count of EOS: {count} < {self.nodes_of_type}")
         # If this isn't the last node, send the EOS message back to the input queue
         if count < self.nodes_of_type: 
@@ -140,7 +141,6 @@ class YearFilter(FilterBase):
                 )
             self.processed_batch[input_queue].clear()
         self._mark_eos_received(body, input_queue, headers, client_state)
-        self._check_eos_flags(headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_movies_batch(self, movies_batch, input_queue, client_state: ClientState):

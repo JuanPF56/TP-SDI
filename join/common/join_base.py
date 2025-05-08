@@ -120,6 +120,7 @@ class JoinBase:
         self.log_info(f"EOS for node {node_id} {input_queue} count {count} client {self.current_client_id} request {self.current_request_number}")
         if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
             client_state.mark_eos(input_queue, node_id)
+            self._send_eos(headers, client_state)
             count +=1
         
         # If this isn't the last node, send the EOS message back to the input queue

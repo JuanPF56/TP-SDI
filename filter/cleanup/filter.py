@@ -140,6 +140,11 @@ class CleanupFilter(FilterBase):
                         priority=1
                     )
                     logger.info(f"EOS sent to target queue: {targets}")
+            logger.info(f"Checking if all EOS have been received for queue {queue_name}")
+            if client_state.has_received_all_eos(self.source_queues):
+                logger.info("All source queues have sent EOS. Sending EOS to target queues.")
+                del self.batches[(client_state.client_id, client_state.request_id)]
+                # self.client_manager.remove_client(client_state.client_id, client_state.request_id)
         
         logger.info(f"EOS count for queue {queue_name}: {count}")
         if count < self.nodes_of_type:
@@ -152,12 +157,6 @@ class CleanupFilter(FilterBase):
                 priority=1
             )
 
-        logger.info(f"Checking if all EOS have been received for queue {queue_name}")
-        
-        if client_state.has_received_all_eos(self.source_queues):
-            logger.info("All source queues have sent EOS. Sending EOS to target queues.")
-            del self.batches[(client_state.client_id, client_state.request_id)]
-            # self.client_manager.remove_client(client_state.client_id, client_state.request_id)
 
     def _handle_eos(self, queue_name, body, method, msg_type, headers, client_state: ClientState):
         key = (client_state.client_id, client_state.request_id)

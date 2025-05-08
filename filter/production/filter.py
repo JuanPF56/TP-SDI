@@ -53,6 +53,7 @@ class ProductionFilter(FilterBase):
             
         if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
             client_state.mark_eos(input_queue, node_id)
+            self._send_eos(headers, client_state)
             count +=1
         
         # If this isn't the last node, send the EOS message back to the input queue
@@ -109,7 +110,6 @@ class ProductionFilter(FilterBase):
             self.batch_arg_spain[key] = []
 
         self._mark_eos_received(body, queue_name, headers, client_state)
-        self._send_eos(headers, client_state)
         self.rabbitmq_processor.acknowledge(method)
 
     def _process_movies_batch(self, movies_batch, client_state):
