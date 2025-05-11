@@ -1,21 +1,12 @@
-# Usa una imagen base de Hugging Face que ya tiene transformers y torch
-FROM huggingface/transformers-pytorch-cpu
-
-# Usa Python 3.9 explícitamente (si es posible, verificar en base image)
-# Ya viene instalado en esta imagen base
-
-# Establece el directorio de trabajo
+FROM base_node:latest
 WORKDIR /app
 
-# Instalá las dependencias
-RUN pip install --no-cache-dir pika
+# Install TextBlob and its corpora
+RUN pip install --no-cache-dir pika textblob && \
+    python3 -m textblob.download_corpora
 
-# ⚠️ Predescarga el modelo para evitar fallos al iniciar
-RUN python3 -c "from transformers import pipeline; pipeline('sentiment-analysis')"
-
-# Copia el código fuente
+# Copy common code
 COPY sentiment_analyzer/ ./
 COPY common/ ./common/
 
-# Ejecuta el servicio
 CMD ["python3", "sentiment_analyzer.py"]

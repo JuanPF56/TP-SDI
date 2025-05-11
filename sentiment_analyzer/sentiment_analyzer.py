@@ -1,27 +1,26 @@
 import json
 import signal
 import pika
-import time
 import os
 from configparser import ConfigParser
-from transformers import pipeline
-from common.eos_handling import handle_eos
-from common.logger import get_logger
+from textblob import TextBlob
+from collections import defaultdict
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from common.mom import RabbitMQProcessor
-from collections import defaultdict
-EOS_TYPE = "EOS"
-SECONDS_TO_HEARTBEAT = 600
+
+from common.eos_handling import handle_eos
+from common.logger import get_logger
 logger = get_logger("SentimentAnalyzer")
+from common.mom import RabbitMQProcessor
 from common.client_state_manager import ClientState
 from common.client_state_manager import ClientManager
 
+EOS_TYPE = "EOS"
+SECONDS_TO_HEARTBEAT = 600
 MAX_WORKERS = os.cpu_count() or 4
 
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
-        self.sentiment_pipeline = pipeline("sentiment-analysis")
         self.batch_negative = defaultdict(list)
         self.batch_positive = defaultdict(list)
         self.lock = threading.Lock()
@@ -68,14 +67,15 @@ class SentimentAnalyzer:
             logger.debug("Received empty or whitespace-only text for sentiment analysis.")
             return "neutral"
         try:
-            result = self.sentiment_pipeline(text, truncation=True)[0]
-            label = result["label"].lower()
+            blob = TextBlob(text)
+            polarity = blob.sentiment.polarity
+            logger.debug(f"Text sentiment polarity: {polarity} for text: {text[:50]}...")
 
-            if label in {"positive", "negative"}:
-                logger.debug(f"Sentiment analysis result: {label} for text: {text[:50]}...")
-                return label
+            if polarity > 0.1:
+                return "positive"
+            elif polarity < -0.1:
+                return "negative"
             else:
-                logger.debug(f"Unexpected sentiment label '{label}' for text: {text[:50]}...")
                 return "neutral"
         except Exception as e:
             logger.error(f"Error during sentiment analysis: {e}")

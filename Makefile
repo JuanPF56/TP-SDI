@@ -47,24 +47,6 @@ docker-compose-logs:
 	docker compose -f docker-compose.yaml logs -f
 .PHONY: docker-compose-logs
 
-
-# Logs dividided in multiple terminals
-docker-compose-logs-to-file:
-	@echo "🧹 Limpiando logs anteriores..."
-	@rm -rf logs && mkdir -p logs
-
-	@echo "📜 Guardando logs actuales de servicios en archivos dentro de ./logs/... "
-	@services="gateway client join_table join_batch_credits join_batch_ratings filter_cleanup filter_year filter_production sentiment_analyzer query_q1 query_q2 query_q3 query_q4 query_q5"; \
-	for svc in $$services; do \
-		echo "📝 Guardando logs para $$svc en logs/$$svc.log"; \
-		if docker compose -f docker-compose.yaml logs --no-log-prefix $$svc | tee logs/$$svc.log; then \
-			echo "✅ Logs de $$svc guardados con éxito."; \
-		else \
-			echo "⚠️  Servicio $$svc no encontrado o no está corriendo, se saltea."; \
-		fi; \
-	done
-.PHONY: docker-compose-logs-to-file
-
 # Kill all running containers
 docker-kill:
 	@echo "🛑 Deteniendo todos los contenedores..."
@@ -75,10 +57,3 @@ docker-kill:
 		echo "⚠️  No hay contenedores en ejecución."; \
 	fi
 .PHONY: docker-kill
-
-# Clean up previous logs
-clean-logs:
-	@echo "🧽 Borrando todos los logs en ./logs/..."
-	@rm -rf logs
-	@echo "✅ Logs eliminados."
-.PHONY: clean-logs

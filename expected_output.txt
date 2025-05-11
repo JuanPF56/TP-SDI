@@ -1,0 +1,231 @@
+LOS 3 DATASETS AL 100% (con el nuevo modelo de sentiment):
+
+    - Catidad de clientes: 1
+
+    - Nodos:
+        cleanup_filter_nodes = 4
+        production_filter_nodes = 2
+        year_filter_nodes = 2
+        sentiment_analyzer_nodes = 3
+        join_credits_nodes = 3
+        join_ratings_nodes = 3
+
+    - Tiempo: (compu Cami)
+        2 minutos para Q1, Q2 y Q5;
+        4 minutos para Q4 (actors/credits);
+        15 minutos para Q3 (ratings):
+
+    - Salida:
+{
+  "numero_de_consulta": 1,
+  "query_id": "Q2",
+  "results": [
+    [
+      "United States of America",
+      120128886644
+    ],
+    [
+      "France",
+      2283781209
+    ],
+    [
+      "United Kingdom",
+      1611604610
+    ],
+    [
+      "India",
+      1184682797
+    ],
+    [
+      "Japan",
+      832585873
+    ]
+  ]
+}
+
+{
+  "numero_de_consulta": 1,
+  "query_id": "Q1",
+  "results": {
+    "Plata quemada": [
+      "Crime"
+    ],
+    "La Ciénaga": [
+      "Comedy",
+      "Drama"
+    ],
+    "En la ciudad sin límites": [
+      "Thriller",
+      "Drama"
+    ],
+    "El abrazo partido": [
+      "Drama",
+      "Foreign"
+    ],
+    "Lugares comunes": [
+      "Drama"
+    ],
+    "Whisky": [
+      "Comedy",
+      "Drama",
+      "Foreign"
+    ],
+    "Bombón, el perro": [
+      "Drama"
+    ],
+    "El método": [
+      "Drama",
+      "Thriller"
+    ],
+    "Todas las azafatas van al cielo": [
+      "Drama",
+      "Romance",
+      "Foreign"
+    ],
+    "Liverpool": [
+      "Drama"
+    ],
+    "Aparecidos": [
+      "Horror",
+      "Thriller",
+      "Mystery"
+    ],
+    "El niño pez": [
+      "Drama",
+      "Thriller",
+      "Romance",
+      "Foreign"
+    ],
+    "Cleopatra": [
+      "Drama",
+      "Comedy",
+      "Foreign"
+    ],
+    "Conversaciones con mamá": [
+      "Comedy",
+      "Drama",
+      "Foreign"
+    ],
+    "La educación de las hadas": [
+      "Drama"
+    ],
+    "Nicotina": [
+      "Drama",
+      "Action",
+      "Comedy",
+      "Thriller"
+    ],
+    "La niña santa": [
+      "Drama",
+      "Foreign"
+    ],
+    "El Aura": [
+      "Crime",
+      "Drama",
+      "Thriller"
+    ],
+    "Familia rodante": [
+      "Drama",
+      "Comedy"
+    ],
+    "Tetro": [
+      "Drama",
+      "Mystery"
+    ],
+    "El secreto de sus ojos": [
+      "Crime",
+      "Drama",
+      "Mystery",
+      "Romance"
+    ],
+    "La mujer sin cabeza": [
+      "Drama",
+      "Mystery",
+      "Thriller"
+    ],
+    "El último verano de La Boyita": [
+      "Drama"
+    ],
+    "Roma": [
+      "Drama",
+      "Foreign"
+    ],
+    "La buena vida": [
+      "Drama"
+    ]
+  }
+}
+
+{
+  "numero_de_consulta": 1,
+  "query_id": "Q5",
+  "results": {
+    "average_positive_rate": 8104.966414353625,
+    "average_negative_rate": 3.6056914961782978
+  }
+}
+
+{
+  "numero_de_consulta": 1,
+  "query_id": "Q4",
+  "results": {
+    "actors": [
+      {
+        "name": "Ricardo Darín",
+        "count": 17
+      },
+      {
+        "name": "Diego Peretti",
+        "count": 7
+      },
+      {
+        "name": "Valeria Bertuccelli",
+        "count": 7
+      },
+      {
+        "name": "Inés Efron",
+        "count": 7
+      },
+      {
+        "name": "Leonardo Sbaraglia",
+        "count": 6
+      },
+      {
+        "name": "Rodrigo de la Serna",
+        "count": 6
+      },
+      {
+        "name": "Alejandro Awada",
+        "count": 6
+      },
+      {
+        "name": "Arturo Goetz",
+        "count": 6
+      },
+      {
+        "name": "Rafael Spregelburd",
+        "count": 6
+      },
+      {
+        "name": "Mercedes Morán",
+        "count": 5
+      }
+    ]
+  }
+}
+
+{
+  "numero_de_consulta": 1,
+  "query_id": "Q3",
+  "results": {
+    "highest": {
+      "title": "La educación prohibida",
+      "rating": 4.0
+    },
+    "lowest": {
+      "title": "Left for Dead",
+      "rating": 1.0
+    }
+  }
+}
+
