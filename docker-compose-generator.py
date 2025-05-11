@@ -210,7 +210,8 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         "entrypoint": "python3 /app/main.py",
         "volumes": [
             "./gateway/config.ini:/app/config.ini",
-            "./resultados:/app/resultados"
+            "./resultados:/app/resultados",
+            "./client_logs:/app/client_logs"
         ],
         "environment": {
             "SYSTEM_NODES": ",".join(full_dependencies),

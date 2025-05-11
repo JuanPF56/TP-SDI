@@ -465,6 +465,7 @@ services:
     volumes:
     - ./gateway/config.ini:/app/config.ini
     - ./resultados:/app/resultados
+    - ./client_logs:/app/client_logs
     environment:
       SYSTEM_NODES: filter_cleanup_1,filter_cleanup_2,filter_cleanup_3,filter_cleanup_4,filter_year_1,filter_year_2,filter_production_1,filter_production_2,sentiment_analyzer_1,sentiment_analyzer_2,sentiment_analyzer_3,join_credits_1,join_credits_2,join_credits_3,join_ratings_1,join_ratings_2,join_ratings_3,q1,q2,q3,q4,q5
     depends_on:

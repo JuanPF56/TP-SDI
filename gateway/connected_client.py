@@ -1,7 +1,10 @@
 import socket
 import threading
-import signal
 from dataclasses import asdict
+
+import logging
+import os
+from datetime import datetime, timedelta
 
 from common.logger import get_logger
 logger = get_logger("ConnectedClient")
@@ -12,6 +15,21 @@ from common.mom import RabbitMQProcessor
 
 DATASETS_PER_REQUEST = 3
 QUERYS_PER_REQUEST = 5
+
+def setup_client_logger(client_id: str, logs_dir="client_logs"):
+    os.makedirs(logs_dir, exist_ok=True)
+    log_path = os.path.join(logs_dir, f"{client_id}.log")
+
+    logger = logging.getLogger(f"client_{client_id}")
+    logger.setLevel(logging.INFO)
+
+    if not logger.handlers:
+        handler = logging.FileHandler(log_path)
+        formatter = logging.Formatter('%(asctime)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    
+    return logger
 
 class ConnectedClient(threading.Thread):
     """
@@ -50,6 +68,15 @@ class ConnectedClient(threading.Thread):
         self._stop_flag = threading.Event()
 
         self._condition = threading.Condition()
+
+        self.client_logger = setup_client_logger(client_id)
+        self._start_time = datetime.now()
+        self.client_logger.info(f"{self._elapsed_time_str()} Cliente conectado")
+
+    def _elapsed_time_str(self):
+        elapsed = datetime.now() - self._start_time
+        minutes, seconds = divmod(elapsed.total_seconds(), 60)
+        return f"[{int(minutes)}:{int(seconds):02d}]"
 
     def add_sent_answer(self):
         """
@@ -117,13 +144,17 @@ class ConnectedClient(threading.Thread):
         logger.info(f"Connected client {self._client_id} started.")
         try:
             self._protocol_gateway.send_client_id(self._client_id)
+            self.client_logger.info(f"{self._elapsed_time_str()} Se envió client_id")
+
             self._requests_to_be_processed = self._protocol_gateway.receive_amount_of_requests()
+            self.client_logger.info(f"{self._elapsed_time_str()} Se recibió cantidad de requests: {self._requests_to_be_processed}")
             if self._requests_to_be_processed is None:
                 logger.error("Failed to receive amount of requests")
                 self._protocol_gateway._stop_client()
                 return
             
             logger.debug(f"Client {self._client_id} requested {self._requests_to_be_processed} requests.")
+
             self.broker = RabbitMQProcessor(
                 config=self.config,
                 source_queues=[],  # Connected client does not consume messages, so empty list
@@ -248,6 +279,7 @@ class ConnectedClient(threading.Thread):
                         priority=1
                     )
                     self._processed_datasets_from_request += 1
+                    self.client_logger.info(f"{self._elapsed_time_str()} Se recibió el último batch de {message_code} para request {request_number}")
                 
                 if not success:
                     logger.error(f"Failed to publish message to queue {queue_key}")
@@ -279,6 +311,7 @@ class ConnectedClient(threading.Thread):
             logger.debug(f"Sending result to client {self._client_id}: {result_data}")
             self._protocol_gateway.send_result(result_data)
             self.add_sent_answer()
+            self.client_logger.info(f"{self._elapsed_time_str()} Se envió resultado: {result_data}")
         
         except Exception as e:
             logger.error(f"Error sending result to client {self._client_id}: {e}")
