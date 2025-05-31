@@ -17,14 +17,25 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
 ### No funcionales
 
+#### Escalabilidad
+
 - El sistema debe estar optimizado para entornos multicomputadoras.
 - Debe soportar el escalado horizontal al incrementar nodos de cómputo.
 - Se requiere el desarrollo de un Middleware para abstraer la comunicación basada en grupos.
-- Debe soportar una única ejecución del procesamiento y permitir un apagado limpio ante señales `SIGTERM`.
+- Debe soportar una única ejecución del procesamiento y permitir un *graceful quit* ante señales `SIGTERM`.
+
+#### Multi-client
+
 - Soporte para varias ejecuciones de las consultas por parte de un cliente, sin reinicio del servidor.
 - Ejecución con varios clientes de forma concurrente.
 - Correcta limpieza de los recursos luego de cada ejecución.
-- Se asume que no existen fallas de los sistemas.
+
+#### Tolerancia a fallos
+
+- El sistema debe ser tolerante a fallos por caídas de procesos.
+- En caso de usar un algoritmo de consenso, el mismo tiene que ser implementado por los alumnos.
+- Está permitido utilizar [docker-in-docker](https://github.com/7574-sistemas-distribuidos/docker-from-docker) para levantar procesos caídos
+- No está permitido utilizar docker para verificar si un nodo está disponible.
 
 ---
 
