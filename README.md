@@ -2,6 +2,29 @@
 
 Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
+## 📚 Índice
+
+1. [📘 Descripción General](#tp-sdi)  
+2. [✅ Requerimientos](#requerimientos)  
+   - [Funcionales](#funcionales)  
+   - [No funcionales](#no-funcionales)  
+     - [Escalabilidad](#escalabilidad)  
+     - [Multi-client](#multi-client)  
+     - [Tolerancia a fallos](#tolerancia-a-fallos)  
+3. [🛠️ Configuración del Sistema](#comandos)  
+   - [⚙️ Configurar cantidad de nodos](#️-configurar-cantidad-de-nodos)  
+   - [🔧 Generar el `docker-compose.yaml`](#-generar-el-docker-composeyaml)  
+     - [📦 Instalar dependencias](#-instalar-dependencias)  
+     - [✅ Uso recomendado con `generate-compose.sh`](#-uso-recomendado-con-generate-composesh)  
+     - [📌 Parámetros](#-parámetros)  
+     - [🧪 Ejemplos](#-ejemplos)  
+   - [🧪 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
+4. [▶️ Correr el sistema](#️-correr-el-sistema)  
+5. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)  
+6. [🛠️ Construido con](#️-construido-con)  
+7. [✒️ Autores](#️-autores)  
+8. [📑 Documentación](#-documentación)
+
 ## Requerimientos
 
 ### Funcionales
