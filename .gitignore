@@ -4,3 +4,6 @@ client/data/
 datasets_for_test/
 
 resultados/
+
+# Ignore all logs
+*.log
