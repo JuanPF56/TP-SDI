@@ -1,19 +1,21 @@
 #!/bin/bash
 
-if [ "$#" -lt 1 ]; then
-    echo "Uso: $0 <nombre_archivo> [-cant_clientes <numero>] [-test <test_config_path>]"
-    exit 1
-fi
-
-filename=$1
-shift
-
-args=("$@")  # Guardamos todos los flags originales
-
 # Valores por defecto
 cant_clientes="1"
 modo_test="No"
 test_config_path=""
+default_filename="docker-compose.yaml"
+
+# Si el primer argumento NO empieza con '-', lo tomamos como nombre de archivo
+if [[ "$1" != -* && "$#" -ge 1 ]]; then
+    filename=$1
+    shift
+else
+    echo "No se especificó nombre de archivo, se usará '$default_filename'"
+    filename=$default_filename
+fi
+
+args=("$@")  # Guardamos todos los flags originales
 
 # Parseo manual de los flags
 while [[ "$#" -gt 0 ]]; do

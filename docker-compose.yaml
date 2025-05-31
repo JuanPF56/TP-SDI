@@ -488,9 +488,8 @@ services:
     volumes:
     - ./client/config.ini:/app/config.ini
     - ./resultados:/app/resultados
-    - ./datasets_for_test:/datasets
     environment:
-      USE_TEST_DATASET: '1'
+      USE_TEST_DATASET: '0'
       REQUESTS_TO_SERVER: '1'
     depends_on:
       gateway:

@@ -1,10 +1,19 @@
+"Generates a Docker Compose file for a distributed system with multiple nodes."
+
 import sys
 import configparser
-import yaml
-import uuid
-from copy import deepcopy
 
-def generate_compose(filename, short_test=False, cant_clientes=1):
+from copy import deepcopy
+import yaml
+
+
+def generate_compose(filename="docker-compose.yaml", short_test=False, cant_clientes=1):
+    """
+    Generates a Docker Compose file based on the configuration in global_config.ini.
+    :param filename: The name of the output Docker Compose file.
+    :param short_test: If True, uses a shorter test configuration.
+    :param cant_clientes: The number of client nodes to create.
+    """
 
     # Get amount of nodes
     config = configparser.ConfigParser()
@@ -13,7 +22,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
     except FileNotFoundError:
         print("Error: global_config.ini not found.")
         sys.exit(1)
-        
+
     cleanup = config["DEFAULT"].getint("cleanup_filter_nodes", 1)
     year = config["DEFAULT"].getint("year_filter_nodes", 1)
     production = config["DEFAULT"].getint("production_filter_nodes", 1)
@@ -28,7 +37,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         j_nodes.append(f"join_ratings_{i}")
 
     services = {}
-    
+
     # RabbitMQ node
     services["rabbitmq"] = {
         "image": "rabbitmq:3-management",
@@ -36,41 +45,50 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         "ports": ["5672:5672", "15672:15672"],
         "volumes": [
             "./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json",
-            "./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf"
+            "./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf",
         ],
-        "networks": ["testing_net"], 
+        "networks": ["testing_net"],
         "healthcheck": {
             "test": ["CMD", "rabbitmq-diagnostics", "ping"],
             "interval": "5s",
             "timeout": "5s",
-            "retries": 5
+            "retries": 5,
         },
-        "logging": {
-            "driver": "none"
-        }
+        "logging": {"driver": "none"},
     }
 
     # Filter nodes
     depends = {}
     filter_node_names = []
     for subtype in ["cleanup", "year", "production"]:
+
+        num_nodes = 0  # Initialize with a default value
+        nodes_to_await = 0  # Initialize with a default value
+        depends = {}
+
         if subtype == "cleanup":
             num_nodes = cleanup
             nodes_to_await = 1
-            depends = {"rabbitmq": {"condition": "service_healthy"},
-                       "gateway": {"condition": "service_healthy"}}
+            depends = {
+                "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"},
+            }
         elif subtype == "year":
             num_nodes = year
             nodes_to_await = production
-            depends = {"rabbitmq": {"condition": "service_healthy"},
-                       "gateway": {"condition": "service_healthy"}}
+            depends = {
+                "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"},
+            }
             for node in j_nodes:
                 depends[node] = {"condition": "service_started"}
         elif subtype == "production":
             num_nodes = production
             nodes_to_await = cleanup
-            depends = {"rabbitmq": {"condition": "service_healthy"},
-                       "gateway": {"condition": "service_healthy"}}
+            depends = {
+                "rabbitmq": {"condition": "service_healthy"},
+                "gateway": {"condition": "service_healthy"},
+            }
         for i in range(1, num_nodes + 1):
             name = f"filter_{subtype}_{i}"
             filter_node_names.append(name)
@@ -78,9 +96,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "container_name": f"filter_{subtype}_{i}",
                 "image": f"filter_{subtype}:latest",
                 "entrypoint": "python3 /app/filter.py",
-                "volumes": [
-                    f"./filter/{subtype}/config.ini:/app/config.ini"
-                ],
+                "volumes": [f"./filter/{subtype}/config.ini:/app/config.ini"],
                 "environment": {
                     "NODE_ID": str(i),
                     "NODE_TYPE": subtype,
@@ -89,7 +105,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                     "NODE_NAME": f"filter_{subtype}_{i}",
                 },
                 "depends_on": deepcopy(depends),
-                "networks": ["testing_net"]
+                "networks": ["testing_net"],
             }
 
     # Sentiment analyzer node
@@ -101,9 +117,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "container_name": f"sentiment_analyzer_{i}",
             "image": "sentiment_analyzer:latest",
             "entrypoint": "python3 /app/sentiment_analyzer.py",
-            "volumes": [
-                "./sentiment_analyzer/config.ini:/app/config.ini"
-            ],
+            "volumes": ["./sentiment_analyzer/config.ini:/app/config.ini"],
             "environment": {
                 "NODE_ID": str(i),
                 "NODE_TYPE": "sentiment_analyzer",
@@ -113,9 +127,9 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"}
+                "gateway": {"condition": "service_healthy"},
             },
-            "networks": ["testing_net"]
+            "networks": ["testing_net"],
         }
 
     # Join nodes
@@ -125,7 +139,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         join_node_names.append(name)
         services[f"join_credits_{i}"] = {
             "container_name": f"join_credits_{i}",
-            "image": f"join_credits:latest",
+            "image": "join_credits:latest",
             "entrypoint": "python3 /app/join.py",
             "environment": {
                 "NODE_ID": str(i),
@@ -135,21 +149,19 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "YEAR_NODES_TO_AWAIT": str(year),
                 "NODE_NAME": f"join_credits_{i}",
             },
-            "volumes": [
-                f"./join/credits/config.ini:/app/config.ini"
-            ],
+            "volumes": ["./join/credits/config.ini:/app/config.ini"],
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"}
+                "gateway": {"condition": "service_healthy"},
             },
-            "networks": ["testing_net"]
+            "networks": ["testing_net"],
         }
     for i in range(1, j_ratings + 1):
         name = f"join_ratings_{i}"
         join_node_names.append(name)
         services[f"join_ratings_{i}"] = {
             "container_name": f"join_ratings_{i}",
-            "image": f"join_ratings:latest",
+            "image": "join_ratings:latest",
             "entrypoint": "python3 /app/join.py",
             "environment": {
                 "NODE_ID": str(i),
@@ -159,14 +171,12 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
                 "YEAR_NODES_TO_AWAIT": str(year),
                 "NODE_NAME": f"join_ratings_{i}",
             },
-            "volumes": [
-                f"./join/ratings/config.ini:/app/config.ini"
-            ],
+            "volumes": ["./join/ratings/config.ini:/app/config.ini"],
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"}
+                "gateway": {"condition": "service_healthy"},
             },
-            "networks": ["testing_net"]
+            "networks": ["testing_net"],
         }
 
     # Nodes to await by query
@@ -176,7 +186,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         "q2": production,
         "q3": j_ratings,
         "q4": j_credits,
-        "q5": sentiment_analyzer
+        "q5": sentiment_analyzer,
     }
 
     # Query nodes Q1 to Q5
@@ -187,9 +197,7 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "container_name": qname,
             "image": f"query_{qname}:latest",
             "entrypoint": f"python3 /app/{qname}.py",
-            "volumes": [
-                f"./query/{qname}/config.ini:/app/config.ini"
-            ],
+            "volumes": [f"./query/{qname}/config.ini:/app/config.ini"],
             "environment": {
                 "NODE_TYPE": qname,
                 "NODES_TO_AWAIT": str(nodes_to_await[qname]),
@@ -197,41 +205,43 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"}
+                "gateway": {"condition": "service_healthy"},
             },
-            "networks": ["testing_net"]
+            "networks": ["testing_net"],
         }
 
     # Gateway node
-    full_dependencies = (filter_node_names + sentiment_node_names + join_node_names + query_node_names)
+    full_dependencies = (
+        filter_node_names + sentiment_node_names + join_node_names + query_node_names
+    )
     services["gateway"] = {
         "container_name": "gateway",
         "image": "gateway:latest",
         "entrypoint": "python3 /app/main.py",
         "volumes": [
             "./gateway/config.ini:/app/config.ini",
-            "./resultados:/app/resultados"
+            "./resultados:/app/resultados",
         ],
         "environment": {
             "SYSTEM_NODES": ",".join(full_dependencies),
         },
         "depends_on": {
-                "rabbitmq": {"condition": "service_healthy"},
+            "rabbitmq": {"condition": "service_healthy"},
         },
         "networks": ["testing_net"],
         "healthcheck": {
             "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
             "interval": "5s",
             "timeout": "5s",
-            "retries": 10
-        }
+            "retries": 10,
+        },
     }
 
     # Clients nodes
     for i in range(1, cant_clientes + 1):
         client_volumes = [
             "./client/config.ini:/app/config.ini",
-            f"./resultados:/app/resultados"
+            "./resultados:/app/resultados",
         ]
         if short_test:
             client_volumes.append("./datasets_for_test:/datasets")
@@ -242,13 +252,13 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
             "entrypoint": "python3 /app/main.py",
             "volumes": client_volumes,
             "environment": {
-                "USE_TEST_DATASET": "1" if short_test else "0", 
-                "REQUESTS_TO_SERVER": "1"
+                "USE_TEST_DATASET": "1" if short_test else "0",
+                "REQUESTS_TO_SERVER": "1",
             },
             "depends_on": {
                 "gateway": {"condition": "service_healthy"},
             },
-            "networks": ["testing_net"]
+            "networks": ["testing_net"],
         }
 
     # Compose root
@@ -256,22 +266,25 @@ def generate_compose(filename, short_test=False, cant_clientes=1):
         "services": services,
         "networks": {
             "testing_net": {
-                "ipam": {
-                    "driver": "default",
-                    "config": [{"subnet": "172.25.125.0/24"}]
-                }
+                "ipam": {"driver": "default", "config": [{"subnet": "172.25.125.0/24"}]}
             }
-        }
+        },
     }
 
-    with open(filename, "w") as f:
+    with open(filename, "w", encoding="utf-8") as f:
         yaml.dump(compose, f, sort_keys=False)
 
+
 def main():
+    """
+    Main function to parse command line arguments and generate the Docker Compose file.
+    """
     args = sys.argv[1:]
 
     if not args or args[0].startswith("-"):
-        print("Usage: python3 docker-compose-generator.py <output_file.yml> [-test] [-cant_clientes <n>]")
+        print(
+            "Usage: python3 docker-compose-generator.py <output_file.yml> [-test] [-cant_clientes <n>]"
+        )
         sys.exit(1)
 
     filename = args[0]
@@ -285,6 +298,7 @@ def main():
             cant_clientes = int(args[idx + 1])
 
     generate_compose(filename, short_test, cant_clientes)
+
 
 if __name__ == "__main__":
     main()
