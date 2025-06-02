@@ -253,7 +253,6 @@ def generate_compose(filename="docker-compose.yaml", short_test=False, cant_clie
             "volumes": client_volumes,
             "environment": {
                 "USE_TEST_DATASET": "1" if short_test else "0",
-                "REQUESTS_TO_SERVER": "1",
             },
             "depends_on": {
                 "gateway": {"condition": "service_healthy"},
