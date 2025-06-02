@@ -1,6 +1,5 @@
 import os
 import signal
-import pika
 
 from common.mom import RabbitMQProcessor
 from common.client_state_manager import ClientManager
@@ -9,14 +8,16 @@ from common.logger import get_logger
 
 EOS_TYPE = "EOS"
 
+
 class QueryBase:
     """
-    Clase base para las queries. 
+    Clase base para las queries.
     """
+
     def __init__(self, config, source_queue_key, logger_name):
         self.config = config
 
-        self.source_queues = source_queue_key # every subclass should set this
+        self.source_queues = source_queue_key  # every subclass should set this
         self.target_queue = self.config["DEFAULT"].get("results_queue", "results_queue")
 
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
@@ -25,7 +26,7 @@ class QueryBase:
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
             source_queues=self.source_queues,
-            target_queues=self.target_queue
+            target_queues=self.target_queue,
         )
 
         self.client_manager = ClientManager(
@@ -34,7 +35,7 @@ class QueryBase:
         )
 
         self.logger = get_logger(logger_name)
-        
+
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
     def __handleSigterm(self, signum, frame):
@@ -57,7 +58,7 @@ class QueryBase:
         if not self.rabbitmq_processor.connect():
             self.logger.error("Error al conectar a RabbitMQ. Saliendo.")
             return
-        
+
         # Tell gateway that this node is online
         self._notify_gateway()
 
@@ -73,11 +74,10 @@ class QueryBase:
             self.logger.info("Connection closed.")
 
     def _notify_gateway(self):
-        self.rabbitmq_processor.channel.queue_declare(queue='nodes_ready', durable=False, arguments={'x-max-priority': 10})
-        self.rabbitmq_processor.publish(
-            target='nodes_ready',
-            message=self.node_name
+        self.rabbitmq_processor.channel.queue_declare(
+            queue="nodes_ready", durable=False, arguments={"x-max-priority": 10}
         )
+        self.rabbitmq_processor.publish(target="nodes_ready", message=self.node_name)
         self.logger.info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")
 
     def callback(self, ch, method, properties, body, input_queue):
@@ -85,8 +85,8 @@ class QueryBase:
         Callback method to be implemented by subclasses.
         """
         raise NotImplementedError("Subclasses must implement this method.")
-    
-    def _calculate_and_publish_results(self, client_id, request_number):
+
+    def _calculate_and_publish_results(self, client_id):
         """
         Calculate and publish results. To be implemented by subclasses.
         """

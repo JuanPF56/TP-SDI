@@ -3,6 +3,7 @@ import time
 import json
 
 from common.logger import get_logger
+
 logger = get_logger("Result Dispatcher")
 
 from client_registry import ClientRegistry
@@ -12,6 +13,7 @@ BASE_COOL_DOWN_TIME = 0.5  # seconds
 MAX_COOL_DOWN_TIME = 60  # seconds
 
 QUERYS_TO_ANSWER = 5
+
 
 class ResultDispatcher(threading.Thread):
     def __init__(self, config, clients_connected: ClientRegistry):
@@ -28,20 +30,23 @@ class ResultDispatcher(threading.Thread):
             config=config,
             source_queues=self.results_queue,
             target_queues=[],  # Not publishing in this component
-            rabbitmq_host=self.rabbitmq_host
+            rabbitmq_host=self.rabbitmq_host,
         )
         connected = self.broker.connect()
         if not connected:
             raise RuntimeError("Could not connect to RabbitMQ")
 
     def stop(self):
+        """
+        Stop the Result Dispatcher thread and clean up resources.
+        """
         self._stop_flag.set()
         self.broker.stop_consuming()
         self.broker.close()
         logger.info("Result Dispatcher stopped.")
 
     def run(self):
-        logger.info(f"Result Dispatcher started.")
+        logger.info("Result Dispatcher started.")
         try:
             base_cool_down = BASE_COOL_DOWN_TIME
             max_cool_down = MAX_COOL_DOWN_TIME
@@ -52,16 +57,15 @@ class ResultDispatcher(threading.Thread):
                 if body:
                     try:
                         result_data = json.loads(body)
-                        logger.debug(f"Received result: {result_data}")
-                        """
-                        Expected result format:
-                        {
-                            "client_id": "uuid-del-cliente",
-                            "request_number": 1,
-                            "query": "Q4",
-                            "results": { ... }
-                        }
-                        """
+                        logger.debug("Received result: %s", result_data)
+
+                        # Expected result format:
+                        # {
+                        #     "client_id": "uuid-del-cliente",
+                        #     "query": "Q4",
+                        #     "results": { ... }
+                        # }
+
                         client_id = result_data.get("client_id")
                         if not client_id:
                             logger.warning("Missing client_id in result.")
@@ -70,18 +74,20 @@ class ResultDispatcher(threading.Thread):
                             continue
 
                         client = self._clients_connected.get_by_uuid(client_id)
-                        if client and client._client_is_connected():
+                        if client and client.client_is_connected():
                             client.send_result(result_data)
-                            logger.debug(f"Dispatched result to client {client_id}")
+                            logger.debug("Dispatched result to client %s", client_id)
                         else:
-                            logger.warning(f"Client {client_id} not found or disconnected.")
+                            logger.warning(
+                                "Client %s not found or disconnected.", client_id
+                            )
 
                         # Reset the cool down time if a result is processed successfully
                         cool_down_time = base_cool_down
 
                     except Exception as e:
-                        logger.error(f"Error processing result: {e}")
-                        
+                        logger.error("Error processing result: %s", e)
+
                     finally:
                         if method:
                             self.broker.acknowledge(method)
@@ -92,7 +98,7 @@ class ResultDispatcher(threading.Thread):
                     cool_down_time = min(cool_down_time * 2, max_cool_down)
 
         except Exception as e:
-            logger.error(f"Error in ResultDispatcher: {e}")
+            logger.error("Error in ResultDispatcher: %s", e)
 
         finally:
             self.stop()
@@ -100,10 +106,11 @@ class ResultDispatcher(threading.Thread):
     def _get_next_result(self) -> tuple:
         # logger.info("Waiting for next result...")
         try:
-            method, properties, body = self.broker.channel.basic_get(queue=self.results_queue, auto_ack=False)
+            method, properties, body = self.broker.channel.basic_get(
+                queue=self.results_queue, auto_ack=False
+            )
             return method, properties, body
 
         except Exception as e:
-            logger.error(f"Error getting result from queue: {e}")
+            logger.error("Error getting result from queue: %s", e)
             return None, None, None
-            

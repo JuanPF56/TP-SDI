@@ -1,15 +1,20 @@
+"""
+Client module for connecting to a server, sending datasets, and receiving results.
+"""
+
 import socket
 import signal
 import time
 
-from common.logger import get_logger
-logger = get_logger("Client")
+from utils import download_dataset, send_datasets_to_server
+from result_receiver import ResultReceiver
+from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
 
 from common.protocol import ProtocolError
-from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
-from utils import download_dataset, send_datasets_to_server
+from common.logger import get_logger
 
-from result_receiver import ResultReceiver
+logger = get_logger("Client")
+
 
 MAX_RETRIES = 5
 DELAY_BETWEEN_RETRIES = 50
@@ -18,12 +23,10 @@ QUERYS_EXPECTED = 5
 
 DEFAULT_CLIENT_ID = 0
 
-REQUESTS_TO_SERVER = 1 # Number of requests to server (1 request = 3 datasets = 5 queries)
 
 class Client:
-    def __init__(self, host, port, max_batch_size, requests_to_server=REQUESTS_TO_SERVER):
+    def __init__(self, host, port, max_batch_size):
         self._client_id = DEFAULT_CLIENT_ID
-        self._requests_to_server = requests_to_server
         self._host = host
         self._port = port
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -42,17 +45,19 @@ class Client:
         while attempt < retries:
             try:
                 self._socket.connect((self._host, self._port))
-                logger.info(f"Connected to server at {self._host}:{self._port}")
+                logger.info("Connected to server at %s:%s", self._host, self._port)
                 self._protocol = ProtocolClient(self._socket, self._max_batch_size)
                 return
             except Exception as e:
                 attempt += 1
-                logger.warning(f"Connection attempt {attempt} failed: {e}")
+                logger.warning("Connection attempt %d failed: %s", attempt, e)
                 if attempt < retries:
-                    logger.info(f"Retrying in {delay} seconds...")
+                    logger.info("Retrying in %d seconds...", delay)
                     time.sleep(delay)
                 else:
-                    logger.error("Max connection attempts reached. Check if server is up.")
+                    logger.error(
+                        "Max connection attempts reached. Check if server is up."
+                    )
 
     def _signal_handler(self, signum, frame):
         logger.info("Signal received, stopping client...")
@@ -64,8 +69,8 @@ class Client:
                 self._was_closed = True
                 try:
                     self._socket.shutdown(socket.SHUT_RDWR)
-                except OSError as e:
-                    logger.error(f"Socket already shutted")
+                except OSError:
+                    logger.error("Socket already shutted")
                 finally:
                     if self._socket:
                         self._socket.close()
@@ -78,6 +83,11 @@ class Client:
             logger.error(f"Failed to close connection properly: {e}")
 
     def run(self, use_test_dataset):
+        """
+        Main method to run the client.
+        Args:
+            use_test_dataset (bool): If True, uses a smaller test dataset.
+        """
         if use_test_dataset:
             datasets_path = "/datasets"
             logger.info("Using test dataset.")
@@ -95,32 +105,28 @@ class Client:
         if not self._socket:
             logger.error("Socket connection failed.")
             return
-        
+
         try:
             self._client_id = self._protocol.get_client_id()
-            logger.info(f"Client ID: {self._client_id}")
+            logger.info("Client ID: %s", self._client_id)
         except ProtocolError as e:
-            logger.error(f"Protocol error: {e}")
+            logger.error("Protocol error: %s", e)
             self._stop_client()
             return
 
-        try:
-            self._protocol.send_amount_of_requests(self._requests_to_server)
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            self._stop_client()
-            return
-
-        self._results_thread = ResultReceiver(self._protocol, self._query_responses_expected, self._requests_to_server, self._client_id)
+        self._results_thread = ResultReceiver(
+            self._protocol,
+            self._query_responses_expected,
+            self._client_id,
+        )
         self._results_thread.start()
 
-        while self._protocol._is_connected():
+        while self._protocol.is_connected():
             try:
-                for i in range(self._requests_to_server):
-                    logger.info("REQUEST N° " + str(i + 1) + " / " + str(self._requests_to_server))
-                    send_datasets_to_server(datasets_path, self._protocol, i+1)
-                    
-                logger.info("Waiting for pending results...")    
+
+                send_datasets_to_server(datasets_path, self._protocol)
+
+                logger.info("Waiting for pending results...")
                 self._results_thread.join()
                 break
 
@@ -130,7 +136,7 @@ class Client:
                 self._results_thread.join()
                 break
 
-            except OSError as e:
+            except OSError:
                 if self._was_closed:
                     logger.info("Socket client was closed.")
                     self._results_thread.stop()
@@ -138,7 +144,7 @@ class Client:
                     break
 
             except Exception as e:
-                logger.error(f"An error occurred: {e}")
+                logger.error("An error occurred: %s", e)
                 break
 
         self._stop_client()

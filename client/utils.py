@@ -1,21 +1,39 @@
-import kagglehub
-
-from common.logger import get_logger
-logger = get_logger("Client")
+"""
+Utility functions for the client to handle dataset downloading and sending to the server.
+"""
 
 from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
 
+import kagglehub
+
+from common.logger import get_logger
+
+logger = get_logger("Client")
+
+
 def download_dataset():
+    """
+    Downloads the dataset from Kaggle using kagglehub.
+    Returns:
+        str: The path where the dataset is downloaded.
+    """
     try:
         logger.info("Downloading dataset with kagglehub...")
         path = kagglehub.dataset_download("rounakbanik/the-movies-dataset")
-        logger.info(f"Dataset downloaded at: {path}")
+        logger.info("Dataset downloaded at: %s", path)
         return path
     except Exception as e:
-        logger.error(f"Failed to download dataset: {e}")
+        logger.error("Failed to download dataset: %s", e)
         return None
 
-def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient, request_number: int):
+
+def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):
+    """
+    Sends the datasets to the server using the provided protocol.
+    Args:
+        datasets_path (str): The path where the datasets are located.
+        protocol (ProtocolClient): The protocol client to use for sending data.
+    """
     logger.info("Sending datasets to server...")
     datasets = [
         ("movies_metadata", "BATCH_MOVIES", "movies"),
@@ -24,24 +42,16 @@ def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient, reques
     ]
     for filename, tag, description in datasets:
         try:
-            logger.info(f"Sending {description} dataset...")
-            protocol.send_dataset(datasets_path, filename, tag, request_number)
-
-            """
-            confirmation = protocol.receive_confirmation()
-            if confirmation != ACK:
-                logger.error(f"Server returned an error after sending {description}.")
-                raise Exception(f"Server returned an error after sending {description}.")
-            """
-
-            logger.info(f"{description.capitalize()} dataset sent successfully.")
+            logger.info("Sending %s dataset...", description)
+            protocol.send_dataset(datasets_path, filename, tag)
+            logger.info("%s dataset sent successfully.", description.capitalize())
 
         except ServerNotConnectedError:
             logger.error("Connection closed by server")
             raise
 
         except Exception as e:
-            logger.error(f"Failed to send {description} dataset: {e}")
+            logger.error("Failed to send %s dataset: %s", description, e)
             raise
 
     logger.info("All datasets were sent successfully.")

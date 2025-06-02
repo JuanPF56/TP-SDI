@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from common.eos_handling import handle_eos
 from common.logger import get_logger
+
 logger = get_logger("SentimentAnalyzer")
 from common.mom import RabbitMQProcessor
 from common.client_state_manager import ClientState
@@ -18,6 +19,7 @@ from common.client_state_manager import ClientManager
 EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
 MAX_WORKERS = os.cpu_count() or 4
+
 
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
@@ -34,16 +36,16 @@ class SentimentAnalyzer:
         self.source_queue = self.config["QUEUES"]["movies_clean_queue"]
         self.target_queues = [
             self.config["QUEUES"]["positive_movies_queue"],
-            self.config["QUEUES"]["negative_movies_queue"]
+            self.config["QUEUES"]["negative_movies_queue"],
         ]
         self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
 
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
             source_queues=self.source_queue,
-            target_queues=self.target_queues
+            target_queues=self.target_queues,
         )
-        
+
         self.client_manager = ClientManager(
             expected_queues=self.source_queue,
             nodes_to_await=self.eos_to_await,
@@ -60,16 +62,20 @@ class SentimentAnalyzer:
                 logger.info("Closing RabbitMQ connection...")
                 self.rabbitmq_processor.close()
         except Exception as e:
-            logger.error(f"Error closing connection: {e}")
+            logger.error("Error closing connection: %s", e)
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
-            logger.debug("Received empty or whitespace-only text for sentiment analysis.")
+            logger.debug(
+                "Received empty or whitespace-only text for sentiment analysis."
+            )
             return "neutral"
         try:
             blob = TextBlob(text)
             polarity = blob.sentiment.polarity
-            logger.debug(f"Text sentiment polarity: {polarity} for text: {text[:50]}...")
+            logger.debug(
+                "Text sentiment polarity: %s for text: %s...", polarity, text[:50]
+            )
 
             if polarity > 0.1:
                 return "positive"
@@ -78,12 +84,14 @@ class SentimentAnalyzer:
             else:
                 return "neutral"
         except Exception as e:
-            logger.error(f"Error during sentiment analysis: {e}")
+            logger.error("Error during sentiment analysis: %s", e)
             return "neutral"
 
-    def _handle_eos(self, input_queue, body, method, headers, client_state: ClientState):
+    def _handle_eos(
+        self, input_queue, body, method, headers, client_state: ClientState
+    ):
         if client_state:
-            key = (client_state.client_id, client_state.request_id)
+            key = client_state.client_id
             with self.lock:
                 if len(self.batch_positive[key]) > 0:
                     self.rabbitmq_processor.publish(
@@ -91,7 +99,11 @@ class SentimentAnalyzer:
                         message=self.batch_positive[key],
                         headers=headers,
                     )
-                    logger.info(f"Sent {len(self.batch_positive[key])} positive movies to {self.target_queues[0]}")
+                    logger.debug(
+                        "Sent %d positive movies to %s",
+                        len(self.batch_positive[key]),
+                        self.target_queues[0],
+                    )
                     self.batch_positive[key] = []
 
                 if len(self.batch_negative[key]) > 0:
@@ -100,30 +112,45 @@ class SentimentAnalyzer:
                         message=self.batch_negative[key],
                         headers=headers,
                     )
-                    logger.info(f"Sent {len(self.batch_negative[key])} negative movies to {self.target_queues[1]}")
+                    logger.debug(
+                        "Sent %d negative movies to %s",
+                        len(self.batch_negative[key]),
+                        self.target_queues[1],
+                    )
                     self.batch_negative[key] = []
-        handle_eos(body, self.node_id, input_queue, self.source_queue, headers, self.nodes_of_type,
-                          self.rabbitmq_processor, client_state, target_queues=self.target_queues)
+        handle_eos(
+            body,
+            self.node_id,
+            input_queue,
+            self.source_queue,
+            headers,
+            self.nodes_of_type,
+            self.rabbitmq_processor,
+            client_state,
+            target_queues=self.target_queues,
+        )
         self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queue):
-            self.client_manager.remove_client(client_state.client_id, client_state.request_id)
+            self.client_manager.remove_client(client_state.client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             headers = getattr(properties, "headers", {}) or {}
-            client_id, request_number = headers.get("client_id"), headers.get("request_number")
-            
-            if not client_id or not request_number:
-                logger.error("Missing client_id or request_number in headers")
+            client_id = headers.get("client_id")
+
+            if not client_id:
+                logger.error("Missing client_id in headers")
                 self.rabbitmq_processor.acknowledge(method)
                 return
-        
-            key = (client_id, request_number)
-            client_state = self.client_manager.add_client(client_id, request_number, msg_type==EOS_TYPE)
-            
+
+            key = client_id
+            client_state = self.client_manager.add_client(
+                client_id, msg_type == EOS_TYPE
+            )
+
             if msg_type == EOS_TYPE:
                 self._handle_eos(input_queue, body, method, headers, client_state)
                 return
@@ -131,7 +158,9 @@ class SentimentAnalyzer:
             movies_batch = json.loads(body)
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
                 future_to_movie = {
-                    executor.submit(self.analyze_sentiment, movie.get("overview")): movie
+                    executor.submit(
+                        self.analyze_sentiment, movie.get("overview")
+                    ): movie
                     for movie in movies_batch
                 }
 
@@ -139,24 +168,44 @@ class SentimentAnalyzer:
                     movie = future_to_movie[future]
                     try:
                         sentiment = future.result()
-                        logger.debug(f"[Worker] Analyzed '{movie.get('original_title')}' → {sentiment}")
+                        logger.debug(
+                            "[Worker] Analyzed '%s' → %s",
+                            movie.get("original_title"),
+                            sentiment,
+                        )
 
                         if sentiment == "neutral":
-                            logger.debug(f"Movie '{movie.get('original_title')}' is neutral, skipping.")
+                            logger.debug(
+                                "[Worker] Movie '%s' is neutral, skipping.",
+                                movie.get("original_title"),
+                            )
                             continue
                         elif sentiment == "positive":
-                            logger.debug(f"Movie '{movie.get('original_title')}' is positive.")
+                            logger.debug(
+                                "[Worker] Movie '%s' is positive.",
+                                movie.get("original_title"),
+                            )
                             with self.lock:
                                 self.batch_positive[key].append(movie)
                         elif sentiment == "negative":
-                            logger.debug(f"Movie '{movie.get('original_title')}' is negative.")
+                            logger.debug(
+                                "[Worker] Movie '%s' is negative.",
+                                movie.get("original_title"),
+                            )
                             with self.lock:
                                 self.batch_negative[key].append(movie)
 
                     except Exception as e:
-                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
-                        logger.error(f"Error analyzing sentiment for movie '{movie.get('original_title')}': {e}")
-
+                        logger.error(
+                            "[Worker] Error analyzing sentiment for movie '%s': %s",
+                            movie.get("original_title"),
+                            e,
+                        )
+                        logger.error(
+                            "[Worker] Error analyzing sentiment for movie '%s': %s",
+                            movie.get("original_title"),
+                            e,
+                        )
 
             with self.lock:
                 if len(self.batch_positive[key]) >= self.batch_size:
@@ -165,7 +214,11 @@ class SentimentAnalyzer:
                         message=self.batch_positive[key],
                         headers=headers,
                     )
-                    logger.info(f"Sent batch of {len(self.batch_positive[key])} positive movies.")
+                    logger.debug(
+                        "Sent batch of %d positive movies to %s",
+                        len(self.batch_positive[key]),
+                        self.target_queues[0],
+                    )
                     self.batch_positive[key] = []
 
                 if len(self.batch_negative[key]) >= self.batch_size:
@@ -174,20 +227,24 @@ class SentimentAnalyzer:
                         message=self.batch_negative[key],
                         headers=headers,
                     )
-                    logger.info(f"Sent batch of {len(self.batch_negative[key])} negative movies.")
+                    logger.debug(
+                        "Sent batch of %d negative movies to %s",
+                        len(self.batch_negative[key]),
+                        self.target_queues[1],
+                    )
                     self.batch_negative[key] = []
 
         except pika.exceptions.StreamLostError as e:
-            logger.error(f"Stream lost, reconnecting: {e}")
+            logger.error("Stream lost, reconnecting: %s", e)
             self.rabbitmq_processor.reconnect_and_restart(self.callback)
 
         except pika.exceptions.AMQPConnectionError as e:
-            logger.error(f"AMQP connection lost, reconnecting: {e}")
+            logger.error("AMQP connection lost, reconnecting: %s", e)
             self.rabbitmq_processor.reconnect_and_restart(self.callback)
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}")
-        
+            logger.error("Error processing message: %s", e)
+
         finally:
             self.rabbitmq_processor.acknowledge(method)
 
@@ -206,7 +263,7 @@ class SentimentAnalyzer:
         if not self.rabbitmq_processor.connect():
             logger.error("Error al conectar a RabbitMQ. Saliendo.")
             return
-        
+
         # Tell gateway that this node is online
         self._notify_gateway()
 
@@ -225,12 +282,12 @@ class SentimentAnalyzer:
             logger.info("Connection closed.")
 
     def _notify_gateway(self):
-        self.rabbitmq_processor.channel.queue_declare(queue='nodes_ready', durable=False, arguments={'x-max-priority': 10})
-        self.rabbitmq_processor.publish(
-            target='nodes_ready',
-            message=self.node_name
+        self.rabbitmq_processor.channel.queue_declare(
+            queue="nodes_ready", durable=False, arguments={"x-max-priority": 10}
         )
+        self.rabbitmq_processor.publish(target="nodes_ready", message=self.node_name)
         logger.info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")
+
 
 if __name__ == "__main__":
     analyzer = SentimentAnalyzer()
