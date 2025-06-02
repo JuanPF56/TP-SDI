@@ -90,7 +90,8 @@ declare -A service_prefixes=(
     [join_ratings_nodes]="join_ratings_"
 )
 
-services_to_start="rabbitmq gateway"
+# Servicios core por defecto
+services_to_start="rabbitmq gateway q1 q2 q3 q4 q5"
 client_services=""
 
 while IFS="=" read -r key value; do
@@ -146,3 +147,6 @@ if [[ -n "$client_services" ]]; then
 fi
 
 echo "✅ Todo el sistema está en ejecución."
+
+echo "📝 Mostrando logs:"
+make docker-compose-logs
