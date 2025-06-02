@@ -7,3 +7,6 @@ resultados/
 
 # Ignore all logs
 *.log
+
+# Ignore the docker-compose file
+docker-compose.yaml
