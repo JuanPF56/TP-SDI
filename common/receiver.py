@@ -1,9 +1,11 @@
 import socket
 
 from common.logger import get_logger
+
 logger = get_logger("Receiver")
 
 MAX_EMPTY_READS = 5
+
 
 def receive_data(socket_sender: socket.socket, num_bytes: int, timeout: int) -> bytes:
     """
@@ -20,13 +22,19 @@ def receive_data(socket_sender: socket.socket, num_bytes: int, timeout: int) -> 
     try:
         while len(data) < num_bytes:
 
-            logger.debug(f"Expecting {num_bytes} bytes, received {len(data)} bytes so far.")
+            logger.debug(
+                "Expecting %d bytes, received %d bytes so far.", num_bytes, len(data)
+            )
             try:
                 chunk = socket_sender.recv(num_bytes - len(data))
-                logger.debug(f"Received chunk of size {len(chunk)} bytes.")
+                logger.debug("Received chunk of size %d bytes.", len(chunk))
 
                 if not chunk:
-                    logger.warning(f"Connection closed by sender while expecting {num_bytes} bytes, received {len(data)} bytes.")
+                    logger.warning(
+                        "Connection closed by sender while expecting %d bytes, received %d bytes.",
+                        num_bytes,
+                        len(data),
+                    )
                     break
 
                 data += chunk
@@ -34,17 +42,23 @@ def receive_data(socket_sender: socket.socket, num_bytes: int, timeout: int) -> 
 
             except socket.timeout:
                 empty_reads += 1
-                logger.warning(f"Socket timeout ({empty_reads}/{MAX_EMPTY_READS})...")
+                logger.warning(
+                    "Socket timeout (%d/%d)...", empty_reads, MAX_EMPTY_READS
+                )
                 if empty_reads >= MAX_EMPTY_READS:
-                    logger.error("Max empty reads reached, sender may have disconnected.")
-                    raise TimeoutError("Max empty reads reached, sender may have disconnected.")
+                    logger.error(
+                        "Max empty reads reached, sender may have disconnected."
+                    )
+                    raise TimeoutError(
+                        "Max empty reads reached, sender may have disconnected."
+                    )
 
     except (OSError, socket.error) as e:
-        logger.error(f"Socket receive error: {e}")
+        logger.error("Socket receive error: %s", e)
         raise ReceiverError(f"Socket receive failed: {e}")
 
     except Exception as e:
-        logger.error(f"Unexpected error in receiver: {e}")
+        logger.error("Unexpected error in receiver: %s", e)
         raise ReceiverError(f"Unexpected error in receiver: {e}")
 
     return data
@@ -53,4 +67,5 @@ def receive_data(socket_sender: socket.socket, num_bytes: int, timeout: int) -> 
 # Exception classes for receiver errors
 class ReceiverError(Exception):
     """Base class for receiver-related exceptions."""
+
     pass
