@@ -7,7 +7,6 @@ SIZE_OF_UINT32 = 4
     Header:
         1 byte: tipo_de_mensaje
         36 bytes: UUID
-        1 byte: numero_de_consulta
         4 bytes: nro_batch_actual
         1 byte: es_el_ultimo_batch
         4 bytes: payload_len
@@ -25,7 +24,9 @@ TIPO_MENSAJE = {
 
 SIZE_OF_UUID = 36  # El tamaño del UUID como string (36 caracteres)
 
-SIZE_OF_HEADER = 1 + SIZE_OF_UUID + 1 + 4 + 1 + 4  # tipo_de_mensaje (1 byte) + UUID (36 bytes) + numero_de_consulta (1 byte) + nro_batch_actual (4 bytes) + es_el_ultimo_batch (1 byte) + payload_len (4 bytes)
+SIZE_OF_HEADER = (
+    1 + SIZE_OF_UUID + 4 + 1 + 4
+)  # tipo_de_mensaje (1 byte) + UUID (36 bytes) + nro_batch_actual (4 bytes) + es_el_ultimo_batch (1 byte) + payload_len (4 bytes)
 
 ACK = 0
 SUCCESS = 0
@@ -37,16 +38,18 @@ IS_LAST_BATCH_FLAG = 1
  Protocol for sending results from server to client:
     Header:
         1 byte: tipo_de_mensaje
-        1 byte: numero_de_consulta
         1 bytes: query_id
         4 bytes: payload_len
     Payload:
         payload_len bytes: data
  """
-SIZE_OF_HEADER_RESULTS = 1 + 1 + 1 + 4  # tipo_de_mensaje (1 byte) + numero_de_consulta (1 byte) + query_id (1 byte) + payload_len (4 bytes)
+SIZE_OF_HEADER_RESULTS = (
+    1 + 1 + 4
+)  # tipo_de_mensaje (1 byte) + query_id (1 byte) + payload_len (4 bytes)
+
 
 # Exceptions for protocol errors
 class ProtocolError(Exception):
     """Exception raised for protocol-related errors."""
-    pass
 
+    pass

@@ -1,24 +1,24 @@
 from common.logger import get_logger
+
 logger = get_logger("Results Presenter")
+
 
 class ResultPresenter:
     def __init__(self, client_id: str):
         self.client_id = client_id
 
     def print_movies_with_genres(self, result: dict):
-        request_id = result.get("numero_de_consulta", "R?")
         query_id = result.get("query_id", "Q1")
         rows = result.get("results", [])
 
         lines = [
             f"                   CLIENT ID {self.client_id}",
-            f"                            CONSULTA N° {request_id}",
             f"                              QUERY: {query_id}",
             "-" * 77,
             "Películas y sus géneros de los años 2000 con producción Argentina y Española.",
-            "-" * 77
+            "-" * 77,
         ]
-        
+
         if not rows:
             lines.append(f"No se encontraron resultados para la consulta {query_id}")
         else:
@@ -32,18 +32,16 @@ class ResultPresenter:
         self._print_box(lines)
 
     def print_top_spenders(self, result: dict):
-        request_id = result.get("numero_de_consulta", "R?")
         query_id = result.get("query", "Q2")
         rows = result.get("results", [])
 
         lines = [
             f"                CLIENT ID {self.client_id}",
-            f"                          CONSULTA N° {request_id}",
             f"                            QUERY: {query_id}",
             "-" * 69,
             "Top 5 de países que más dinero han invertido en producciones sin",
             "colaborar con otros países.",
-            "-" * 69
+            "-" * 69,
         ]
 
         if not rows:
@@ -59,18 +57,16 @@ class ResultPresenter:
         self._print_box(lines)
 
     def print_rating_extremes(self, result: dict):
-        request_id = result.get("numero_de_consulta", "R?")
         query_id = result.get("query", "Q3")
         res = result.get("results", {})
 
         lines = [
             f"                 CLIENT ID {self.client_id}",
-            f"                          CONSULTA N° {request_id}",
             f"                            QUERY: {query_id}",
             "-" * 72,
             "Película de producción Argentina estrenada a partir del 2000,",
             "con mayor y con menor promedio de rating.",
-            "-" * 72
+            "-" * 72,
         ]
 
         if not res or "highest" not in res or "lowest" not in res:
@@ -81,25 +77,27 @@ class ResultPresenter:
             min_movie = res["lowest"].get("title", "N/A")
             min_rating = res["lowest"].get("rating", 0)
 
-            lines.append(f"🎬 Película con mayor rating promedio: {max_movie} ({max_rating:.2f})")
-            lines.append(f"🎬 Película con menor rating promedio: {min_movie} ({min_rating:.2f})")
+            lines.append(
+                f"🎬 Película con mayor rating promedio: {max_movie} ({max_rating:.2f})"
+            )
+            lines.append(
+                f"🎬 Película con menor rating promedio: {min_movie} ({min_rating:.2f})"
+            )
             lines.append("-" * 72)
 
         self._print_box(lines)
 
     def print_top_actors(self, result: dict):
-        request_id = result.get("numero_de_consulta", "R?")
         query_id = result.get("query", "Q4")
         res = result.get("results", {})
 
         lines = [
             f"               CLIENT ID {self.client_id}",
-            f"                          CONSULTA N° {request_id}",
             f"                            QUERY: {query_id}",
             "-" * 70,
             "Top 10 de actores con mayor participación en películas de producción",
             "Argentina con fecha de estreno posterior al 2000.",
-            "-" * 70
+            "-" * 70,
         ]
 
         if not res or not res.get("actors"):
@@ -107,26 +105,28 @@ class ResultPresenter:
         else:
             lines.append(f"{'Pos.':<5} {'Actor':30} Participaciones")
             lines.append("-" * 70)
-            sorted_actors = sorted(res["actors"], key=lambda a: (-a.get("count", 0), a.get("name", "")))
+            sorted_actors = sorted(
+                res["actors"], key=lambda a: (-a.get("count", 0), a.get("name", ""))
+            )
             for idx, actor in enumerate(sorted_actors, start=1):
-                lines.append(f"{idx:<5} {actor.get('name', 'N/A'):30} {actor.get('count', 0)}")
+                lines.append(
+                    f"{idx:<5} {actor.get('name', 'N/A'):30} {actor.get('count', 0)}"
+                )
         lines.append("-" * 70)
 
         self._print_box(lines)
 
     def print_income_ratio_by_sentiment(self, result: dict):
-        request_id = result.get("numero_de_consulta", "R?")
         query_id = result.get("query", "Q5")
         ratios = result.get("results", {})
 
         lines = [
             f"              CLIENT ID {self.client_id}",
-            f"                          CONSULTA N° {request_id}",
             f"                            QUERY: {query_id}",
             "-" * 66,
             "Average de la tasa ingreso/presupuesto de peliculas con",
             "overview de sentimiento positivo vs. sentimiento negativo.",
-            "-" * 66
+            "-" * 66,
         ]
 
         if not ratios or not isinstance(ratios, dict):
@@ -136,11 +136,17 @@ class ResultPresenter:
                 positive_ratio = float(ratios.get("average_positive_rate", 0))
                 negative_ratio = float(ratios.get("average_negative_rate", 0))
 
-                lines.append(f"😊 Sentimiento positivo - Tasa ingreso/presupuesto: {positive_ratio:.2f}")
-                lines.append(f"☹️ Sentimiento negativo - Tasa ingreso/presupuesto: {negative_ratio:.2f}")
+                lines.append(
+                    f"😊 Sentimiento positivo - Tasa ingreso/presupuesto: {positive_ratio:.2f}"
+                )
+                lines.append(
+                    f"☹️ Sentimiento negativo - Tasa ingreso/presupuesto: {negative_ratio:.2f}"
+                )
                 lines.append("-" * 66)
             except (ValueError, TypeError) as e:
-                lines.append(f"Error al procesar los resultados para la consulta {query_id}: {e}")
+                lines.append(
+                    f"Error al procesar los resultados para la consulta {query_id}: {e}"
+                )
 
         self._print_box(lines)
 
