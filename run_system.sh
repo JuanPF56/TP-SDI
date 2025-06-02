@@ -92,8 +92,8 @@ declare -A service_prefixes=(
 
 # Servicios core por defecto
 services_to_start="rabbitmq gateway q1 q2 q3 q4 q5"
-client_services=""
 
+# Armamos los servicios core desde el archivo ini (EXCLUIMOS client_nodes)
 while IFS="=" read -r key value; do
     key=$(echo "$key" | xargs)
     value=$(echo "$value" | xargs)
@@ -102,16 +102,18 @@ while IFS="=" read -r key value; do
         prefix="${service_prefixes[$key]}"
         for i in $(seq 1 "$value"); do
             service_name="${prefix}${i}"
-            if [[ "$key" == "client_nodes" ]]; then
-                client_services+=" $service_name"
-            else
-                services_to_start+=" $service_name"
-            fi
+            services_to_start+=" $service_name"
         done
     fi
 done < <(grep '=' "$CONFIG_FILE" | grep -v '^#')
 
-echo "🚀 Levantando servicios core: $services_to_start"
+# Armamos los clientes SOLO usando el flag -cant_clientes
+client_services=""
+for i in $(seq 1 "$cant_clientes"); do
+    client_services+=" client_$i"
+done
+
+echo "🚀 Levantando todos los servicios internos del sistema: $services_to_start"
 docker compose -f "$filename" up -d --build $services_to_start
 
 echo "⏳ Esperando a que los servicios estén saludables..."
@@ -140,13 +142,13 @@ wait_for_healthy() {
 
 wait_for_healthy
 
+echo "✅ Todo el sistema está en ejecución."
+
 if [[ -n "$client_services" ]]; then
     echo "🚀 Levantando clientes: $client_services"
     docker compose -f "$filename" up -d --build $client_services
     wait_for_healthy
 fi
-
-echo "✅ Todo el sistema está en ejecución."
 
 echo "📝 Mostrando logs:"
 make docker-compose-logs
