@@ -17,8 +17,8 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
      - [📦 Instalar dependencias](#-instalar-dependencias)  
      - [✅ Uso recomendado con `run_system.sh`](#-uso-recomendado-con-run_systemsh)  
      - [📌 Parámetros](#-parámetros)  
-     - [🧪 Ejemplos](#-ejemplos)  
-     - [🧪 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
+     - [📖 Ejemplos](#-ejemplos)  
+     - [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
 4. [▶️ Correr el sistema](#️-correr-el-sistema)  
 5. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)  
 6. [🛠️ Construido con](#️-construido-con)  
@@ -81,8 +81,6 @@ join_credits_nodes = 2
 join_ratings_nodes = 3
 ```
 
-🔁 Una vez configurado, ejecutá el generador de docker-compose para que los cambios se reflejen en la definición del sistema.
-
 ---
 
 ### 🔧 Generar y levantar el sistema
@@ -119,17 +117,17 @@ pip install -r requirements.txt
 #### 📌 Parámetros
 
 - `<output_file.yml>`: Opcional. Nombre del archivo de salida. En caso de no pasarse, será: `docker-compose.yaml`.
-- `-test <test_config.yaml>`: Opcional. Usa datasets reducidos y ejecuta `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en: `test_config.yaml`.
+- `-test <test_config.yaml>`: Opcional. Usa datasets reducidos y ejecuta `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en: `test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)).
 - `-cant_clientes N`: Opcional. Define cantidad de clientes (client_X) a levantar.
 
 ---
 
-#### 🧪 Ejemplos
+#### 📖 Ejemplos
 
 - Generar y levantar configuración completa:
 
 ```bash
-./run_system.sh docker-compose.yaml
+./run_system.sh
 ```
 
 - Generar y levantar en modo test:
@@ -152,7 +150,9 @@ pip install -r requirements.txt
 
 ---
 
-### 🧪 Preparar datasets de prueba
+### 📋 Preparar datasets de prueba
+
+Con correr el flag `-test`en el script anterior ya queda seteado, pero se puede correr por separado con el comando:
 
 ```bash
 python3 download_datasets.py [-test <test_config.yaml>]
