@@ -19,9 +19,6 @@ class YearFilter(FilterBase):
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
-        self._initialize_queues()
-        self._initialize_rabbitmq_processor()
-
         self.client_manager = ClientManager(
             expected_queues=self.source_queues,
             nodes_to_await=self.eos_to_await,

@@ -51,7 +51,7 @@ class ProductionFilter(FilterBase):
 
     def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
         if client_state:
-            key = (client_state.client_id,)
+            key = client_state.client_id
             logger.debug("Received EOS from %s", queue_name)
             if len(self.batch_arg[key]) > 0:
                 self._publish_batch(
@@ -92,7 +92,7 @@ class ProductionFilter(FilterBase):
         if client_state and client_state.has_received_all_eos(self.source_queues):
             self.client_manager.remove_client(client_state.client_id)
 
-    def _process_movies_batch(self, movies_batch, client_state):
+    def _process_movies_batch(self, movies_batch, client_state: ClientState):
         key = client_state.client_id
         for movie in movies_batch:
             country_dicts = movie.get("production_countries", [])
