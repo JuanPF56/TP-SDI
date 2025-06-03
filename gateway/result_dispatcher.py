@@ -2,12 +2,13 @@ import threading
 import time
 import json
 
+from client_registry import ClientRegistry
+
+from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
 logger = get_logger("Result Dispatcher")
 
-from client_registry import ClientRegistry
-from common.mom import RabbitMQProcessor
 
 BASE_COOL_DOWN_TIME = 0.5  # seconds
 MAX_COOL_DOWN_TIME = 60  # seconds

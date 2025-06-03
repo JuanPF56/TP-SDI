@@ -264,9 +264,6 @@ class SentimentAnalyzer:
             logger.error("Error al conectar a RabbitMQ. Saliendo.")
             return
 
-        # Tell gateway that this node is online
-        self._notify_gateway()
-
         try:
             logger.info("Starting message consumption...")
             self.rabbitmq_processor.consume(self.callback)
@@ -274,19 +271,12 @@ class SentimentAnalyzer:
             logger.info("Shutting down gracefully...")
             self.rabbitmq_processor.stop_consuming()
         except pika.exceptions.AMQPConnectionError as e:
-            logger.error(f"Connection lost during consuming: {e}")
+            logger.error("Connection lost during consuming: %s", e)
             self.rabbitmq_processor.reconnect_and_restart(self.callback)
         finally:
             logger.info("Closing RabbitMQ connection...")
             self.rabbitmq_processor.close()
             logger.info("Connection closed.")
-
-    def _notify_gateway(self):
-        self.rabbitmq_processor.channel.queue_declare(
-            queue="nodes_ready", durable=False, arguments={"x-max-priority": 10}
-        )
-        self.rabbitmq_processor.publish(target="nodes_ready", message=self.node_name)
-        logger.info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")
 
 
 if __name__ == "__main__":

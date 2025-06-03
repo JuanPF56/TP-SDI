@@ -4,12 +4,14 @@ import signal
 import pika
 
 from common.logger import get_logger
+
 logger = get_logger("Filter-Base")
 
 
 from common.mom import RabbitMQProcessor
 
-EOS_TYPE = "EOS" 
+EOS_TYPE = "EOS"
+
 
 class FilterBase:
     def __init__(self, config):
@@ -34,7 +36,7 @@ class FilterBase:
         - inicializar rabbitmq_processor
         """
         raise NotImplementedError()
-    
+
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
         try:
@@ -50,21 +52,18 @@ class FilterBase:
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
             source_queues=self.source_queues,
-            target_queues=self.target_queues
+            target_queues=self.target_queues,
         )
 
-    def run_consumer(self):       
+    def run_consumer(self):
         logger.info("Node is online")
-        logger.info(f"Configuration loaded successfully")
+        logger.info("Configuration loaded successfully")
         for key, value in self.config["DEFAULT"].items():
-            logger.info(f"Config: {key}: {value}")
+            logger.info("Config: %s: %s", key, value)
 
         if not self.rabbitmq_processor.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
             return
-        
-        # Tell gateway that this node is online
-        self._notify_gateway()
 
         try:
             logger.info("Starting message consumption...")
@@ -75,7 +74,7 @@ class FilterBase:
             self.rabbitmq_processor.stop_consuming()
 
         except Exception as e:
-            logger.error(f"Error during consumption: {e}")
+            logger.error("Error during consumption: %s", e)
             self.rabbitmq_processor.stop_consuming()
 
         finally:
@@ -90,20 +89,15 @@ class FilterBase:
         try:
             data_batch = json.loads(body)
             if not isinstance(data_batch, list):
-                logger.error(f"Expected a batch (list), got {type(data_batch)}. Skipping.")
+                logger.error(
+                    "Expected a batch (list), got %s. Skipping.",
+                    type(data_batch),
+                )
                 return None
             return data_batch
         except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error in message from {queue_name}: {e}")
+            logger.error("JSON decode error in message from %s: %s", queue_name, e)
             return None
 
     def process(self):
         raise NotImplementedError("Subclasses should implement this.")
-    
-    def _notify_gateway(self):
-        self.rabbitmq_processor.channel.queue_declare(queue='nodes_ready', durable=False, arguments={'x-max-priority': 10})
-        self.rabbitmq_processor.publish(
-            target='nodes_ready',
-            message=self.node_name
-        )
-        logger.info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")

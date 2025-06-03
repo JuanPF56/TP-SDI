@@ -1,14 +1,19 @@
+"""
+This module defines the ConnectedClient class, which represents a client connected to the protocol gateway.
+"""
+
 import socket
 import threading
 from dataclasses import asdict
 
+from protocol_gateway_client import ProtocolGateway
+
+from common.protocol import TIPO_MENSAJE, IS_LAST_BATCH_FLAG
+from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
 logger = get_logger("ConnectedClient")
 
-from protocol_gateway_client import ProtocolGateway
-from common.protocol import TIPO_MENSAJE, IS_LAST_BATCH_FLAG
-from common.mom import RabbitMQProcessor
 
 DATASETS_PER_REQUEST = 3
 QUERYS_PER_REQUEST = 5

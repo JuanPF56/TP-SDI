@@ -47,20 +47,17 @@ class QueryBase:
                 self.logger.info("Closing RabbitMQ connection...")
                 self.rabbitmq_processor.close()
         except Exception as e:
-            self.logger.error(f"Error closing connection: {e}")
+            self.logger.error("Error closing connection: %s", e)
 
     def process(self):
         self.logger.info("Node is online")
 
         for key, value in self.config["DEFAULT"].items():
-            self.logger.info(f"{key}: {value}")
+            self.logger.info("%s: %s", key, value)
 
         if not self.rabbitmq_processor.connect():
             self.logger.error("Error al conectar a RabbitMQ. Saliendo.")
             return
-
-        # Tell gateway that this node is online
-        self._notify_gateway()
 
         try:
             self.logger.info("Starting message consumption...")
@@ -72,13 +69,6 @@ class QueryBase:
             self.logger.info("Closing RabbitMQ connection...")
             self.rabbitmq_processor.close()
             self.logger.info("Connection closed.")
-
-    def _notify_gateway(self):
-        self.rabbitmq_processor.channel.queue_declare(
-            queue="nodes_ready", durable=False, arguments={"x-max-priority": 10}
-        )
-        self.rabbitmq_processor.publish(target="nodes_ready", message=self.node_name)
-        self.logger.info(f"Sent ready signal to 'nodes_ready' for {self.node_name}")
 
     def callback(self, ch, method, properties, body, input_queue):
         """
