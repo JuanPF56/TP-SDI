@@ -11,19 +11,21 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
      - [Escalabilidad](#escalabilidad)  
      - [Multi-client](#multi-client)  
      - [Tolerancia a fallos](#tolerancia-a-fallos)  
-3. [🛠️ Configuración del Sistema](#comandos)  
+3. [🛠️ Configuración del Sistema](#️-configuración-del-sistema)  
    - [⚙️ Configurar cantidad de nodos](#️-configurar-cantidad-de-nodos)  
-   - [🔧 Generar el `docker-compose.yaml`](#-generar-el-docker-composeyaml)  
+   - [🔧 Generar y levantar el sistema](#-generar-y-levantar-el-sistema)  
      - [📦 Instalar dependencias](#-instalar-dependencias)  
-     - [✅ Uso recomendado con `generate-compose.sh`](#-uso-recomendado-con-generate-composesh)  
+     - [✅ Uso recomendado con `run_system.sh`](#-uso-recomendado-con-run_systemsh)  
      - [📌 Parámetros](#-parámetros)  
-     - [🧪 Ejemplos](#-ejemplos)  
-   - [🧪 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
+     - [📖 Ejemplos](#-ejemplos)  
+     - [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
 4. [▶️ Correr el sistema](#️-correr-el-sistema)  
 5. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)  
 6. [🛠️ Construido con](#️-construido-con)  
 7. [✒️ Autores](#️-autores)  
 8. [📑 Documentación](#-documentación)
+
+---
 
 ## Requerimientos
 
@@ -62,7 +64,7 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
 ---
 
-## Comandos
+## 🛠️ Configuración del Sistema
 
 ### ⚙️ Configurar cantidad de nodos
 
@@ -79,67 +81,78 @@ join_credits_nodes = 2
 join_ratings_nodes = 3
 ```
 
-🔁 Una vez configurado, ejecutá el generador de docker-compose para que los cambios se reflejen en la definición del sistema.
+---
+
+### 🔧 Generar y levantar el sistema
+
+Usá el script unificado `run_system.sh`, que incluye:
+
+✅ Instalación de dependencias.  
+✅ Generación de `docker-compose.yaml`.  
+✅ Construcción de imágenes.  
+✅ Levantado de servicios.  
+✅ Espera automática a estado saludable.
 
 ---
 
-### 🔧 Generar el `docker-compose.yaml`
-
-El sistema cuenta con un script auxiliar para facilitar la generación del archivo `docker-compose.yaml` de forma dinámica, según los parámetros que definas.
-
 #### 📦 Instalar dependencias
 
-Antes de ejecutar cualquier script Python, asegurate de instalar las dependencias necesarias:
+No es necesario hacerlo manualmente, el script lo hará si falta algo.  
+Si querés hacerlo aparte:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-#### ✅ Uso recomendado con `generate-compose.sh`
+---
+
+#### ✅ Uso recomendado con `run_system.sh`
 
 ```bash
-./generate-compose.sh <output_file.yml> [-test <test_config.yaml>] [-cant_clientes N]
+./run_system.sh [<output_file.yml>] [-test <test_config.yaml>] [-cant_clientes N]
 ```
+
+---
 
 #### 📌 Parámetros
 
-- `<output_file.yml>`: nombre del archivo de salida (`docker-compose.yaml`, por ejemplo).
+- `<output_file.yml>`: Opcional. Nombre del archivo de salida. En caso de no pasarse, será: `docker-compose.yaml`.
+- `-test <test_config.yaml>`: Opcional. Usa datasets reducidos y ejecuta `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en: `test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)).
+- `-cant_clientes N`: Opcional. Define cantidad de clientes (client_X) a levantar.
 
-- `-test <test_config.yaml>`: opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, donde el archivo YAML indica el porcentaje de cada dataset a usar.
+---
 
-- `-cant_clientes N`: opcional. Define la cantidad de clientes (client_X) que se generan en el sistema.
+#### 📖 Ejemplos
 
-#### 🧪 Ejemplos
-
-- Generar configuración completa:
+- Generar y levantar configuración completa:
 
 ```bash
-./generate-compose.sh docker-compose.yaml
+./run_system.sh
 ```
 
-- Generar para pruebas rápidas con una config YAML:
+- Generar y levantar en modo test:
 
 ```bash
-./generate-compose.sh docker-compose.yaml -test test_config.yaml
+./run_system.sh docker-compose.yaml -test test_config.yaml
 ```
 
-- Generar con 4 clientes:
+- Generar y levantar con 4 clientes:
 
 ```bash
-./generate-compose.sh docker-compose.yaml -cant_clientes 4
+./run_system.sh docker-compose.yaml -cant_clientes 4
 ```
 
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh docker-compose.yaml -test test_config.yaml -cant_clientes 2
+./run_system.sh docker-compose.yaml -test test_config.yaml -cant_clientes 2
 ```
-
-> 💡 Internamente, este script llama a `download_datasets.py` con el flag `-test <test_config.yaml>` y luego ejecuta `docker-compose-generator.py`.
 
 ---
 
-### 🧪 Preparar datasets de prueba
+### 📋 Preparar datasets de prueba
+
+Con correr el flag `-test`en el script anterior ya queda seteado, pero se puede correr por separado con el comando:
 
 ```bash
 python3 download_datasets.py [-test <test_config.yaml>]
