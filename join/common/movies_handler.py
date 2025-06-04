@@ -1,5 +1,6 @@
 import json
 import multiprocessing
+import signal
 
 from common.logger import get_logger
 from common.mom import RabbitMQProcessor
@@ -30,6 +31,7 @@ class MoviesHandler(multiprocessing.Process):
         self.movies = self.manager.dict()
 
         self.node_id = node_id
+        self.stopped = False
 
         self.year_eos_flags = self.manager.dict()
         self.year_nodes_to_await = year_nodes_to_await
@@ -39,10 +41,16 @@ class MoviesHandler(multiprocessing.Process):
         self.current_client_id = None
         self.current_request_number = None
 
-    def terminate(self):
-        self.rabbitmq_processor.stop_consuming()
-        self.rabbitmq_processor.close()
-        super().terminate()
+        # Register signal handler for SIGTERM signal
+        signal.signal(signal.SIGTERM, self.__handleSigterm)
+        signal.signal(signal.SIGINT, self.__handleSigterm)
+
+    def __handleSigterm(self, signum, frame):
+        self.log_info("SIGTERM signal received. Closing connection...")
+        try:
+            self._close_connection()
+        except Exception as e:
+            self.log_info(f"Error closing connection: {e}")
 
     def run(self):
         """
@@ -110,8 +118,26 @@ class MoviesHandler(multiprocessing.Process):
             finally:
                 self.rabbitmq_processor.acknowledge(method)
 
-        self.rabbitmq_processor.consume(callback)
-        self.rabbitmq_processor.close()
+        try:
+            self.rabbitmq_processor.consume(callback)
+        except KeyboardInterrupt:
+            logger.info("Shutting down gracefully...")
+        except Exception as e:
+            logger.error(f"Error during consumption: {e}")
+        finally:
+            self._close_connection()
+
+    def _close_connection(self):
+        if not self.stopped:
+            try:
+                logger.info("Closing RabbitMQ connection...")
+                self.rabbitmq_processor.stop_consuming()
+                self.rabbitmq_processor.close()
+                logger.info("Connection closed.")
+            except Exception as e:
+                logger.error(f"Error closing connection: {e}")
+            finally:
+                self.stopped = True
 
     def client_ready(self, client_id):
         """
