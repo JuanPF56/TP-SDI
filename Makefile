@@ -25,7 +25,7 @@ up-system:
 
 # Levanta solo los servicios de los clientes
 up-clients:
-	docker compose -f $(CLIENTS_FILE) -p clientes up -d
+	docker compose -f $(CLIENTS_FILE) -p clientes up -d --remove-orphans
 
 # Muestra logs del sistema
 logs-system:
