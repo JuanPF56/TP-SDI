@@ -17,7 +17,6 @@ LOS 3 DATASETS AL 100% (con el nuevo modelo de sentiment):
 
     - Salida:
 {
-  "numero_de_consulta": 1,
   "query_id": "Q2",
   "results": [
     [
@@ -44,7 +43,6 @@ LOS 3 DATASETS AL 100% (con el nuevo modelo de sentiment):
 }
 
 {
-  "numero_de_consulta": 1,
   "query_id": "Q1",
   "results": {
     "Plata quemada": [
@@ -157,7 +155,6 @@ LOS 3 DATASETS AL 100% (con el nuevo modelo de sentiment):
 }
 
 {
-  "numero_de_consulta": 1,
   "query_id": "Q5",
   "results": {
     "average_positive_rate": 8104.966414353625,
@@ -166,7 +163,6 @@ LOS 3 DATASETS AL 100% (con el nuevo modelo de sentiment):
 }
 
 {
-  "numero_de_consulta": 1,
   "query_id": "Q4",
   "results": {
     "actors": [
@@ -215,7 +211,6 @@ LOS 3 DATASETS AL 100% (con el nuevo modelo de sentiment):
 }
 
 {
-  "numero_de_consulta": 1,
   "query_id": "Q3",
   "results": {
     "highest": {
