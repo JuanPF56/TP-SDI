@@ -21,10 +21,11 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
      - [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
 4. [▶️ Correr el sistema](#️-correr-el-sistema)  
 5. [🧱 Comandos disponibles (`Makefile`)](#-comandos-disponibles-makefile)  
-6. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)  
-7. [🛠️ Construido con](#️-construido-con)  
-8. [✒️ Autores](#️-autores)  
-9. [📑 Documentación](#-documentación)
+6. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
+7. [💯 Respuestas esperadas](#-respuestas-esperadas)  
+8. [🛠️ Construido con](#️-construido-con)  
+9. [✒️ Autores](#️-autores)  
+10. [📑 Documentación](#-documentación)
 
 ---
 
@@ -242,6 +243,16 @@ Podés visualizar el estado de las **queues** y monitorear la actividad del sist
 - **Contraseña**: `guest`
 
 Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadísticas en tiempo real y comprobar que los workers estén procesando correctamente.
+
+---
+
+## 💯 Respuestas esperadas
+
+![query_1](query_1.png)
+![query_2](query_2.png)
+![query_3](query_3.png)
+![query_4](query_4.png)
+![query_5](query_5.png)
 
 ---
 
