@@ -1,8 +1,7 @@
-# Ignore the client/data directory
-client/data/
+# Ignore the data directory (datasets are stored here)
+data/
 
-datasets_for_test/
-
+# Ignore the results directory (results are stored here)
 resultados/
 
 # Ignore all logs

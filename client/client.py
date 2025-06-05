@@ -6,7 +6,7 @@ import socket
 import signal
 import time
 
-from utils import download_dataset, send_datasets_to_server
+from utils import send_datasets_to_server
 from result_receiver import ResultReceiver
 from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
 
@@ -88,14 +88,10 @@ class Client:
         Args:
             use_test_dataset (bool): If True, uses a smaller test dataset.
         """
+        datasets_path = "/data"
         if use_test_dataset:
-            datasets_path = "/datasets"
             logger.info("Using test dataset.")
         else:
-            datasets_path = download_dataset()
-            if not datasets_path:
-                logger.error("Dataset download failed.")
-                return
             logger.info("Using full dataset.")
 
         self._connect()

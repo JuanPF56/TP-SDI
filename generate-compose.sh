@@ -38,9 +38,15 @@ echo "Nombre base: $base_filename"
 echo "Cantidad de clientes: $cant_clientes"
 echo "¿Modo test activado?: $modo_test"
 
-# Ejecutamos download_datasets.py si es modo test
+# Descargar datasets completos si no está en modo test
+if [ "$modo_test" == "No" ]; then
+    echo "Descargando datasets completos..."
+    python3 download_datasets.py
+fi
+
+# Reducir datasets si está el flag -test
 if [ "$modo_test" == "Sí" ]; then
-    echo "Ejecutando download_datasets.py con -test $test_config_path"
+    echo "Reduciendo datasets con -test $test_config_path"
     python3 download_datasets.py -test "$test_config_path"
 fi
 

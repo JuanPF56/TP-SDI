@@ -226,9 +226,8 @@ def generate_clients_compose(
         client_volumes = [
             "./client/config.ini:/app/config.ini",
             "./resultados:/app/resultados",
+            "./data:/data",
         ]
-        if short_test:
-            client_volumes.append("./datasets_for_test:/datasets")
 
         services[f"client_{i}"] = {
             "container_name": f"client_{i}",
