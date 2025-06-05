@@ -12,11 +12,23 @@ CLIENTS_FILE=docker-compose.clients.yml
 
 # Construye las imágenes del sistema
 build-system:
-	docker compose -f $(SYSTEM_FILE) -p sistema build
+	docker build -f ./base_node/Dockerfile -t base_node:latest .
+	docker build -f ./gateway/Dockerfile -t gateway:latest .
+	docker build -f ./join/credits/Dockerfile -t join_credits:latest .
+	docker build -f ./join/ratings/Dockerfile -t join_ratings:latest .
+	docker build -f ./filter/cleanup/Dockerfile -t filter_cleanup:latest .
+	docker build -f ./filter/year/Dockerfile -t filter_year:latest .
+	docker build -f ./filter/production/Dockerfile -t filter_production:latest .
+	docker build -f ./sentiment_analyzer/Dockerfile -t sentiment_analyzer:latest .
+	docker build -f ./query/q1/Dockerfile -t query_q1:latest .
+	docker build -f ./query/q2/Dockerfile -t query_q2:latest .
+	docker build -f ./query/q3/Dockerfile -t query_q3:latest .
+	docker build -f ./query/q4/Dockerfile -t query_q4:latest .
+	docker build -f ./query/q5/Dockerfile -t query_q5:latest .
 
 # Construye las imágenes de los clientes
 build-clients:
-	docker compose -f $(CLIENTS_FILE) -p clientes build
+	docker build -f ./client/Dockerfile -t client:latest .
 
 # Levanta solo los servicios del sistema (gateway + server)
 up-system:
