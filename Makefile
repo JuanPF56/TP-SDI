@@ -1,6 +1,91 @@
 SHELL := /bin/bash
 PWD := $(shell pwd)
 
+# *************** MAKEFILES NUEVOS ***************
+
+# Red común que usan ambos archivos
+NETWORK=testing_net
+
+# Nombres de los archivos de docker-compose
+SYSTEM_FILE=docker-compose.system.yml
+CLIENTS_FILE=docker-compose.clients.yml
+
+# Construye las imágenes del sistema
+build-system:
+	docker compose -f $(SYSTEM_FILE) build
+
+# Construye las imágenes de los clientes
+build-clients:
+	docker compose -f $(CLIENTS_FILE) build
+
+# Levanta solo los servicios del sistema (gateway + server)
+up-system:
+	docker network inspect $(NETWORK) >/dev/null 2>&1 || docker network create $(NETWORK)
+	docker compose -f $(SYSTEM_FILE) -p sistema up -d
+
+# Levanta solo los servicios de los clientes
+up-clients:
+	docker compose -f $(CLIENTS_FILE) -p clientes up -d
+
+# Muestra logs del sistema
+logs-system:
+	@echo "📜 Mostrando logs del sistema (Ctrl+C para salir)..."
+	docker compose -f $(SYSTEM_FILE) logs -f
+
+# Muestra logs de los clientes
+logs-clients:
+	@echo "📜 Mostrando logs de los clientes (Ctrl+C para salir)..."
+	docker compose -f $(CLIENTS_FILE) logs -f
+
+# Muestra logs combinados
+logs-all:
+	@echo "📜 Mostrando logs de todo el sistema (Ctrl+C para salir)..."
+	docker compose -f $(SYSTEM_FILE) -f $(CLIENTS_FILE) logs -f
+
+.PHONY: logs-system logs-clients logs-all
+
+# Detiene los servicios del sistema y clientes
+down:
+	docker compose -f $(SYSTEM_FILE) -f $(CLIENTS_FILE) down
+
+# Muestra los contenedores activos relacionados
+ps:
+	docker compose -f $(SYSTEM_FILE) -f $(CLIENTS_FILE) ps
+
+# Borra los contenedores, redes y volúmenes asociados
+clean:
+	docker compose -f $(SYSTEM_FILE) -f $(CLIENTS_FILE) down -v
+	docker network rm $(NETWORK) 2>/dev/null || true
+
+# Detiene solo los contenedores definidos en el sistema
+docker-kill-system:
+	@echo "🛑 Matando contenedores del sistema con SIGTERM..."
+	@containers=$$(docker compose -f $(SYSTEM_FILE) ps -q); \
+	if [ -n "$$containers" ]; then \
+		docker kill $$containers --signal=SIGTERM; \
+		echo "✅ Contenedores del sistema detenidos."; \
+	else \
+		echo "⚠️  No hay contenedores del sistema en ejecución."; \
+	fi
+.PHONY: docker-kill-system
+
+# Detiene solo los contenedores de los clientes
+docker-kill-clients:
+	@echo "🛑 Matando contenedores de clientes con SIGTERM..."
+	@containers=$$(docker compose -f $(CLIENTS_FILE) ps -q); \
+	if [ -n "$$containers" ]; then \
+		docker kill $$containers --signal=SIGTERM; \
+		echo "✅ Contenedores de clientes detenidos."; \
+	else \
+		echo "⚠️  No hay contenedores de clientes en ejecución."; \
+	fi
+.PHONY: docker-kill-clients
+
+
+
+
+# *************** MAKEFILES VIEJOS ***************
+
 # Default target
 default: docker-image
 

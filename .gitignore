@@ -8,5 +8,6 @@ resultados/
 # Ignore all logs
 *.log
 
-# Ignore the docker-compose file
-docker-compose.yaml
+# Ignore the docker-compose files
+docker-compose.clients.yml
+docker-compose.system.yml

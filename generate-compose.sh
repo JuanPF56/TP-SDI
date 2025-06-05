@@ -4,15 +4,15 @@
 cant_clientes="1"
 modo_test="No"
 test_config_path=""
-default_filename="docker-compose.yaml"
+default_filename="docker-compose"
 
-# Si el primer argumento NO empieza con '-', lo tomamos como nombre de archivo
+# Si el primer argumento NO empieza con '-', lo tomamos como nombre base
 if [[ "$1" != -* && "$#" -ge 1 ]]; then
-    filename=$1
+    base_filename=$1
     shift
 else
-    echo "No se especificó nombre de archivo, se usará '$default_filename'"
-    filename=$default_filename
+    echo "No se especificó nombre base, se usará '$default_filename'"
+    base_filename=$default_filename
 fi
 
 args=("$@")  # Guardamos todos los flags originales
@@ -33,8 +33,8 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-echo "Generando archivo docker compose..."
-echo "Nombre del archivo de salida: $filename"
+echo "Generando archivos docker compose..."
+echo "Nombre base: $base_filename"
 echo "Cantidad de clientes: $cant_clientes"
 echo "¿Modo test activado?: $modo_test"
 
@@ -44,6 +44,19 @@ if [ "$modo_test" == "Sí" ]; then
     python3 download_datasets.py -test "$test_config_path"
 fi
 
-# Generamos el archivo de docker compose
-python3 docker-compose-generator.py "$filename" "${args[@]}"
-echo "Archivo generado con éxito."
+# Generamos archivo del sistema
+echo "Generando $base_filename.system.yml"
+python3 docker-compose-generator.py system "$base_filename.system.yml"
+
+# Generamos archivo de clientes
+echo "Generando $base_filename.clients.yml"
+client_args=("clients" "$base_filename.clients.yml" "-cant_clientes" "$cant_clientes")
+if [ "$modo_test" == "Sí" ]; then
+    client_args+=("-test" "$test_config_path")
+fi
+
+python3 docker-compose-generator.py "${client_args[@]}"
+
+echo "Archivos generados con éxito:"
+echo "  -> $base_filename.system.yml"
+echo "  -> $base_filename.clients.yml"
