@@ -1,7 +1,6 @@
 import configparser
 import os
 from datetime import datetime
-from collections import defaultdict
 
 from common.client_state_manager import ClientManager
 from common.client_state_manager import ClientState
@@ -47,11 +46,6 @@ class YearFilter(FilterBase):
             "movies_arg_post_2000_exchange", "movies_arg_post_2000"
         )
 
-        self.processed_batch = {
-            self.source_queues[0]: defaultdict(list),
-            self.source_queues[1]: defaultdict(list),
-        }
-
     def setup(self):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
@@ -61,25 +55,6 @@ class YearFilter(FilterBase):
     ):
         if client_state:
             logger.debug("Received EOS from %s", input_queue)
-            key = client_state.client_id
-            if (
-                self.processed_batch[input_queue]
-                and self.processed_batch[input_queue][key]
-            ):
-                batch = self.processed_batch[input_queue][key]
-                exchange = input_queue == self.source_queues[0]
-                target = self.target_exchange if exchange else self.target_queue
-                logger.info(
-                    "Publishing %d movies to %s for %s", len(batch), target, key
-                )
-                self.rabbitmq_processor.publish(
-                    target=target,
-                    message=batch,
-                    exchange=exchange,
-                    headers=headers,
-                    priority=1,
-                )
-                self.processed_batch[input_queue][key] = []
         handle_eos(
             body,
             self.node_id,
@@ -103,47 +78,40 @@ class YearFilter(FilterBase):
         if client_state and client_state.has_received_all_eos(self.source_queues):
             self.client_manager.remove_client(client_state.client_id)
 
-    def _process_movies_batch(
-        self, movies_batch, input_queue, client_state: ClientState
-    ):
-        key = client_state.client_id
-        for movie in movies_batch:
-            title = movie.get("original_title")
-            date_str = movie.get("release_date", "")
-            release_year = self.extract_year(date_str)
+    def _process_and_publish_movie(self, movie, input_queue, headers):
+        title = movie.get("original_title")
+        date_str = movie.get("release_date", "")
+        release_year = self.extract_year(date_str)
 
-            logger.debug(
-                "Processing '%s' released in %d from queue '%s'",
-                title,
-                release_year,
-                input_queue,
-            )
+        logger.debug(
+            "Processing '%s' released in %s from queue '%s'",
+            title,
+            release_year,
+            input_queue,
+        )
 
-            if input_queue == self.source_queues[0]:
-                if release_year and release_year > 2000:
-                    self.processed_batch[input_queue][key].append(movie)
-            elif input_queue == self.source_queues[1]:
-                if release_year and 2000 <= release_year <= 2009:
-                    self.processed_batch[input_queue][key].append(movie)
-            else:
-                logger.warning("Unknown source queue: %s", input_queue)
-
-    def _publish_ready_batches(
-        self, input_queue, msg_type, headers, client_state: ClientState
-    ):
-        key = client_state.client_id
-        if len(self.processed_batch[input_queue][key]) >= self.batch_size:
-            exchange = input_queue == self.source_queues[0]
-            target = self.target_exchange if exchange else self.target_queue
-
-            self.rabbitmq_processor.publish(
-                target=target,
-                message=self.processed_batch[input_queue][key],
-                msg_type=msg_type,
-                exchange=exchange,
-                headers=headers,
-            )
-            self.processed_batch[input_queue][key] = []
+        if input_queue == self.source_queues[0]:
+            # Argentina queue: movies after 2000
+            if release_year and release_year > 2000:
+                self.rabbitmq_processor.publish(
+                    target=self.target_exchange,
+                    message=movie,
+                    exchange=True,
+                    headers=headers,
+                    priority=1,
+                )
+        elif input_queue == self.source_queues[1]:
+            # Argentina+Spain queue: movies between 2000-2009
+            if release_year and 2000 <= release_year <= 2009:
+                self.rabbitmq_processor.publish(
+                    target=self.target_queue,
+                    message=movie,
+                    exchange=False,
+                    headers=headers,
+                    priority=1,
+                )
+        else:
+            logger.warning("Unknown source queue: %s", input_queue)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = self._get_message_type(properties)
@@ -156,13 +124,12 @@ class YearFilter(FilterBase):
             return
 
         try:
-            movies_batch = self._decode_body(body, input_queue)
-            if not movies_batch:
+            movie = self._decode_body(body, input_queue)
+            if not movie:
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self._process_movies_batch(movies_batch, input_queue, client_state)
-            self._publish_ready_batches(input_queue, msg_type, headers, client_state)
+            self._process_and_publish_movie(movie, input_queue, headers)
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", input_queue, e)
