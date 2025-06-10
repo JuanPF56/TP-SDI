@@ -48,6 +48,28 @@ class SoloCountryBudgetQuery(QueryBase):
         del self.budget_by_country_by_request[key]
         self.client_manager.remove_client(client_id)
 
+    def process_movie(self, movie, client_id):
+        """
+        Process a single movie.
+        """
+        production_countries = movie.get("production_countries", [])
+        if not production_countries:
+            return
+
+        country = production_countries[0].get("name")
+        if not country:
+            return
+
+        budget = movie.get("budget", 0)
+        self.budget_by_country_by_request[client_id][country] += budget
+
+        logger.debug(
+            "Processed movie for client %s: country=%s budget=%s",
+            client_id,
+            country,
+            budget,
+        )
+
     def callback(self, ch, method, properties, body, input_queue):
         """
         Reads from:
@@ -62,7 +84,7 @@ class SoloCountryBudgetQuery(QueryBase):
         NEXT: When receiving the end of stream flag, publish the results to a results queue.
         """
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
-        headers = properties.headers or {}
+        headers = getattr(properties, "headers", {}) or {}
 
         client_id = headers.get("client_id")
         if not client_id:
@@ -78,6 +100,7 @@ class SoloCountryBudgetQuery(QueryBase):
                 node_id = data.get("node_id")
             except json.JSONDecodeError:
                 logger.error("Failed to decode EOS message")
+                self.rabbitmq_processor.acknowledge(method)
                 return
 
             if client_state.has_queue_received_eos_from_node(input_queue, node_id):
@@ -99,31 +122,23 @@ class SoloCountryBudgetQuery(QueryBase):
             self.rabbitmq_processor.acknowledge(method)
             return
 
-        # Normal message (batch of movies)
+        # Normal message (single movie)
         try:
-            movies_batch = json.loads(body)
-            if not isinstance(movies_batch, list):
-                logger.info("❌ Expected a list (batch) of movies, skipping.")
+            movie = json.loads(body)
+            logger.info("Processing movie for client %s: %s", client_id, movie)
+            if not isinstance(movie, dict):
+                logger.info("❌ Expected a single movie object, skipping.")
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            for movie in movies_batch:
-                production_countries = movie.get("production_countries", [])
-                if not production_countries:
-                    continue
-
-                country = production_countries[0].get("name")
-                if not country:
-                    continue
-
-                budget = movie.get("budget", 0)
-                self.budget_by_country_by_request[(client_id)][country] += budget
-
-            self.rabbitmq_processor.acknowledge(method)
+            self.process_movie(movie, client_id)
 
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
+            return
+
+        self.rabbitmq_processor.acknowledge(method)
 
 
 if __name__ == "__main__":
