@@ -16,7 +16,6 @@ EOS_TYPE = "EOS"
 class FilterBase:
     def __init__(self, config):
         self.config = config
-        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
         self.source_queues = []
         self.target_queues = {}
         self.node_id = int(os.getenv("NODE_ID", "1"))
@@ -87,14 +86,7 @@ class FilterBase:
 
     def _decode_body(self, body, queue_name):
         try:
-            data_batch = json.loads(body)
-            if not isinstance(data_batch, list):
-                logger.error(
-                    "Expected a batch (list), got %s. Skipping.",
-                    type(data_batch),
-                )
-                return None
-            return data_batch
+            return json.loads(body)
         except json.JSONDecodeError as e:
             logger.error("JSON decode error in message from %s: %s", queue_name, e)
             return None
