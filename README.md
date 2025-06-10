@@ -124,7 +124,7 @@ pip install -r requirements.txt
 ./generate-compose.sh
 ```
 
-![expected_output_default](expected_output_default.png)
+![expected_output_default](resources/expected_output_default.png)
 
 - Generar en modo test:
 
@@ -144,7 +144,7 @@ pip install -r requirements.txt
 ./generate-compose.sh -test test_config.yaml -cant_clientes 2
 ```
 
-![expected_output_test_and_multiclient](expected_output_test_and_multiclient.png)
+![expected_output_test_and_multiclient](resources/expected_output_test_and_multiclient.png)
 
 ---
 
@@ -214,7 +214,7 @@ make logs-all         # Muestra todos los logs combinados (sistema + clientes)
 
 > Tip: Dejá `logs-system` corriendo en una terminal para monitorear la actividad mientras los clientes interactúan.
 
-![comandos](comandos.png)
+![comandos](resources/comandos.png)
 
 #### 🔻 Apagar o limpiar
 
@@ -248,11 +248,11 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ## 💯 Respuestas esperadas
 
-![query_1](query_1.png)
-![query_2](query_2.png)
-![query_3](query_3.png)
-![query_4](query_4.png)
-![query_5](query_5.png)
+![query_1](resources/query_1.png)
+![query_2](resources/query_2.png)
+![query_3](resources/query_3.png)
+![query_4](resources/query_4.png)
+![query_5](resources/query_5.png)
 
 ---
 
