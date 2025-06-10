@@ -16,9 +16,6 @@ class ProductionFilter(FilterBase):
         Initialize the ProductionFilter with the provided configuration.
         """
         super().__init__(config)
-        self.batch_arg = defaultdict(list)
-        self.batch_solo = defaultdict(list)
-        self.batch_arg_spain = defaultdict(list)
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
         self.client_manager = ClientManager(
@@ -40,40 +37,16 @@ class ProductionFilter(FilterBase):
     def setup(self):
         """
         Setup method to initialize the filter.
-        This method sets up the necessary queues and RabbitMQ processor.
         """
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
 
-    def _publish_batch(self, queue, batch, headers):
-        self.rabbitmq_processor.publish(target=queue, message=batch, headers=headers)
-        logger.debug("Sent batch to %s", queue)
+    def _publish(self, queue, movie, headers):
+        self.rabbitmq_processor.publish(target=queue, message=movie, headers=headers)
+        logger.debug("Sent movie to %s", queue)
 
     def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
-        if client_state:
-            key = client_state.client_id
-            logger.debug("Received EOS from %s", queue_name)
-            if len(self.batch_arg[key]) > 0:
-                self._publish_batch(
-                    queue=self.target_queues[queue_name][0],
-                    batch=self.batch_arg[key],
-                    headers=headers,
-                )
-                self.batch_arg[key] = []
-            if len(self.batch_solo[key]) > 0:
-                self._publish_batch(
-                    queue=self.target_queues[queue_name][1],
-                    batch=self.batch_solo[key],
-                    headers=headers,
-                )
-                self.batch_solo[key] = []
-            if len(self.batch_arg_spain[key]) > 0:
-                self._publish_batch(
-                    queue=self.target_queues[queue_name][2],
-                    batch=self.batch_arg_spain[key],
-                    headers=headers,
-                )
-                self.batch_arg_spain[key] = []
+        logger.debug("Received EOS from %s", queue_name)
         handle_eos(
             body,
             self.node_id,
@@ -92,53 +65,22 @@ class ProductionFilter(FilterBase):
         if client_state and client_state.has_received_all_eos(self.source_queues):
             self.client_manager.remove_client(client_state.client_id)
 
-    def _process_movies_batch(self, movies_batch, client_state: ClientState):
-        key = client_state.client_id
-        for movie in movies_batch:
-            country_dicts = movie.get("production_countries", [])
-            country_names = [c.get("name") for c in country_dicts if "name" in c]
+    def _process_movie(self, movie, queue_name, headers):
+        country_dicts = movie.get("production_countries", [])
+        country_names = [c.get("name") for c in country_dicts if "name" in c]
 
-            logger.debug("Production countries: %s", country_names)
+        if "Argentina" in country_names:
+            self._publish(self.target_queues[queue_name][0], movie, headers)
 
-            if "Argentina" in country_names:
-                self.batch_arg[key].append(movie)
+        if len(country_names) == 1:
+            self._publish(self.target_queues[queue_name][1], movie, headers)
 
-            if len(country_names) == 1:
-                self.batch_solo[key].append(movie)
-
-            if "Argentina" in country_names and "Spain" in country_names:
-                self.batch_arg_spain[key].append(movie)
-
-    def _publish_ready_batches(self, queue_name, headers, client_state: ClientState):
-        key = client_state.client_id
-        if len(self.batch_arg[key]) >= self.batch_size:
-            self._publish_batch(
-                queue=self.target_queues[queue_name][0],
-                batch=self.batch_arg[key],
-                headers=headers,
-            )
-            self.batch_arg[key] = []
-
-        if len(self.batch_solo[key]) >= self.batch_size:
-            self._publish_batch(
-                queue=self.target_queues[queue_name][1],
-                batch=self.batch_solo[key],
-                headers=headers,
-            )
-            self.batch_solo[key] = []
-
-        if len(self.batch_arg_spain[key]) >= self.batch_size:
-            self._publish_batch(
-                queue=self.target_queues[queue_name][2],
-                batch=self.batch_arg_spain[key],
-                headers=headers,
-            )
-            self.batch_arg_spain[key] = []
+        if "Argentina" in country_names and "Spain" in country_names:
+            self._publish(self.target_queues[queue_name][2], movie, headers)
 
     def callback(self, ch, method, properties, body, queue_name):
         """
-        Callback function to process batched messages from the input queue.
-        Filters movies by production countries and sends them in batches to the appropriate queues.
+        Callback function to process individual movie messages from the input queue.
         """
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
@@ -156,13 +98,12 @@ class ProductionFilter(FilterBase):
             return
 
         try:
-            movies_batch = self._decode_body(body, queue_name)
-            if not movies_batch:
+            movie = self._decode_body(body, queue_name)
+            if not movie:
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self._process_movies_batch(movies_batch, client_state)
-            self._publish_ready_batches(queue_name, headers, client_state)
+            self._process_movie(movie, queue_name, headers)
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", queue_name, e)
@@ -173,11 +114,8 @@ class ProductionFilter(FilterBase):
     def process(self):
         """
         Main processing function for the ProductionFilter.
-
-        It filters movies based on their production countries and sends them to the respective queues:
-        - movies_argentina: for movies produced in Argentina
-        - movies_solo: for movies produced in only one country
-        - movies_arg_spain: for movies produced in both Argentina and Spain
+        It filters movies based on their production countries and sends them individually
+        to the respective queues.
         """
         logger.info("ProductionFilter is starting up")
         self.run_consumer()
