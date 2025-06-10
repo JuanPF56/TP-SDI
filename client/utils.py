@@ -4,27 +4,9 @@ Utility functions for the client to handle dataset downloading and sending to th
 
 from protocol_client_gateway import ProtocolClient, ServerNotConnectedError
 
-import kagglehub
-
 from common.logger import get_logger
 
 logger = get_logger("Client")
-
-
-def download_dataset():
-    """
-    Downloads the dataset from Kaggle using kagglehub.
-    Returns:
-        str: The path where the dataset is downloaded.
-    """
-    try:
-        logger.info("Downloading dataset with kagglehub...")
-        path = kagglehub.dataset_download("rounakbanik/the-movies-dataset")
-        logger.info("Dataset downloaded at: %s", path)
-        return path
-    except Exception as e:
-        logger.error("Failed to download dataset: %s", e)
-        return None
 
 
 def send_datasets_to_server(datasets_path: str, protocol: ProtocolClient):

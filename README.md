@@ -5,29 +5,31 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 ## 📚 Índice
 
 1. [📘 Descripción General](#tp-sdi)  
-2. [✅ Requerimientos](#requerimientos)  
+2. [✅ Requerimientos](#-requerimientos)  
    - [Funcionales](#funcionales)  
    - [No funcionales](#no-funcionales)  
-     - [Escalabilidad](#escalabilidad)  
-     - [Multi-client](#multi-client)  
-     - [Tolerancia a fallos](#tolerancia-a-fallos)  
+     - [📈 Escalabilidad](#-escalabilidad)  
+     - [👥 Multi-client](#-multi-client)  
+     - [🛡️ Tolerancia a fallos](#️-tolerancia-a-fallos)  
 3. [🛠️ Configuración del Sistema](#️-configuración-del-sistema)  
    - [⚙️ Configurar cantidad de nodos](#️-configurar-cantidad-de-nodos)  
-   - [🔧 Generar y levantar el sistema](#-generar-y-levantar-el-sistema)  
+   - [🔧 Generar los `docker-compose`](#-generar-los-docker-compose)  
      - [📦 Instalar dependencias](#-instalar-dependencias)  
-     - [✅ Uso recomendado con `run_system.sh`](#-uso-recomendado-con-run_systemsh)  
+     - [✅ Script auxiliar `generate-compose.sh`](#-script-auxiliar-generate-composesh)  
      - [📌 Parámetros](#-parámetros)  
      - [📖 Ejemplos](#-ejemplos)  
      - [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
 4. [▶️ Correr el sistema](#️-correr-el-sistema)  
-5. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)  
-6. [🛠️ Construido con](#️-construido-con)  
-7. [✒️ Autores](#️-autores)  
-8. [📑 Documentación](#-documentación)
+5. [🧱 Comandos disponibles (`Makefile`)](#-comandos-disponibles-makefile)  
+6. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
+7. [💯 Respuestas esperadas](#-respuestas-esperadas)  
+8. [🛠️ Construido con](#️-construido-con)  
+9. [✒️ Autores](#️-autores)  
+10. [📑 Documentación](#-documentación)
 
 ---
 
-## Requerimientos
+## ✅ Requerimientos
 
 ### Funcionales
 
@@ -42,20 +44,20 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
 ### No funcionales
 
-#### Escalabilidad
+#### 📈 Escalabilidad
 
 - El sistema debe estar optimizado para entornos multicomputadoras.
 - Debe soportar el escalado horizontal al incrementar nodos de cómputo.
 - Se requiere el desarrollo de un Middleware para abstraer la comunicación basada en grupos.
 - Debe soportar una única ejecución del procesamiento y permitir un *graceful quit* ante señales `SIGTERM`.
 
-#### Multi-client
+#### 👥 Multi-client
 
 - Soporte para varias ejecuciones de las consultas por parte de un cliente, sin reinicio del servidor.
 - Ejecución con varios clientes de forma concurrente.
 - Correcta limpieza de los recursos luego de cada ejecución.
 
-#### Tolerancia a fallos
+#### 🛡️ Tolerancia a fallos
 
 - El sistema debe ser tolerante a fallos por caídas de procesos.
 - En caso de usar un algoritmo de consenso, el mismo tiene que ser implementado por los alumnos.
@@ -68,11 +70,10 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
 
 ### ⚙️ Configurar cantidad de nodos
 
-Antes de generar el archivo docker-compose.yaml, podés editar el archivo `global_config.ini` para ajustar la cantidad de nodos que tendrá cada componente del sistema:
+Antes de generar el archivo `docker-compose.system.yml`, podés editar el archivo`global_config.ini` para ajustar la cantidad de nodos que tendrá cada componente del sistema:
 
 ```ini
 [DEFAULT]
-
 cleanup_filter_nodes = 2
 production_filter_nodes = 2
 year_filter_nodes = 2
@@ -83,22 +84,15 @@ join_ratings_nodes = 3
 
 ---
 
-### 🔧 Generar y levantar el sistema
+### 🔧 Generar los `docker-compose`
 
-Usá el script unificado `run_system.sh`, que incluye:
-
-✅ Instalación de dependencias.  
-✅ Generación de `docker-compose.yaml`.  
-✅ Construcción de imágenes.  
-✅ Levantado de servicios.  
-✅ Espera automática a estado saludable.
+Se cuenta con un script auxiliar para facilitar la generación de los archivos `docker-compose.system.yml` y `docker-compose.clients.yml` de manera dinámica, según los parámetros que se definan.
 
 ---
 
 #### 📦 Instalar dependencias
 
-No es necesario hacerlo manualmente, el script lo hará si falta algo.  
-Si querés hacerlo aparte:
+Antes de ejecutar cualquier script Python, asegurate de instalar las dependencias necesarias:
 
 ```bash
 pip install -r requirements.txt
@@ -106,47 +100,51 @@ pip install -r requirements.txt
 
 ---
 
-#### ✅ Uso recomendado con `run_system.sh`
+#### ✅ Script auxiliar `generate-compose.sh`
 
 ```bash
-./run_system.sh [<output_file.yml>] [-test <test_config.yaml>] [-cant_clientes N]
+./generate-compose.sh [<output_file.yml>] [-test <test_config.yaml>] [-cant_clientes N]
 ```
 
 ---
 
 #### 📌 Parámetros
 
-- `<output_file.yml>`: Opcional. Nombre del archivo de salida. En caso de no pasarse, será: `docker-compose.yaml`.
-- `-test <test_config.yaml>`: Opcional. Usa datasets reducidos y ejecuta `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en: `test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)).
-- `-cant_clientes N`: Opcional. Define cantidad de clientes (client_X) a levantar.
+- `<output_file.yml>`: Opcional. Nombre base del archivo de salida. En caso de no pasarse, será: `docker-compose.system.yaml` para el sistema y `docker-compose.clients.yml` para los clientes.
+- `-test <test_config.yaml>`: Opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en:`test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)). En caso de no pasarse, se descargaran los datasets completos.
+- `-cant_clientes N`: Opcional. Define cantidad de clientes (client_X) que se generan. En caso de no pasarse se generará 1 solo cliente.
 
 ---
 
 #### 📖 Ejemplos
 
-- Generar y levantar configuración completa:
+- Generar configuración default:
 
 ```bash
-./run_system.sh
+./generate-compose.sh
 ```
 
-- Generar y levantar en modo test:
+![expected_output_default](expected_output_default.png)
+
+- Generar en modo test:
 
 ```bash
-./run_system.sh docker-compose.yaml -test test_config.yaml
+./generate-compose.sh -test test_config.yaml
 ```
 
-- Generar y levantar con 4 clientes:
+- Generar con 4 clientes:
 
 ```bash
-./run_system.sh docker-compose.yaml -cant_clientes 4
+./generate-compose.sh -cant_clientes 4
 ```
 
 - Combinar ambos:
 
 ```bash
-./run_system.sh docker-compose.yaml -test test_config.yaml -cant_clientes 2
+./generate-compose.sh -test test_config.yaml -cant_clientes 2
 ```
+
+![expected_output_test_and_multiclient](expected_output_test_and_multiclient.png)
 
 ---
 
@@ -174,12 +172,63 @@ ratings.csv: 20
 
 ### ▶️ Correr el sistema
 
-Los siguientes comandos permiten levantar el entorno completo con Docker:
+> [!IMPORTANT]
+> **Pre-requisito**: Asegurate de tener generados los archivos `docker-compose.system.yaml` para el sistema y `docker-compose.clients.yml`para los clientes. Para más información sobre como generarlos, consultá la sección [✅ Script auxiliar `generate-compose.sh`](#-script-auxiliar-generate-composesh))
+
+---
+
+#### 🖥️ Organización recomendada
+
+Para facilitar el desarrollo y la depuración, se recomienda levantar los servicios en **dos consolas separadas**:
+
+- Una consola para todo lo relacionado con el **sistema** (gateway, filtros, joins, querys, etc.).
+- Otra consola para levantar y monitorear a los **clientes**.
+
+---
+
+### 🧱 Comandos disponibles (`Makefile`)
+
+#### ⚙️ Build de imágenes
 
 ```bash
-make docker-compose-up         # Levanta el sistema
-make docker-compose-logs       # Muestra los logs
-make docker-compose-down       # Detiene y elimina contenedores
+make build-system     # Construye las imágenes del sistema
+make build-clients    # Construye las imágenes de los clientes
+```
+
+#### 🚀 Levantar contenedores
+
+```bash
+make up-system        # Levanta solo los servicios del sistema
+make up-clients       # Levanta solo los servicios de los clientes
+```
+
+> 💡 Recordá correr `make up-system` **antes** de `make up-clients`, y esperar a que todos los servicios estén saludables / healthy.
+
+#### 📜 Ver logs
+
+```bash
+make logs-system      # Muestra logs del sistema (gateway, servidor, consultas, etc.)
+make logs-clients     # Muestra logs de los clientes
+make logs-all         # Muestra todos los logs combinados (sistema + clientes)
+```
+
+> Tip: Dejá `logs-system` corriendo en una terminal para monitorear la actividad mientras los clientes interactúan.
+
+![comandos](comandos.png)
+
+#### 🔻 Apagar o limpiar
+
+```bash
+make down             # Detiene todos los servicios (sistema + clientes)
+make clean            # Elimina contenedores, redes y volúmenes
+make ps               # Lista los contenedores activos relacionados
+```
+
+#### 🛑 Detener con `SIGTERM` (graceful shutdown)
+
+```bash
+make docker-kill-system   # Detiene solo los contenedores del sistema con SIGTERM
+make docker-kill-clients  # Detiene solo los contenedores de los clientes con SIGTERM
 ```
 
 ---
@@ -194,6 +243,16 @@ Podés visualizar el estado de las **queues** y monitorear la actividad del sist
 - **Contraseña**: `guest`
 
 Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadísticas en tiempo real y comprobar que los workers estén procesando correctamente.
+
+---
+
+## 💯 Respuestas esperadas
+
+![query_1](query_1.png)
+![query_2](query_2.png)
+![query_3](query_3.png)
+![query_4](query_4.png)
+![query_5](query_5.png)
 
 ---
 
