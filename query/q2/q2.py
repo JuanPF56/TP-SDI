@@ -38,8 +38,6 @@ class SoloCountryBudgetQuery(QueryBase):
             "results": top_5,
         }
 
-        logger.info("RESULTS for %s: %s", key, results)
-
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"], message=results
         )
@@ -125,7 +123,6 @@ class SoloCountryBudgetQuery(QueryBase):
         # Normal message (single movie)
         try:
             movie = json.loads(body)
-            logger.info("Processing movie for client %s: %s", client_id, movie)
             if not isinstance(movie, dict):
                 logger.info("❌ Expected a single movie object, skipping.")
                 self.rabbitmq_processor.acknowledge(method)
