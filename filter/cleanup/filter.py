@@ -18,7 +18,6 @@ class CleanupFilter(FilterBase):
         """
         super().__init__(config)
         self._initialize_queues()
-        self.batches = defaultdict(list)
         self._initialize_rabbitmq_processor()
         self.client_manager = ClientManager(self.source_queues)
 
@@ -103,14 +102,6 @@ class CleanupFilter(FilterBase):
         }
 
     def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
-        if client_state:
-            key = client_state.client_id
-            if self.batches[key] and len(self.batches[key]) > 0:
-                logger.warning(
-                    "Batch not empty when EOS received. Publishing remaining batch."
-                )
-                self._publish_batch(queue_name, self.batches[key], headers, None)
-                self.batches[key].clear()
         handle_eos(
             body,
             self.node_id,
@@ -128,51 +119,14 @@ class CleanupFilter(FilterBase):
     def _free_resources(self, client_state: ClientState):
         try:
             if client_state and client_state.has_received_all_eos(self.source_queues):
-                del self.batches[(client_state.client_id)]
                 self.client_manager.remove_client(client_state.client_id)
         except KeyError:
-            logger.warning("Batch not found for client %s.", client_state.client_id)
-
-    def _process_cleanup_batch(self, data_batch, queue_name, client_state: ClientState):
-        key = client_state.client_id
-        if queue_name == self.source_queues[0]:
-            self.batches[key].extend([self.clean_movie(d) for d in data_batch])
-        elif queue_name == self.source_queues[1]:
-            self.batches[key].extend([self.clean_rating(d) for d in data_batch])
-        elif queue_name == self.source_queues[2]:
-            self.batches[key].extend([self.clean_credit(d) for d in data_batch])
-        else:
-            logger.warning("Unknown queue name: %s. Skipping.", queue_name)
-
-    def _publish_ready_batches(
-        self, queue_name, msg_type, headers, client_state: ClientState
-    ):
-        key = client_state.client_id
-        batch_sz = self._determine_batch_size(queue_name)
-        if self.batches[key] and len(self.batches[key]) >= batch_sz:
-            self._publish_batch(queue_name, self.batches[key], headers, msg_type)
-            self.batches[key].clear()
-
-    def _publish_batch(self, queue_name, batch, headers, msg_type=None):
-        target_queues = self.target_queues.get(queue_name, [])
-        if not isinstance(target_queues, list):
-            target_queues = [target_queues]
-        for target_queue in target_queues:
-            self.rabbitmq_processor.publish(
-                target=target_queue, message=batch, msg_type=msg_type, headers=headers
-            )
-
-    def _determine_batch_size(self, queue_name):
-        if queue_name == self.source_queues[1]:
-            return 10000
-        if queue_name == self.source_queues[0]:
-            return 50
-        return self.batch_size
+            logger.warning("Client not found for cleanup: %s.", client_state.client_id)
 
     def callback(self, ch, method, properties, body, queue_name):
         """
         Callback function to handle incoming messages from RabbitMQ.
-        Handles EOS and batch message processing/publishing.
+        Handles EOS and message processing/publishing.
         """
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
@@ -184,13 +138,33 @@ class CleanupFilter(FilterBase):
             return
 
         try:
-            data_batch = self._decode_body(body, queue_name)
-            if data_batch is None:
+            message_data = self._decode_body(body, queue_name)
+            if message_data is None:
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self._process_cleanup_batch(data_batch, queue_name, client_state)
-            self._publish_ready_batches(queue_name, msg_type, headers, client_state)
+            for record in message_data:
+                if queue_name == self.source_queues[0]:
+                    cleaned = self.clean_movie(record)
+                elif queue_name == self.source_queues[1]:
+                    cleaned = self.clean_rating(record)
+                elif queue_name == self.source_queues[2]:
+                    cleaned = self.clean_credit(record)
+                else:
+                    logger.warning("Unknown queue name: %s. Skipping.", queue_name)
+                    continue
+
+                if cleaned is not None:
+                    target_queues = self.target_queues.get(queue_name, [])
+                    if not isinstance(target_queues, list):
+                        target_queues = [target_queues]
+                    for target_queue in target_queues:
+                        self.rabbitmq_processor.publish(
+                            target=target_queue,
+                            message=cleaned,
+                            msg_type=msg_type,
+                            headers=headers,
+                        )
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", queue_name, e)
