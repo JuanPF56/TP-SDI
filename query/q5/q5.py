@@ -123,7 +123,7 @@ class SentimentStats(QueryBase):
                 return
 
             for single_movie in movie:
-                self.process_movie(single_movie, client_id)
+                self.process_movie(single_movie, client_id, sentiment)
 
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
