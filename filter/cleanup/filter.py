@@ -143,6 +143,13 @@ class CleanupFilter(FilterBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
+            if isinstance(message_data, dict):
+                message_data = [message_data]
+            elif not isinstance(message_data, list):
+                logger.warning("Unexpected message_data type: %s", type(message_data))
+                self.rabbitmq_processor.acknowledge(method)
+                return
+
             for record in message_data:
                 if queue_name == self.source_queues[0]:
                     cleaned = self.clean_movie(record)
@@ -165,6 +172,7 @@ class CleanupFilter(FilterBase):
                             msg_type=msg_type,
                             headers=headers,
                         )
+
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", queue_name, e)

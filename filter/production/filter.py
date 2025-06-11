@@ -103,7 +103,15 @@ class ProductionFilter(FilterBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self._process_movie(movie, queue_name, headers)
+            if isinstance(movie, dict):
+                movie = [movie]
+            elif not isinstance(movie, list):
+                logger.warning("Unexpected movie type: %s", type(movie))
+                self.rabbitmq_processor.acknowledge(method)
+                return
+
+            for single_movie in movie:
+                self._process_movie(single_movie, queue_name, headers)
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", queue_name, e)

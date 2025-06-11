@@ -129,7 +129,15 @@ class YearFilter(FilterBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self._process_and_publish_movie(movie, input_queue, headers)
+            if isinstance(movie, dict):
+                movie = [movie]
+            elif not isinstance(movie, list):
+                logger.warning("Unexpected movie type: %s", type(movie))
+                self.rabbitmq_processor.acknowledge(method)
+                return
+
+            for single_movie in movie:
+                self._process_and_publish_movie(single_movie, input_queue, headers)
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", input_queue, e)
