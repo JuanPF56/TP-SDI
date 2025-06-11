@@ -107,12 +107,17 @@ class ArgSpainGenreQuery(QueryBase):
         # Normal message (single movie)
         try:
             movie = json.loads(body)
-            if not isinstance(movie, dict):
-                logger.warning("❌ Expected a single movie object, skipping.")
+
+            # Normalize to list
+            if isinstance(movie, dict):
+                movie = [movie]
+            elif not isinstance(movie, list):
+                logger.warning("❌ Unexpected movie format: %s, skipping.", type(movie))
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self.process_movie(movie, client_id)
+            for single_movie in movie:
+                self.process_movie(single_movie, client_id)
 
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
@@ -120,7 +125,6 @@ class ArgSpainGenreQuery(QueryBase):
             return
 
         self.rabbitmq_processor.acknowledge(method)
-
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

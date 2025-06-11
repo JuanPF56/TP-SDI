@@ -118,17 +118,22 @@ class SoloCountryBudgetQuery(QueryBase):
                 self._calculate_and_publish_results(client_id)
 
             self.rabbitmq_processor.acknowledge(method)
-            return
+            return            # Normalize to list if necessary
 
-        # Normal message (single movie)
+
         try:
             movie = json.loads(body)
-            if not isinstance(movie, dict):
-                logger.info("❌ Expected a single movie object, skipping.")
+
+            # Normalize to list
+            if isinstance(movie, dict):
+                movie = [movie]
+            elif not isinstance(movie, list):
+                logger.warning("❌ Unexpected movie format: %s, skipping.", type(movie))
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self.process_movie(movie, client_id)
+            for single_movie in movie:
+                self.process_movie(single_movie, client_id)
 
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
