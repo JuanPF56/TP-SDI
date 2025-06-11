@@ -122,28 +122,43 @@ class SentimentAnalyzer:
                 self._handle_eos(input_queue, body, method, headers, client_state)
                 return
 
-            movie = json.loads(body)
+            movies = json.loads(body)
+
+            # Normalize to list
+            if isinstance(movies, dict):
+                movies = [movies]
+            elif not isinstance(movies, list):
+                logger.warning("❌ Unexpected movie format: %s, skipping.", type(movies))
+                self.rabbitmq_processor.acknowledge(method)
+                return
+
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                future = executor.submit(self.analyze_sentiment, movie.get("overview"))
-                try:
-                    sentiment = future.result()
-                    logger.debug("[Worker] Analyzed '%s' → %s", movie.get("original_title"), sentiment)
+                futures = {
+                    executor.submit(self.analyze_sentiment, movie.get("overview")): movie
+                    for movie in movies
+                }
 
-                    if sentiment == "neutral":
-                        logger.debug("[Worker] Movie '%s' is neutral, skipping.", movie.get("original_title"))
-                    else:
-                        target_queue = self.target_queues[0] if sentiment == "positive" else self.target_queues[1]
-                        # publish movie directly, no need to wrap in list
-                        self.rabbitmq_processor.publish(
-                            target=target_queue,
-                            message=movie,
-                            headers=headers,
-                        )
-                        logger.debug("[Worker] Published movie '%s' to %s queue.", movie.get("original_title"), target_queue)
+                for future in futures:
+                    movie = futures[future]
+                    try:
+                        sentiment = future.result()
+                        title = movie.get("original_title")
+                        logger.debug("[Worker] Analyzed '%s' → %s", title, sentiment)
 
-                except Exception as e:
-                    logger.error("[Worker] Error analyzing sentiment for movie '%s': %s", movie.get("original_title"), e)
+                        if sentiment == "neutral":
+                            logger.debug("[Worker] Movie '%s' is neutral, skipping.", title)
+                        else:
+                            target_queue = self.target_queues[0] if sentiment == "positive" else self.target_queues[1]
+                            self.rabbitmq_processor.publish(
+                                target=target_queue,
+                                message=movie,  # still send as single object
+                                headers=headers,
+                            )
+                            logger.debug("[Worker] Published movie '%s' to %s queue.", title, target_queue)
 
+                    except Exception as e:
+                        logger.error("[Worker] Error analyzing sentiment for movie '%s': %s", movie.get("original_title"), e)
+                        
         except pika.exceptions.StreamLostError as e:
             logger.error("Stream lost, reconnecting: %s", e)
             self.rabbitmq_processor.reconnect_and_restart(self.callback)
