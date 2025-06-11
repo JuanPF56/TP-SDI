@@ -113,6 +113,8 @@ class SentimentStats(QueryBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
+            movie = json.loads(body)
+
             if isinstance(movie, dict):
                 movie = [movie]
             elif not isinstance(movie, list):
@@ -122,8 +124,9 @@ class SentimentStats(QueryBase):
 
             for single_movie in movie:
                 self.process_movie(single_movie, client_id)
+
         except json.JSONDecodeError:
-            logger.warning("❌ Invalid JSON in %s queue. Skipping.", sentiment)
+            logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
             return
 
