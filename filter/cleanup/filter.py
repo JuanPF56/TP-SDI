@@ -108,7 +108,6 @@ class CleanupFilter(FilterBase):
             queue_name,
             queue_name,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.target_queues.get(queue_name),
