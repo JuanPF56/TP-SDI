@@ -61,7 +61,6 @@ class YearFilter(FilterBase):
             input_queue,
             input_queue,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
             client_state,
             target_queues=(

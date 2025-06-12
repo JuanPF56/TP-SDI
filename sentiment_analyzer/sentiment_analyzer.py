@@ -93,7 +93,6 @@ class SentimentAnalyzer:
             input_queue,
             self.source_queue,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.target_queues,
