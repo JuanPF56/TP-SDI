@@ -82,6 +82,12 @@ class JoinBase:
         # Start the master logic process
         self.master_logic.start()
 
+        # TODO: Leader election logic
+        # For now, we assume the node with the highest node_id is the leader
+        if self.node_id == self.nodes_of_type:
+            self.log_info("This node is the leader. Starting master logic...")
+            self.master_logic.toggle_leader()
+
         # Start the loop to receive the batches
         self.receive_batch()
 

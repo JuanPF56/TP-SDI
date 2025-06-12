@@ -25,7 +25,7 @@ class MasterLogic(multiprocessing.Process):
         self.node_id = node_id
         self.current_node_id = 1
         self.nodes_of_type = nodes_of_type
-        self.toggle_leader = multiprocessing.Event()
+        self.leader = multiprocessing.Event()
         self.stopped = False
 
         self.rabbitmq_processor.start()
@@ -77,7 +77,7 @@ class MasterLogic(multiprocessing.Process):
                 logger.error(f"Error in load_balance callback: {e}")
             finally:
                 self.rabbitmq_processor.acknowledge(method)
-                if self.toggle_leader.is_set():
+                if self.leader.is_set():
                     logger.debug(f"Message processed and acknowledged for node {self.current_node_id}")
                 else:
                     logger.info("Leader untoggled, stopping consumption.")
@@ -85,7 +85,7 @@ class MasterLogic(multiprocessing.Process):
                 
         try:
             while not self.stopped:
-                self.toggle_leader.wait() # Wait to be set as leader
+                self.leader.wait() # Wait to be set as leader
                 self.rabbitmq_processor.consume(load_balance) # Consume messages from the queue
         except KeyboardInterrupt:
             logger.info("Shutting down gracefully...")
@@ -110,11 +110,11 @@ class MasterLogic(multiprocessing.Process):
         """
         Toggle the leader status.
         """
-        self.toggle_leader.set() if not self.toggle_leader.is_set() else self.toggle_leader.clear()
-        logger.info(f"Leader status toggled to: {self.toggle_leader.is_set()}")
+        self.leader.set() if not self.leader.is_set() else self.leader.clear()
+        logger.info(f"Leader status toggled to: {self.leader.is_set()}")
 
     def is_leader(self):
         """
         Check if the current node is the leader.
         """
-        return self.toggle_leader.is_set()
+        return self.leader.is_set()
