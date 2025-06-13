@@ -33,10 +33,14 @@ class YearFilter(FilterBase):
 
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
-
-        self.source_queues = [
+        
+        self.main_source_queues = [
             defaults.get("movies_argentina_queue", "movies_argentina"),
             defaults.get("movies_arg_spain_queue", "movies_arg_spain"),
+        ]
+
+        self.source_queues = [
+            queue + "_node_" + str(self.node_id) for queue in self.main_source_queues
         ]
 
         self.target_queue = defaults.get(

@@ -32,7 +32,8 @@ class SentimentAnalyzer:
 
         self.config = ConfigParser()
         self.config.read(config_path)
-        self.source_queue = self.config["QUEUES"]["movies_clean_queue"]
+        self.clean_batch_queue = self.config["QUEUES"]["movies_clean_queue"]
+        self.source_queue = self.clean_batch_queue + "_node_" + str(self.node_id)
         self.target_queues = [
             self.config["QUEUES"]["positive_movies_queue"],
             self.config["QUEUES"]["negative_movies_queue"],

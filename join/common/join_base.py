@@ -62,7 +62,7 @@ class JoinBase:
             config=self.config,
             manager=self.manager,
             node_id=self.node_id,
-            clean_queue=self.clean_batch_queue,
+            clean_queues=self.clean_batch_queue,
         )
 
         # Register signal handler for SIGTERM signal

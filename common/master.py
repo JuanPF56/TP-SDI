@@ -25,14 +25,15 @@ class MasterLogic(multiprocessing.Process):
             source_queues=self.clean_queues,
             target_queues=[clean_queue + "_node_" + str(i) for i in range(1, nodes_of_type + 1) for clean_queue in self.clean_queues],
         )
+        if not self.rabbitmq_processor.connect():
+            self.log_error("Error connecting to RabbitMQ. Exiting...")
+            return
         self.manager = manager
         self.node_id = node_id
         self.current_node_id = 1
         self.nodes_of_type = nodes_of_type
         self.leader = multiprocessing.Event()
         self.stopped = False
-
-        self.rabbitmq_processor.start()
 
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)

@@ -24,7 +24,8 @@ class ProductionFilter(FilterBase):
 
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
-        self.source_queues = [defaults.get("movies_clean_queue", "movies_clean")]
+        self.main_source_queues = [defaults.get("movies_clean_queue", "movies_clean")]
+        self.source_queues = [queue + "_node_" + str(self.node_id) for queue in self.main_source_queues]
         self.target_queues = {
             self.source_queues[0]: [
                 defaults.get("movies_argentina_queue", "movies_argentina"),

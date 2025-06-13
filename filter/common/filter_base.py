@@ -18,6 +18,7 @@ EOS_TYPE = "EOS"
 class FilterBase:
     def __init__(self, config):
         self.config = config
+        self.main_source_queues = []
         self.source_queues = []
         self.target_queues = {}
         self.node_id = int(os.getenv("NODE_ID", "1"))
@@ -67,7 +68,7 @@ class FilterBase:
             manager=self.manager,
             node_id=self.node_id,
             nodes_of_type=self.nodes_of_type,
-            clean_queues=self.source_queues,
+            clean_queues=self.main_source_queues,
         )
         # Start the master logic process
         self.master_logic.start()
