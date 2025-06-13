@@ -74,7 +74,10 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "container_name": name,
                 "image": f"filter_{subtype}:latest",
                 "entrypoint": "python3 /app/filter.py",
-                "volumes": [f"./filter/{subtype}/config.ini:/app/config.ini"],
+                "volumes": [
+                    "/var/run/docker.sock:/var/run/docker.sock",
+                    f"./filter/{subtype}/config.ini:/app/config.ini",
+                ],
                 "environment": {
                     "NODE_ID": str(i),
                     "NODE_TYPE": subtype,
@@ -95,7 +98,10 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "container_name": name,
             "image": "sentiment_analyzer:latest",
             "entrypoint": "python3 /app/sentiment_analyzer.py",
-            "volumes": ["./sentiment_analyzer/config.ini:/app/config.ini"],
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock",
+                "./sentiment_analyzer/config.ini:/app/config.ini",
+            ],
             "environment": {
                 "NODE_ID": str(i),
                 "NODE_TYPE": "sentiment_analyzer",
@@ -120,7 +126,10 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "container_name": name,
                 "image": f"join_{typ}:latest",
                 "entrypoint": "python3 /app/join.py",
-                "volumes": [f"./join/{typ}/config.ini:/app/config.ini"],
+                "volumes": [
+                    "/var/run/docker.sock:/var/run/docker.sock",
+                    f"./join/{typ}/config.ini:/app/config.ini",
+                ],
                 "environment": {
                     "NODE_ID": str(i),
                     "NODE_TYPE": f"join_{typ}",
@@ -154,7 +163,10 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "container_name": qname,
             "image": f"query_{qname}:latest",
             "entrypoint": f"python3 /app/{qname}.py",
-            "volumes": [f"./query/{qname}/config.ini:/app/config.ini"],
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock",
+                f"./query/{qname}/config.ini:/app/config.ini",
+            ],
             "environment": {
                 "NODE_TYPE": qname,
                 "NODES_TO_AWAIT": str(nodes_to_await[qname]),
@@ -176,6 +188,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         "image": "gateway:latest",
         "entrypoint": "python3 /app/main.py",
         "volumes": [
+            "/var/run/docker.sock:/var/run/docker.sock",
             "./gateway/config.ini:/app/config.ini",
             "./resultados:/app/resultados",
         ],
