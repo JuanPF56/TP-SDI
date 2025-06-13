@@ -1,4 +1,5 @@
 import json
+import multiprocessing
 import signal
 import pika
 import os
@@ -10,6 +11,7 @@ from collections import defaultdict
 
 from common.eos_handling import handle_eos
 from common.logger import get_logger
+from common.master import MasterLogic
 from common.mom import RabbitMQProcessor
 from common.client_state_manager import ClientState, ClientManager
 
@@ -46,6 +48,14 @@ class SentimentAnalyzer:
             expected_queues=self.source_queue,
             nodes_to_await=self.eos_to_await,
         )
+        
+        self.manager = multiprocessing.Manager()
+        self.master_logic = MasterLogic(
+            config=self.config,
+            manager=self.manager,
+            node_id=self.node_id,
+            clean_queue=self.clean_batch_queue,
+        )
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -57,6 +67,9 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.stop_consuming()
                 logger.info("Closing RabbitMQ connection...")
                 self.rabbitmq_processor.close()
+            os.kill(self.master_logic.pid, signal.SIGINT)
+            self.master_logic.join()
+            self.manager.shutdown()            
         except Exception as e:
             logger.error("Error closing connection: %s", e)
 
@@ -189,6 +202,15 @@ class SentimentAnalyzer:
             return
 
         try:
+            # Start the master logic process
+            self.master_logic.start()
+
+            # TODO: Leader election logic
+            # For now, we assume the node with the highest node_id is the leader
+            if self.node_id == self.nodes_of_type:
+                self.log_info("This node is the leader. Starting master logic...")
+                self.master_logic.toggle_leader()
+            
             logger.info("Starting message consumption...")
             self.rabbitmq_processor.consume(self.callback)
         except KeyboardInterrupt:
