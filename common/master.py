@@ -10,16 +10,20 @@ logger = get_logger("MasterLogic")
 EOS_TYPE = "EOS"
 
 class MasterLogic(multiprocessing.Process):
-    def __init__(self, config, manager, node_id, nodes_of_type=1, clean_queue="clean_batch_queue"):
+    def __init__(self, config, manager, node_id, nodes_of_type, clean_queues):
         """
         Initialize the MasterLogic class with the given configuration and manager.
         """
         super().__init__(target=self.run)
+        if not isinstance(clean_queues, list):
+            self.clean_queues = [clean_queues]
+        else:
+            self.clean_queues = clean_queues
         self.config = config
         self.rabbitmq_processor = RabbitMQProcessor(
             config,
-            source_queues=clean_queue,
-            target_queues=[clean_queue + "_node_" + str(i) for i in range(1, nodes_of_type + 1)],
+            source_queues=self.clean_queues,
+            target_queues=[clean_queue + "_node_" + str(i) for i in range(1, nodes_of_type + 1) for clean_queue in self.clean_queues],
         )
         self.manager = manager
         self.node_id = node_id
@@ -45,7 +49,7 @@ class MasterLogic(multiprocessing.Process):
         """
         Run the master logic process.
         """
-        def load_balance(self, ch, method, properties, body):
+        def load_balance(self, ch, method, properties, body, queue_name):
             """
             Callback function to handle load balancing of messages.
             It will distribute the messages to the appropriate queues.
@@ -64,7 +68,7 @@ class MasterLogic(multiprocessing.Process):
                 else:
                     # Round-robin distribution of messages to nodes
                     # TODO: Hash the message to determine the target node
-                    target_node = f"{self.clean_queue}_node_{self.current_node_id}"
+                    target_node = f"{queue_name}_node_{self.current_node_id}"
                     self.rabbitmq_processor.publish(
                         target=target_node,
                         message=body,
