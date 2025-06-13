@@ -55,7 +55,8 @@ class SentimentAnalyzer:
             config=self.config,
             manager=self.manager,
             node_id=self.node_id,
-            clean_queue=self.clean_batch_queue,
+            nodes_of_type=self.nodes_of_type,
+            clean_queues=self.clean_batch_queue,
         )
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
@@ -209,7 +210,7 @@ class SentimentAnalyzer:
             # TODO: Leader election logic
             # For now, we assume the node with the highest node_id is the leader
             if self.node_id == self.nodes_of_type:
-                self.log_info("This node is the leader. Starting master logic...")
+                logger.info("This node is the leader. Starting master logic...")
                 self.master_logic.toggle_leader()
             
             logger.info("Starting message consumption...")

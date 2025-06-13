@@ -62,6 +62,7 @@ class JoinBase:
             config=self.config,
             manager=self.manager,
             node_id=self.node_id,
+            nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
         )
 
