@@ -52,6 +52,7 @@ class CleanupFilter(FilterBase):
         self._initialize_queues()
         self._eos_flags = {q: False for q in self.source_queues}
         self._initialize_rabbitmq_processor()
+        self._initialize_master_logic()
 
     def clean_movie(self, data):
         """
@@ -185,7 +186,6 @@ class CleanupFilter(FilterBase):
         """
         logger.info("CleanupFilter is starting up")
         self.run_consumer()
-
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

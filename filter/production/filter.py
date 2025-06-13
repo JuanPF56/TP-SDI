@@ -9,7 +9,6 @@ from common.logger import get_logger
 
 logger = get_logger("Filter-Production")
 
-
 class ProductionFilter(FilterBase):
     def __init__(self, config):
         """
@@ -40,6 +39,7 @@ class ProductionFilter(FilterBase):
         """
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
+        self._initialize_master_logic()
 
     def _publish(self, queue, movie, headers):
         self.rabbitmq_processor.publish(target=queue, message=movie, headers=headers)

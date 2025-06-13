@@ -49,6 +49,7 @@ class YearFilter(FilterBase):
     def setup(self):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
+        self._initialize_master_logic()
 
     def _handle_eos(
         self, input_queue, body, method, headers, client_state: ClientState
