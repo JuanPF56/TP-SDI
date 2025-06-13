@@ -46,52 +46,52 @@ class MasterLogic(multiprocessing.Process):
         except Exception as e:
             self.log_info(f"Error closing connection: {e}")
 
-    def run(self):
+    def load_balance(self, ch, method, properties, body, queue_name):
         """
-        Run the master logic process.
+        Callback function to handle load balancing of messages.
+        It will distribute the messages to the appropriate queues.
         """
-        def load_balance(self, ch, method, properties, body, queue_name):
-            """
-            Callback function to handle load balancing of messages.
-            It will distribute the messages to the appropriate queues.
-            """
-            try:
-                msg_type = properties.type if properties and properties.type else "UNKNOWN"
-                if msg_type == EOS_TYPE:
-                    # Publish the EOS message to all nodes
-                    for i in range(1, self.nodes_of_type + 1):
-                        self.rabbitmq_processor.publish(
-                            target=f"{self.clean_queue}_node_{i}",
-                            message=body,
-                            msg_type=msg_type,
-                            headers=properties.headers,
-                        )
-                else:
-                    # Round-robin distribution of messages to nodes
-                    # TODO: Hash the message to determine the target node
-                    target_node = f"{queue_name}_node_{self.current_node_id}"
+        try:
+            msg_type = properties.type if properties and properties.type else "UNKNOWN"
+            if msg_type == EOS_TYPE:
+                # Publish the EOS message to all nodes
+                for i in range(1, self.nodes_of_type + 1):
                     self.rabbitmq_processor.publish(
-                        target=target_node,
+                        target=f"{self.clean_queue}_node_{i}",
                         message=body,
                         msg_type=msg_type,
                         headers=properties.headers,
                     )
-                    # Increment the current node ID for the next message
-                    self.current_node_id = (self.current_node_id % self.nodes_of_type) + 1
-            except Exception as e:
-                logger.error(f"Error in load_balance callback: {e}")
-            finally:
-                self.rabbitmq_processor.acknowledge(method)
-                if self.leader.is_set():
-                    logger.debug(f"Message processed and acknowledged for node {self.current_node_id}")
-                else:
-                    logger.info("Leader untoggled, stopping consumption.")
-                    self.rabbitmq_processor.stop_consuming()
-                
+            else:
+                # Round-robin distribution of messages to nodes
+                # TODO: Hash the message to determine the target node
+                target_node = f"{queue_name}_node_{self.current_node_id}"
+                self.rabbitmq_processor.publish(
+                    target=target_node,
+                    message=body,
+                    msg_type=msg_type,
+                    headers=properties.headers,
+                )
+                # Increment the current node ID for the next message
+                self.current_node_id = (self.current_node_id % self.nodes_of_type) + 1
+        except Exception as e:
+            logger.error(f"Error in load_balance callback: {e}")
+        finally:
+            self.rabbitmq_processor.acknowledge(method)
+            if self.leader.is_set():
+                logger.debug(f"Message processed and acknowledged for node {self.current_node_id}")
+            else:
+                logger.info("Leader untoggled, stopping consumption.")
+                self.rabbitmq_processor.stop_consuming()
+
+    def run(self):
+        """
+        Run the master logic process.
+        """                
         try:
             while not self.stopped:
                 self.leader.wait() # Wait to be set as leader
-                self.rabbitmq_processor.consume(load_balance) # Consume messages from the queue
+                self.rabbitmq_processor.consume(self.load_balance) # Consume messages from the queue
         except KeyboardInterrupt:
             logger.info("Shutting down gracefully...")
         except Exception as e:
