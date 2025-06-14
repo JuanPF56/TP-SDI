@@ -141,7 +141,7 @@ pip install -r requirements.txt
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh -test test_config.yaml -cant_clientes 1
+./generate-compose.sh -test test_config.yaml -cant_clientes 2
 ```
 
 ![expected_output_test_and_multiclient](resources/expected_output_test_and_multiclient.png)
