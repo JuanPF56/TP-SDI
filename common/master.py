@@ -53,12 +53,17 @@ class MasterLogic(multiprocessing.Process):
         """
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
+            try:
+                decoded = json.loads(body)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to decode message body: {body}")
+                return
             if msg_type == EOS_TYPE:
                 # Publish the EOS message to all nodes
                 for i in range(1, self.nodes_of_type + 1):
                     self.rabbitmq_processor.publish(
-                        target=f"{self.clean_queue}_node_{i}",
-                        message=body,
+                        target=f"{queue_name}_node_{i}",
+                        message=decoded,
                         msg_type=msg_type,
                         headers=properties.headers,
                     )
@@ -68,7 +73,7 @@ class MasterLogic(multiprocessing.Process):
                 target_node = f"{queue_name}_node_{self.current_node_id}"
                 self.rabbitmq_processor.publish(
                     target=target_node,
-                    message=body,
+                    message=decoded,
                     msg_type=msg_type,
                     headers=properties.headers,
                 )
