@@ -207,6 +207,28 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         },
     }
 
+    # Coordinator node
+    monitored_nodes = (
+        filter_node_names
+        + sentiment_node_names
+        + join_node_names
+        + query_node_names
+        + ["gateway"]
+    )
+    services["coordinator"] = {
+        "container_name": "coordinator",
+        "image": "coordinator:latest",
+        "entrypoint": "python3 /app/coordinator.py",
+        "volumes": [
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "./coordinator/coordinator.py:/app/coordinator.py",
+        ],
+        "environment": {
+            "MONITORED_NODES": ",".join(monitored_nodes),
+        },
+        "networks": ["testing_net"],
+    }
+
     compose = {
         "services": services,
         "networks": {
