@@ -111,7 +111,7 @@ pip install -r requirements.txt
 #### 📌 Parámetros
 
 - `<output_file.yml>`: Opcional. Nombre base del archivo de salida. En caso de no pasarse, será: `docker-compose.system.yaml` para el sistema y `docker-compose.clients.yml` para los clientes.
-- `-test <test_config.yaml>`: Opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en:`test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)). En caso de no pasarse, se descargaran los datasets completos.
+- `-test <test_config.yaml>`: Opcional. Monta datasets reducidos para pruebas rápidas y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en:`test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)). En caso de no pasarse, se descargaran los datasets completos.
 - `-cant_clientes N`: Opcional. Define cantidad de clientes (client_X) que se generan. En caso de no pasarse se generará 1 solo cliente.
 
 ---
@@ -141,10 +141,16 @@ pip install -r requirements.txt
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh -test test_config.yaml -cant_clientes 2
+./generate-compose.sh -test test_config.yaml -cant_clientes 1
 ```
 
 ![expected_output_test_and_multiclient](resources/expected_output_test_and_multiclient.png)
+
+> Nota: Si ya tienes desacrgados los datasets, puedes correr el flag `-skip_download`para saltear la descarga de los datasets
+>
+>```bash
+> ./generate-compose.sh -skip_download
+>```
 
 ---
 
@@ -158,7 +164,7 @@ python3 download_datasets.py [-test <test_config.yaml>]
 
 - Por defecto descarga el dataset completo desde Kaggle.
 - Si se pasa el flag `-test`, los archivos se recortan según los porcentajes definidos en el YAML.
-- Los archivos se guardan en la carpeta `./datasets_for_test`.
+- Los archivos se guardan en la carpeta `./data`.
 
 **Ejemplo de `test_config.yaml` con todos los datasets al 20%:**
 
@@ -181,12 +187,18 @@ ratings.csv: 20
 
 Para facilitar el desarrollo y la depuración, se recomienda levantar los servicios en **dos consolas separadas**:
 
-- Una consola para todo lo relacionado con el **sistema** (gateway, filtros, joins, querys, etc.).
+- Una consola para todo lo relacionado con el **sistema** (gateway, coordinator, filtros, joins, querys, etc.).
 - Otra consola para levantar y monitorear a los **clientes**.
 
 ---
 
 ### 🧱 Comandos disponibles (`Makefile`)
+
+#### 🧹 Limpiar resultados anteriores
+
+```bash
+sudo rm -rf ./resultados/*./gateway/storage/*
+```
 
 #### ⚙️ Build de imágenes
 
@@ -207,7 +219,7 @@ make up-clients       # Levanta solo los servicios de los clientes
 #### 📜 Ver logs
 
 ```bash
-make logs-system      # Muestra logs del sistema (gateway, servidor, consultas, etc.)
+make logs-system      # Muestra logs del sistema (gateway, coordinator, filters, joiners, querys, etc.)
 make logs-clients     # Muestra logs de los clientes
 make logs-all         # Muestra todos los logs combinados (sistema + clientes)
 ```

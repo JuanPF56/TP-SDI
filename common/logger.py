@@ -1,4 +1,6 @@
 import logging
+import colorlog
+
 
 def get_logger(name):
     logger = logging.getLogger(name)
@@ -6,10 +8,22 @@ def get_logger(name):
 
     if not logger.handlers:
         handler = logging.StreamHandler()
-        formatter = logging.Formatter('[%(asctime)s] [%(name)s] %(message)s', "%H:%M:%S")
+
+        formatter = colorlog.ColoredFormatter(
+            "%(log_color)s[%(asctime)s] [%(name)s] %(message)s",
+            datefmt="%H:%M:%S",
+            log_colors={
+                "DEBUG": "cyan",
+                "INFO": "green",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "red,bg_white",
+            },
+        )
+
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
-    logger.propagate = False # Prevent propagation to the root logger
+    logger.propagate = False  # Evita duplicados en la consola
 
     return logger

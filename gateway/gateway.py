@@ -1,7 +1,7 @@
 """
 Gateway Node Main Script
-This script initializes the gateway node, loads the configuration,
-cleans the resultados folder, and starts the gateway service.
+This script initializes the gateway node, loads the configuration
+and starts the gateway service.
 """
 
 import socket

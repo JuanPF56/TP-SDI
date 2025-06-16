@@ -1,4 +1,4 @@
-FROM base_node:latest
+FROM python:3.13-slim
 WORKDIR /app
 
 # Install system dependencies
@@ -10,6 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY common/ ./common/
 
 # Copy specific code
-COPY gateway/ .
+COPY coordinator/ .
 
-CMD ["python3", "main.py"]
+CMD ["python3", "coordinator.py"]

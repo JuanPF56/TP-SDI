@@ -12,6 +12,7 @@ CLIENTS_FILE=docker-compose.clients.yml
 
 # Construye las imágenes del sistema
 build-system:
+	docker build -f ./coordinator/Dockerfile -t coordinator:latest .
 	docker build -f ./base_node/Dockerfile -t base_node:latest .
 	docker build -f ./gateway/Dockerfile -t gateway:latest .
 	docker build -f ./join/credits/Dockerfile -t join_credits:latest .

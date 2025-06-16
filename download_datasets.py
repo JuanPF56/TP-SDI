@@ -1,46 +1,49 @@
+"""This script downloads datasets from Kaggle using kagglehub and prepares them for testing."""
+
+import argparse
 import os
 import yaml
-import logging
-import argparse
 import pandas as pd
 import kagglehub
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from common.logger import get_logger
+
+logger = get_logger("download_datasets")
 
 
-def download_dataset():
+def _download_dataset():
     try:
         logger.info("Downloading dataset with kagglehub...")
         path = kagglehub.dataset_download("rounakbanik/the-movies-dataset")
-        logger.info(f"Dataset downloaded at: {path}")
+        logger.info("Dataset downloaded at: %s", path)
         return path
     except Exception as e:
-        logger.error(f"Failed to download dataset: {e}")
+        logger.error("Failed to download dataset: %s", e)
         return None
 
 
-def load_config(config_path):
+def _load_config(config_path):
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
     except Exception as e:
-        logger.error(f"Failed to load config file: {e}")
+        logger.error("Failed to load config file: %s", e)
         return {}
 
 
 def prepare_data(config_path=None):
+    """Prepare datasets for testing by downloading and processing them."""
     output_dir = "./data"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         logger.info("Created data directory.")
 
-    dataset_path = download_dataset()
+    dataset_path = _download_dataset()
     if not dataset_path:
         logger.error("Dataset download failed. Cannot prepare test data.")
         return
 
-    config = load_config(config_path) if config_path else {}
+    config = _load_config(config_path) if config_path else {}
 
     input_files = {
         "movies_metadata.csv": "movies_metadata.csv",
@@ -53,7 +56,7 @@ def prepare_data(config_path=None):
         output_path = os.path.join(output_dir, filename)
 
         if os.path.exists(full_path):
-            logger.info(f"Processing {filename}...")
+            logger.info("Processing %s...", filename)
             try:
                 df = pd.read_csv(full_path, low_memory=False)
                 pct = config.get(filename)
@@ -63,23 +66,26 @@ def prepare_data(config_path=None):
                         sample_size = int(len(df) * (pct / 100))
                         df = df.head(sample_size)
                         logger.info(
-                            f"Trimming {filename} to {pct}% ({sample_size} rows)"
+                            "Trimming %s to %d%% (%d rows)", filename, pct, sample_size
                         )
                     else:
                         logger.warning(
-                            f"Invalid percentage for {filename}: {pct}. Skipping trim."
+                            "Invalid percentage for %s: %d. Skipping trim.",
+                            filename,
+                            pct,
                         )
                 else:
                     logger.info(
-                        f"No percentage specified for {filename}, keeping full dataset."
+                        "No percentage specified for %s, keeping full dataset.",
+                        filename,
                     )
 
                 df.to_csv(output_path, index=False)
-                logger.info(f"Saved {filename} to {output_path}")
+                logger.info("Saved %s to %s", filename, output_path)
             except Exception as e:
-                logger.error(f"Failed to process {filename}: {e}")
+                logger.error("Failed to process %s: %s", filename, e)
         else:
-            logger.warning(f"{filename} not found in downloaded dataset.")
+            logger.warning("%s not found in downloaded dataset.", filename)
 
 
 if __name__ == "__main__":
