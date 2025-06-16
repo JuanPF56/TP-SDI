@@ -168,7 +168,6 @@ class SentimentAnalyzer:
                         message=movies_batch,
                         headers=headers,
                     )
-                    logger.info("[Batch] Published %d %s movies to %s", len(movies_batch), sentiment, target_queue)
 
         except pika.exceptions.StreamLostError as e:
             logger.error("Stream lost, reconnecting: %s", e)
