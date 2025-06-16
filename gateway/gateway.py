@@ -20,12 +20,14 @@ logger = get_logger("Gateway")
 class Gateway:
     def __init__(self, config):
         self.config = config
+        self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.port = int(os.getenv("GATEWAY_PORT", config["DEFAULT"]["GATEWAY_PORT"]))
 
         # Initialize gateway socket
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._gateway_socket.bind(("", int(config["DEFAULT"]["GATEWAY_PORT"])))
+        self._gateway_socket.bind(("", self.port))
         self._gateway_socket.listen(int(config["DEFAULT"]["LISTEN_BACKLOG"]))
-        logger.info("Gateway listening on port %s", config["DEFAULT"]["GATEWAY_PORT"])
+        logger.info("Gateway listening on port %s", self.port)
         self._was_closed = False
 
         # Initialize connected clients registry that monitors the connected clients
@@ -37,7 +39,7 @@ class Gateway:
         self._setup_result_dispatcher()
 
         try:
-            with open("/tmp/gateway_ready", "w", encoding="utf-8") as f:
+            with open(f"/tmp/{self.node_name}_ready", "w", encoding="utf-8") as f:
                 f.write("ready")
             logger.info("Gateway is ready. Healthcheck file created.")
         except Exception as e:
@@ -142,7 +144,7 @@ class Gateway:
                 self._gateway_socket = None
 
         try:
-            os.remove("/tmp/gateway_ready")
+            os.remove(f"/tmp/{self.node_name}_ready")
             logger.info("Healthcheck file removed.")
         except FileNotFoundError:
             pass

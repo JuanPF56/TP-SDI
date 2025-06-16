@@ -74,6 +74,7 @@ Antes de generar el archivo `docker-compose.system.yml`, podés editar el archiv
 
 ```ini
 [DEFAULT]
+gateway_nodes = 1
 cleanup_filter_nodes = 2
 production_filter_nodes = 2
 year_filter_nodes = 2
