@@ -2,9 +2,11 @@
 This module defines the ConnectedClient class, which represents a client connected to the protocol gateway.
 """
 
+import os
+import json
 import socket
 import threading
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 
 from protocol_gateway_client import ProtocolGateway
 from batch_message import BatchMessage
@@ -62,6 +64,8 @@ class ConnectedClient(threading.Thread):
         self._stop_flag = threading.Event()
 
         self._condition = threading.Condition()
+
+        self._load_batches_from_disk()
 
     def add_sent_answer(self):
         """
@@ -243,6 +247,7 @@ class ConnectedClient(threading.Thread):
                 processed_data=processed_data,
             )
             self.batches_stored.append(new_batch)
+            self._save_batch_to_disk(new_batch)
             self.accumulated_batches += 1
 
             if (
@@ -282,13 +287,35 @@ class ConnectedClient(threading.Thread):
                 headers = {
                     "client_id": batch_message.client_id,
                 }
-                batch_payload = [asdict(item) for item in batch_message.processed_data]
+                for i, item in enumerate(batch_message.processed_data):
+                    if not is_dataclass(item):
+                        logger.warning(
+                            "Item #%d in processed_data is not a dataclass. Type: %s, Value: %s",
+                            i,
+                            type(item),
+                            item,
+                        )
+                batch_payload = [
+                    asdict(item) if is_dataclass(item) else item
+                    for item in batch_message.processed_data
+                ]
                 success = self.broker.publish(
                     target=queue_key,
                     message=batch_payload,
                     msg_type=batch_message.message_code,
                     headers=headers,
                 )
+
+                if success:
+                    try:
+                        filename = f"{batch_message.message_code}_{batch_message.current_batch}.json"
+                        path = os.path.join(
+                            "storage", batch_message.client_id, filename
+                        )
+                        if os.path.exists(path):
+                            os.remove(path)
+                    except Exception as e:
+                        logger.warning("Error deleting stored batch file: %s", e)
 
                 if batch_message.is_last_batch == IS_LAST_BATCH_FLAG:
                     success = self.broker.publish(
@@ -390,3 +417,32 @@ class ConnectedClient(threading.Thread):
         except Exception as e:
             logger.error("Error sending result to client %s: %s", self._client_id, e)
             self._protocol_gateway.stop_client()
+
+    def _save_batch_to_disk(self, batch: BatchMessage):
+        try:
+            client_dir = os.path.join("storage", batch.client_id)
+            os.makedirs(client_dir, exist_ok=True)
+            filename = os.path.join(
+                client_dir, f"{batch.message_code}_{batch.current_batch}.json"
+            )
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(asdict(batch), f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(
+                "Error saving batch to disk for client %s: %s", batch.client_id, e
+            )
+
+    def _load_batches_from_disk(self):
+        client_dir = os.path.join("storage", self._client_id)
+        if not os.path.isdir(client_dir):
+            return
+
+        files = sorted(os.listdir(client_dir))  # ordena por batch
+        for filename in files:
+            if filename.endswith(".json"):
+                path = os.path.join(client_dir, filename)
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    batch = BatchMessage(**data)
+                    self.batches_stored.append(batch)
+                    self.accumulated_batches += 1

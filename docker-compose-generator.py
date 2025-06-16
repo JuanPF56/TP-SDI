@@ -1,5 +1,7 @@
 "Generates a Docker Compose file for a distributed system with multiple nodes."
 
+import os
+import shutil
 import sys
 import configparser
 from copy import deepcopy
@@ -190,7 +192,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         "volumes": [
             "/var/run/docker.sock:/var/run/docker.sock",
             "./gateway/config.ini:/app/config.ini",
-            "./resultados:/app/resultados",
+            "./gateway/storage:/app/storage",
         ],
         "environment": {
             "SYSTEM_NODES": ",".join(full_dependencies),
@@ -284,6 +286,46 @@ def generate_clients_compose(
         yaml.dump(compose, f, sort_keys=False)
 
 
+def clean_resultados_folder():
+    """
+    Deletes all files and directories in the resultados directory.
+    """
+    resultados_path = "./resultados"
+    if os.path.exists(resultados_path):
+        for filename in os.listdir(resultados_path):
+            file_path = os.path.join(resultados_path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)  # eliminar archivo o link
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)  # eliminar carpeta
+                print("Deleted: %s", file_path)
+            except Exception as e:
+                print("Failed to delete %s. Reason: %s", file_path, e)
+    else:
+        print("Result directory does not exist: %s", resultados_path)
+
+
+def clean_storage_folder():
+    """
+    Deletes all files and directories in the storage directory.
+    """
+    storage_path = "./gateway/storage"
+    if os.path.exists(storage_path):
+        for filename in os.listdir(storage_path):
+            file_path = os.path.join(storage_path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)  # eliminar archivo o link
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)  # eliminar carpeta
+                print("Deleted: %s", file_path)
+            except Exception as e:
+                print("Failed to delete %s. Reason: %s", file_path, e)
+    else:
+        print("Result directory does not exist: %s", storage_path)
+
+
 def main():
     """
     Main function to handle command line arguments and generate the appropriate Docker Compose file.
@@ -296,6 +338,10 @@ def main():
             "  python3 compose_generator.py clients <filename> [-test] [-cant_clientes N]"
         )
         sys.exit(1)
+
+    # Clean old resultados and storage folders before generating compose files
+    clean_resultados_folder()
+    clean_storage_folder()
 
     mode = args[0]
     if mode == "system":

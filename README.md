@@ -194,6 +194,12 @@ Para facilitar el desarrollo y la depuración, se recomienda levantar los servic
 
 ### 🧱 Comandos disponibles (`Makefile`)
 
+#### 🧹 Limpiar resultados anteriores
+
+```bash
+sudo rm -rf ./resultados/*./gateway/storage/*
+```
+
 #### ⚙️ Build de imágenes
 
 ```bash
