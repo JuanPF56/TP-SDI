@@ -41,6 +41,10 @@ class ConnectedClient(threading.Thread):
         self._protocol_gateway = ProtocolGateway(client_socket, client_id)
         self.was_closed = False
 
+        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
+        self.accumulated_batches = 0
+        self.batches_stored = []
+
         self._expected_datasets_to_receive_per_request = DATASETS_PER_REQUEST
         self._received_datasets = 0
 
@@ -230,13 +234,28 @@ class ConnectedClient(threading.Thread):
                     logger.error("Failed to process payload")
                     return False
 
-            self._publish_message(
-                message_code,
-                client_id,
-                current_batch,
-                is_last_batch,
-                processed_data,
-            )
+            self.batches_stored.append(processed_data)
+            self.accumulated_batches += 1
+
+            if (
+                self.accumulated_batches >= self.store_limit
+                or is_last_batch == IS_LAST_BATCH_FLAG
+            ):
+                logger.debug(
+                    "Accumulated %d batches, publishing to queue",
+                    self.accumulated_batches,
+                )
+
+                self._publish_message(
+                    message_code,
+                    client_id,
+                    current_batch,
+                    is_last_batch,
+                    processed_data,
+                )
+                self.batches_stored = []
+                self.accumulated_batches = 0
+
             return True
 
         except (socket.error, socket.timeout) as e:
