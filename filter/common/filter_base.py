@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import json
 import signal
@@ -8,6 +9,7 @@ from common.logger import get_logger
 logger = get_logger("Filter-Base")
 
 
+from common.master import MasterLogic
 from common.mom import RabbitMQProcessor
 
 EOS_TYPE = "EOS"
@@ -16,6 +18,7 @@ EOS_TYPE = "EOS"
 class FilterBase:
     def __init__(self, config):
         self.config = config
+        self.main_source_queues = []
         self.source_queues = []
         self.target_queues = {}
         self.node_id = int(os.getenv("NODE_ID", "1"))
@@ -44,6 +47,7 @@ class FilterBase:
                 self.rabbitmq_processor.stop_consuming()
                 logger.info("Closing RabbitMQ connection...")
                 self.rabbitmq_processor.close()
+                self.terminate_subprocesses()
         except Exception as e:
             logger.error(f"Error closing connection: {e}")
 
@@ -53,6 +57,27 @@ class FilterBase:
             source_queues=self.source_queues,
             target_queues=self.target_queues,
         )
+
+    def _initialize_master_logic(self):
+        """
+        Initialize the MasterLogic for load balancing and EOS handling.
+        """
+        self.manager = multiprocessing.Manager()
+        self.master_logic = MasterLogic(
+            config=self.config,
+            manager=self.manager,
+            node_id=self.node_id,
+            nodes_of_type=self.nodes_of_type,
+            clean_queues=self.main_source_queues,
+        )
+        # Start the master logic process
+        self.master_logic.start()
+
+        # TODO: Leader election logic
+        # For now, we assume the node with the highest node_id is the leader
+        if self.node_id == self.nodes_of_type:
+            logger.info("This node is the leader. Starting master logic...")
+            self.master_logic.toggle_leader()
 
     def run_consumer(self):
         logger.info("Node is online")
@@ -93,3 +118,8 @@ class FilterBase:
 
     def process(self):
         raise NotImplementedError("Subclasses should implement this.")
+    
+    def terminate_subprocesses(self):
+        os.kill(self.master_logic.pid, signal.SIGINT)
+        self.master_logic.join()
+        self.manager.shutdown()

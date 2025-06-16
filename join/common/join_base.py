@@ -7,6 +7,7 @@ import signal
 from common.client_state import ClientState
 from common.client_state_manager import ClientManager
 from common.eos_handling import handle_eos
+from common.master import MasterLogic
 from common.mom import RabbitMQProcessor
 from common.movies_handler import MoviesHandler
 
@@ -20,16 +21,17 @@ class JoinBase:
         """
         self.config = config
 
-        # Get the clean batch queue name from the config
-        self.input_queue = self.config["DEFAULT"].get("input_queue", "input_queue")
-        self.output_queue = self.config["DEFAULT"].get("output_queue", "output_queue")
-
         # Get the environment variables for node ID and nodes to await
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
         self.stopped = False
+
+        # Get the clean batch queue name from the config
+        self.clean_batch_queue = self.config["DEFAULT"].get("input_queue", "input_queue")
+        self.input_queue = self.config["DEFAULT"].get("input_queue", "input_queue") + "_node_" + str(self.node_id)
+        self.output_queue = self.config["DEFAULT"].get("output_queue", "output_queue")
 
         self.client_manager = ClientManager(
             expected_queues=self.input_queue,
@@ -56,6 +58,14 @@ class JoinBase:
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
         )
 
+        self.master_logic = MasterLogic(
+            config=self.config,
+            manager=self.manager,
+            node_id=self.node_id,
+            nodes_of_type=self.nodes_of_type,
+            clean_queues=self.clean_batch_queue,
+        )
+
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -69,6 +79,15 @@ class JoinBase:
     def process(self):
         # Start the process to receive the movies table
         self.movies_handler.start()
+
+        # Start the master logic process
+        self.master_logic.start()
+
+        # TODO: Leader election logic
+        # For now, we assume the node with the highest node_id is the leader
+        if self.node_id == self.nodes_of_type:
+            self.log_info("This node is the leader. Starting master logic...")
+            self.master_logic.toggle_leader()
 
         # Start the loop to receive the batches
         self.receive_batch()
@@ -104,6 +123,8 @@ class JoinBase:
             self.log_info("Connection closed.")
             os.kill(self.movies_handler.pid, signal.SIGINT)
             self.movies_handler.join()
+            os.kill(self.master_logic.pid, signal.SIGINT)
+            self.master_logic.join()
             self.manager.shutdown()
             self.stopped = True
 

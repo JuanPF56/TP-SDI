@@ -24,11 +24,13 @@ class CleanupFilter(FilterBase):
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
 
-        self.source_queues = [
+        self.main_source_queues = [
             defaults.get("movies_raw_queue", "movies_raw"),
             defaults.get("ratings_raw_queue", "ratings_raw"),
             defaults.get("credits_raw_queue", "credits_raw"),
         ]
+
+        self.source_queues = [queue + "_node_" + str(self.node_id) for queue in self.main_source_queues]
 
         self.target_queues = {
             self.source_queues[0]: [
@@ -52,6 +54,7 @@ class CleanupFilter(FilterBase):
         self._initialize_queues()
         self._eos_flags = {q: False for q in self.source_queues}
         self._initialize_rabbitmq_processor()
+        self._initialize_master_logic()
 
     def clean_movie(self, data):
         """
@@ -108,7 +111,6 @@ class CleanupFilter(FilterBase):
             queue_name,
             queue_name,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.target_queues.get(queue_name),
@@ -192,7 +194,6 @@ class CleanupFilter(FilterBase):
         """
         logger.info("CleanupFilter is starting up")
         self.run_consumer()
-
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

@@ -33,10 +33,14 @@ class YearFilter(FilterBase):
 
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
-
-        self.source_queues = [
+        
+        self.main_source_queues = [
             defaults.get("movies_argentina_queue", "movies_argentina"),
             defaults.get("movies_arg_spain_queue", "movies_arg_spain"),
+        ]
+
+        self.source_queues = [
+            queue + "_node_" + str(self.node_id) for queue in self.main_source_queues
         ]
 
         self.target_queue = defaults.get(
@@ -49,6 +53,7 @@ class YearFilter(FilterBase):
     def setup(self):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
+        self._initialize_master_logic()
 
     def _handle_eos(
         self, input_queue, body, method, headers, client_state: ClientState
@@ -61,7 +66,6 @@ class YearFilter(FilterBase):
             input_queue,
             input_queue,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
             client_state,
             target_queues=(

@@ -9,7 +9,6 @@ from common.logger import get_logger
 
 logger = get_logger("Filter-Production")
 
-
 class ProductionFilter(FilterBase):
     def __init__(self, config):
         """
@@ -25,7 +24,8 @@ class ProductionFilter(FilterBase):
 
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
-        self.source_queues = [defaults.get("movies_clean_queue", "movies_clean")]
+        self.main_source_queues = [defaults.get("movies_clean_queue", "movies_clean")]
+        self.source_queues = [queue + "_node_" + str(self.node_id) for queue in self.main_source_queues]
         self.target_queues = {
             self.source_queues[0]: [
                 defaults.get("movies_argentina_queue", "movies_argentina"),
@@ -40,6 +40,7 @@ class ProductionFilter(FilterBase):
         """
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
+        self._initialize_master_logic()
 
     def _publish(self, queue, movie, headers):
         self.rabbitmq_processor.publish(target=queue, message=movie, headers=headers)
@@ -53,7 +54,6 @@ class ProductionFilter(FilterBase):
             queue_name,
             self.source_queues,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.target_queues.get(queue_name),
