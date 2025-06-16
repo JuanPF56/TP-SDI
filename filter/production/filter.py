@@ -65,18 +65,44 @@ class ProductionFilter(FilterBase):
         if client_state and client_state.has_received_all_eos(self.source_queues):
             self.client_manager.remove_client(client_state.client_id)
 
-    def _process_movie(self, movie, queue_name, headers):
+    def _process_single_movie(self, movie, queue_name):
+        """
+        Process a single movie and return categorized results.
+        Returns a dict with categories as keys and the movie as value if it matches the category.
+        """
         country_dicts = movie.get("production_countries", [])
         country_names = [c.get("name") for c in country_dicts if "name" in c]
-
+        
+        results = {}
+        
         if "Argentina" in country_names:
-            self._publish(self.target_queues[queue_name][0], movie, headers)
+            results['argentina'] = movie
 
         if len(country_names) == 1:
-            self._publish(self.target_queues[queue_name][1], movie, headers)
+            results['single_country'] = movie
 
         if "Argentina" in country_names and "Spain" in country_names:
-            self._publish(self.target_queues[queue_name][2], movie, headers)
+            results['argentina_spain'] = movie
+        
+        return results
+
+    def _publish_movie_batches(self, categorized_movies, queue_name, headers):
+        """
+        Publish categorized movies in batches to their respective target queues.
+        """
+        target_queues = self.target_queues[queue_name]
+        
+        # Publish Argentina movies to movies_argentina queue
+        if categorized_movies['argentina']:
+            self._publish(target_queues[0], categorized_movies['argentina'], headers)  # movies_argentina
+        
+        # Publish single country movies to movies_solo queue
+        if categorized_movies['single_country']:
+            self._publish(target_queues[1], categorized_movies['single_country'], headers)  # movies_solo
+        
+        # Publish Argentina+Spain movies to movies_arg_spain queue
+        if categorized_movies['argentina_spain']:
+            self._publish(target_queues[2], categorized_movies['argentina_spain'], headers)  # movies_arg_spain
 
     def callback(self, ch, method, properties, body, queue_name):
         """
@@ -110,15 +136,34 @@ class ProductionFilter(FilterBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
+            # Process all movies first and categorize them
+            categorized_movies = {
+                'argentina': [],
+                'single_country': [],
+                'argentina_spain': []
+            }
+            
             for single_movie in movie:
-                self._process_movie(single_movie, queue_name, headers)
+                results = self._process_single_movie(single_movie, queue_name)
+                
+                if 'argentina' in results:
+                    categorized_movies['argentina'].append(results['argentina'])
+                
+                if 'single_country' in results:
+                    categorized_movies['single_country'].append(results['single_country'])
+                
+                if 'argentina_spain' in results:
+                    categorized_movies['argentina_spain'].append(results['argentina_spain'])
+
+            # Publish all categorized movies in batches
+            self._publish_movie_batches(categorized_movies, queue_name, headers)
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", queue_name, e)
 
         finally:
             self.rabbitmq_processor.acknowledge(method)
-
+    
     def process(self):
         """
         Main processing function for the ProductionFilter.
