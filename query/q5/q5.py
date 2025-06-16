@@ -29,8 +29,8 @@ class SentimentStats(QueryBase):
         Calculate the average rates and publish the results.
         """
         if client_state.has_received_all_eos(self.source_queues):
-            positives = self.positive_rates[(client_id)]
-            negatives = self.negative_rates[(client_id)]
+            positives = self.positive_rates[client_id]
+            negatives = self.negative_rates[client_id]
 
             avg_positive = sum(positives) / len(positives) if positives else 0
             avg_negative = sum(negatives) / len(negatives) if negatives else 0
@@ -44,14 +44,36 @@ class SentimentStats(QueryBase):
                 },
             }
             logger.info("RESULTS: %s", results)
-            # Publish results to a results queue (not implemented here)
 
             self.rabbitmq_processor.publish(
                 target=self.config["DEFAULT"]["results_queue"], message=results
             )
-            del self.positive_rates[(client_id)]
-            del self.negative_rates[(client_id)]
+            del self.positive_rates[client_id]
+            del self.negative_rates[client_id]
             self.client_manager.remove_client(client_id)
+
+    def process_movie(self, movie, client_id, sentiment):
+        """
+        Process a single movie to compute revenue/budget rate.
+        """
+        budget = movie.get("budget", 0)
+        if budget <= 0:
+            return
+
+        revenue = movie.get("revenue", 0)
+        rate = revenue / budget
+
+        if sentiment == "positive":
+            self.positive_rates[client_id].append(rate)
+        elif sentiment == "negative":
+            self.negative_rates[client_id].append(rate)
+
+        logger.debug(
+            "Processed movie for client %s with sentiment %s: rate=%.3f",
+            client_id,
+            sentiment,
+            rate,
+        )
 
     def callback(self, ch, method, properties, body, input_queue):
         try:
@@ -78,32 +100,35 @@ class SentimentStats(QueryBase):
                     node_id = data.get("node_id")
                 except json.JSONDecodeError:
                     logger.error("Failed to decode EOS message")
-                    self.rabbitmq_processor.acknowledge(
-                        method
-                    )  # Make sure to acknowledge
+                    self.rabbitmq_processor.acknowledge(method)
                     return
 
                 client_state.mark_eos(input_queue, node_id)
                 logger.info("EOS received for node %s in %s queue.", node_id, sentiment)
+
                 if client_state.has_received_all_eos(self.source_queues):
                     logger.info("All nodes have sent EOS.")
                     self._calculate_and_publish_results(client_id, client_state)
+
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            movies_batch = json.loads(body)
+            movie = json.loads(body)
+
+            if isinstance(movie, dict):
+                movie = [movie]
+            elif not isinstance(movie, list):
+                logger.warning("❌ Unexpected movie format: %s, skipping.", type(movie))
+                self.rabbitmq_processor.acknowledge(method)
+                return
+
+            for single_movie in movie:
+                self.process_movie(single_movie, client_id, sentiment)
+
         except json.JSONDecodeError:
-            logger.warning("❌ Invalid JSON in %s queue. Skipping.", sentiment)
+            logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
             return
-
-        for movie in movies_batch:
-            if movie.get("budget") > 0:
-                rate = movie.get("revenue") / movie.get("budget")
-                if sentiment == "positive":
-                    self.positive_rates[(client_id)].append(rate)
-                elif sentiment == "negative":
-                    self.negative_rates[(client_id)].append(rate)
 
         self.rabbitmq_processor.acknowledge(method)
 

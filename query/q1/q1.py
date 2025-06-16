@@ -44,19 +44,18 @@ class ArgSpainGenreQuery(QueryBase):
         del self.results_by_request[key]
         self.client_manager.remove_client(client_id)
 
-    def process_batch(self, movies_batch, client_id):
+    def process_movie(self, movie, client_id):
         """
-        Process a batch of movies.
+        Process a single movie.
         """
 
         key = client_id
 
-        logger.debug("Processing batch of %d movies for %s", len(movies_batch), key)
+        title = movie.get("original_title")
+        genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
+        self.results_by_request[key].append((title, genres))
 
-        for movie in movies_batch:
-            title = movie.get("original_title")
-            genres = [g.get("name") for g in movie.get("genres", []) if g.get("name")]
-            self.results_by_request[key].append((title, genres))
+        logger.debug("Processed movie '%s' for %s", title, key)
 
     def callback(self, ch, method, properties, body, input_queue):
         """
@@ -66,7 +65,7 @@ class ArgSpainGenreQuery(QueryBase):
         - title
         - genres (list of names)
 
-        Publishes the results after processing a batch.
+        Publishes the results after EOS message.
         """
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
         headers = getattr(properties, "headers", {}) or {}
@@ -105,15 +104,20 @@ class ArgSpainGenreQuery(QueryBase):
             self.rabbitmq_processor.acknowledge(method)
             return
 
-        # Normal message (batch of movies)
+        # Normal message (single movie)
         try:
-            movies_batch = json.loads(body)
-            if not isinstance(movies_batch, list):
-                logger.warning("❌ Expected a list (batch) of movies, skipping.")
+            movie = json.loads(body)
+
+            # Normalize to list
+            if isinstance(movie, dict):
+                movie = [movie]
+            elif not isinstance(movie, list):
+                logger.warning("❌ Unexpected movie format: %s, skipping.", type(movie))
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            self.process_batch(movies_batch, client_id)
+            for single_movie in movie:
+                self.process_movie(single_movie, client_id)
 
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
@@ -121,7 +125,6 @@ class ArgSpainGenreQuery(QueryBase):
             return
 
         self.rabbitmq_processor.acknowledge(method)
-
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()
