@@ -126,7 +126,7 @@ class CleanupFilter(FilterBase):
     def callback(self, ch, method, properties, body, queue_name):
         """
         Callback function to handle incoming messages from RabbitMQ.
-        Handles EOS and message processing/publishing.
+        Handles EOS and message processing/publishing with batch support.
         """
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
@@ -150,7 +150,9 @@ class CleanupFilter(FilterBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
+            cleaned_records = []
             for record in message_data:
+                cleaned = None
                 if queue_name == self.source_queues[0]:
                     cleaned = self.clean_movie(record)
                 elif queue_name == self.source_queues[1]:
@@ -158,21 +160,25 @@ class CleanupFilter(FilterBase):
                 elif queue_name == self.source_queues[2]:
                     cleaned = self.clean_credit(record)
                 else:
-                    logger.warning("Unknown queue name: %s. Skipping.", queue_name)
+                    logger.warning("Unknown queue name: %s. Skipping record.", queue_name)
                     continue
 
                 if cleaned is not None:
-                    target_queues = self.target_queues.get(queue_name, [])
-                    if not isinstance(target_queues, list):
-                        target_queues = [target_queues]
-                    for target_queue in target_queues:
-                        self.rabbitmq_processor.publish(
-                            target=target_queue,
-                            message=cleaned,
-                            msg_type=msg_type,
-                            headers=headers,
-                        )
+                    cleaned_records.append(cleaned)
 
+            # Send all cleaned records as one batch
+            if cleaned_records:
+                target_queues = self.target_queues.get(queue_name, [])
+                if not isinstance(target_queues, list):
+                    target_queues = [target_queues]
+                
+                for target_queue in target_queues:
+                    self.rabbitmq_processor.publish(
+                        target=target_queue,
+                        message=cleaned_records,
+                        msg_type=msg_type,
+                        headers=headers,
+                    )
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", queue_name, e)
