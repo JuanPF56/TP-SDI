@@ -30,7 +30,7 @@ class ResultReceiver(threading.Thread):
         try:
             while not self._stop_flag.is_set():
                 result = self.protocol.receive_query_response()
-                logger.info("Received result: %r", result)
+                logger.debug("Received result: %r", result)
                 if result is not None:
                     if result:
                         query = result.get("query_id")

@@ -222,6 +222,9 @@ class ConnectedClient(threading.Thread):
             if processed_data is None:
                 if message_code == "BATCH_CREDITS":
                     # May be a partial batch
+                    logger.warning(
+                        "Received partial batch for credits, skipping processing."
+                    )
                     return True
                 else:
                     logger.error("Failed to process payload")

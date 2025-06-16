@@ -112,8 +112,9 @@ class ProtocolClient:
                     for line in lines:
                         line_bytes = line.encode("utf-8")
                         if len(line_bytes) > max_payload_size:
-                            logger.debug(
-                                "Fragmenting oversized line (size=%d)", len(line_bytes)
+                            logger.warning(
+                                "Fragmenting oversized line (size=%d)",
+                                len(line_bytes),
                             )
                             start = 0
                             while start < len(line_bytes):
