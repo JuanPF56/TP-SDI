@@ -4,6 +4,7 @@
 cant_clientes="1"
 modo_test="No"
 test_config_path=""
+skip_download="No"
 default_filename="docker-compose"
 
 # Si el primer argumento NO empieza con '-', lo tomamos como nombre base
@@ -29,6 +30,9 @@ while [[ "$#" -gt 0 ]]; do
             shift
             test_config_path=$1
             ;;
+        -skip_download)
+            skip_download="Sí"
+            ;;
     esac
     shift
 done
@@ -37,9 +41,10 @@ echo "Generando archivos docker compose..."
 echo "Nombre base: $base_filename"
 echo "Cantidad de clientes: $cant_clientes"
 echo "¿Modo test activado?: $modo_test"
+echo "¿Saltear descarga de datasets?: $skip_download"
 
-# Descargar datasets completos si no está en modo test
-if [ "$modo_test" == "No" ]; then
+# Descargar datasets completos si no está en modo test y no se quiere saltear la descarga
+if [ "$modo_test" == "No" ] && [ "$skip_download" == "No" ]; then
     echo "Descargando datasets completos..."
     python3 download_datasets.py
 fi

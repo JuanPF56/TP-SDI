@@ -146,6 +146,12 @@ pip install -r requirements.txt
 
 ![expected_output_test_and_multiclient](resources/expected_output_test_and_multiclient.png)
 
+> Nota: Si ya tienes desacrgados los datasets, puedes correr el flag `-skip_download`para saltear la descarga de los datasets
+>
+>```bash
+> ./generate-compose.sh -skip_download
+>```
+
 ---
 
 ### 📋 Preparar datasets de prueba
