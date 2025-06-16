@@ -78,41 +78,6 @@ class YearFilter(FilterBase):
         if client_state and client_state.has_received_all_eos(self.source_queues):
             self.client_manager.remove_client(client_state.client_id)
 
-    def _process_and_publish_movie(self, movie, input_queue, headers):
-        title = movie.get("original_title")
-        date_str = movie.get("release_date", "")
-        release_year = self.extract_year(date_str)
-
-        logger.debug(
-            "Processing '%s' released in %s from queue '%s'",
-            title,
-            release_year,
-            input_queue,
-        )
-
-        if input_queue == self.source_queues[0]:
-            # Argentina queue: movies after 2000
-            if release_year and release_year > 2000:
-                self.rabbitmq_processor.publish(
-                    target=self.target_exchange,
-                    message=movie,
-                    exchange=True,
-                    headers=headers,
-                    priority=1,
-                )
-        elif input_queue == self.source_queues[1]:
-            # Argentina+Spain queue: movies between 2000-2009
-            if release_year and 2000 <= release_year <= 2009:
-                self.rabbitmq_processor.publish(
-                    target=self.target_queue,
-                    message=movie,
-                    exchange=False,
-                    headers=headers,
-                    priority=1,
-                )
-        else:
-            logger.warning("Unknown source queue: %s", input_queue)
-
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
@@ -136,14 +101,72 @@ class YearFilter(FilterBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
+            processed_movies = []
             for single_movie in movie:
-                self._process_and_publish_movie(single_movie, input_queue, headers)
+                processed = self._process_single_movie(single_movie, input_queue)
+                if processed is not None:
+                    processed_movies.append(processed)
+
+            if processed_movies:
+                self._publish_movie_batch(processed_movies, input_queue, headers)
 
         except Exception as e:
             logger.error("Error processing message from %s: %s", input_queue, e)
 
         finally:
             self.rabbitmq_processor.acknowledge(method)
+
+    def _process_single_movie(self, movie, input_queue):
+        """
+        Process a single movie and return it if it meets the criteria.
+        Returns None if the movie doesn't meet the criteria.
+        """
+        title = movie.get("original_title")
+        date_str = movie.get("release_date", "")
+        release_year = self.extract_year(date_str)
+
+        logger.debug(
+            "Processing '%s' released in %s from queue '%s'",
+            title,
+            release_year,
+            input_queue,
+        )
+
+        if input_queue == self.source_queues[0]:
+            # Argentina queue: movies after 2000
+            if release_year and release_year > 2000:
+                return movie
+        elif input_queue == self.source_queues[1]:
+            # Argentina+Spain queue: movies between 2000-2009
+            if release_year and 2000 <= release_year <= 2009:
+                return movie
+        else:
+            logger.warning("Unknown source queue: %s", input_queue)
+        
+        return None
+
+    def _publish_movie_batch(self, movies, input_queue, headers):
+        """
+        Publish all processed movies as one batch.
+        """
+        if input_queue == self.source_queues[0]:
+            # Argentina queue: publish to exchange
+            self.rabbitmq_processor.publish(
+                target=self.target_exchange,
+                message=movies,  
+                exchange=True,
+                headers=headers,
+                priority=1,
+            )
+        elif input_queue == self.source_queues[1]:
+            # Argentina+Spain queue: publish to queue
+            self.rabbitmq_processor.publish(
+                target=self.target_queue,
+                message=movies, 
+                exchange=False,
+                headers=headers,
+                priority=1,
+            )
 
     def process(self):
         """
