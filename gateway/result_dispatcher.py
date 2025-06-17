@@ -37,70 +37,45 @@ class ResultDispatcher(threading.Thread):
         if not connected:
             raise RuntimeError("Could not connect to RabbitMQ")
 
+    def _handle_message(self, channel, method, properties, body, queue_name=None):
+        try:
+            result_data = json.loads(body)
+            client_id = result_data.get("client_id")
+
+            if not client_id:
+                logger.warning("Missing client_id in result.")
+                # No ack para que lo reintente otro consumidor
+                return
+
+            client = self._clients_connected.get_by_uuid(client_id)
+            if client and client.client_is_connected():
+                client.send_result(result_data)
+                logger.debug("Dispatched result to client %s", client_id)
+                channel.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                logger.warning(
+                    "Client %s not found or disconnected. Not ACKing.", client_id
+                )
+                # No ack para reentrega
+        except Exception as e:
+            logger.error("Error processing result: %s", e)
+            # En caso de error también no hacer ack para reintento
+
     def stop(self):
         """
         Stop the Result Dispatcher thread and clean up resources.
         """
         self._stop_flag.set()
-        self.broker.stop_consuming()
+        self.broker.stop_consuming_threadsafe()
         self.broker.close()
         logger.info("Result Dispatcher stopped.")
 
     def run(self):
         logger.info("Result Dispatcher started.")
         try:
-            base_cool_down = BASE_COOL_DOWN_TIME
-            max_cool_down = MAX_COOL_DOWN_TIME
-            cool_down_time = base_cool_down
-
-            while not self._stop_flag.is_set():
-                method, properties, body = self._get_next_result()
-                if body:
-                    try:
-                        result_data = json.loads(body)
-                        logger.debug("Received result: %s", result_data)
-
-                        # Expected result format:
-                        # {
-                        #     "client_id": "uuid-del-cliente",
-                        #     "query": "Q4",
-                        #     "results": { ... }
-                        # }
-
-                        client_id = result_data.get("client_id")
-                        if not client_id:
-                            logger.warning("Missing client_id in result.")
-                            if method:
-                                self.broker.acknowledge(method)
-                            continue
-
-                        client = self._clients_connected.get_by_uuid(client_id)
-                        if client and client.client_is_connected():
-                            client.send_result(result_data)
-                            logger.debug("Dispatched result to client %s", client_id)
-                        else:
-                            logger.warning(
-                                "Client %s not found or disconnected.", client_id
-                            )
-
-                        # Reset the cool down time if a result is processed successfully
-                        cool_down_time = base_cool_down
-
-                    except Exception as e:
-                        logger.error("Error processing result: %s", e)
-
-                    finally:
-                        if method:
-                            self.broker.acknowledge(method)
-                else:
-                    logger.debug("No result to process, sleeping...")
-                    time.sleep(cool_down_time)
-                    # Increase the cool down time exponentially
-                    cool_down_time = min(cool_down_time * 2, max_cool_down)
-
+            self.broker.consume(self._handle_message)
         except Exception as e:
             logger.error("Error in ResultDispatcher: %s", e)
-
         finally:
             self.stop()
 
