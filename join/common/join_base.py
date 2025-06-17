@@ -29,8 +29,14 @@ class JoinBase:
         self.stopped = False
 
         # Get the clean batch queue name from the config
-        self.clean_batch_queue = self.config["DEFAULT"].get("input_queue", "input_queue")
-        self.input_queue = self.config["DEFAULT"].get("input_queue", "input_queue") + "_node_" + str(self.node_id)
+        self.clean_batch_queue = self.config["DEFAULT"].get(
+            "input_queue", "input_queue"
+        )
+        self.input_queue = (
+            self.config["DEFAULT"].get("input_queue", "input_queue")
+            + "_node_"
+            + str(self.node_id)
+        )
         self.output_queue = self.config["DEFAULT"].get("output_queue", "output_queue")
 
         self.client_manager = ClientManager(
@@ -92,7 +98,6 @@ class JoinBase:
         # Start the loop to receive the batches
         self.receive_batch()
 
-
     def receive_batch(self):
         """
         Start the process to receive batches from the input queue.
@@ -136,7 +141,6 @@ class JoinBase:
             queue_name,
             self.input_queue,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.output_queue,
