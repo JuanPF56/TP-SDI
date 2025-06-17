@@ -4,6 +4,9 @@ data/
 # Ignore the results directory (results are stored here)
 resultados/
 
+# Ignore the stored batches
+gateway/storage/
+
 # Ignore all logs
 *.log
 
