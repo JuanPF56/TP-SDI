@@ -299,11 +299,11 @@ def clean_resultados_folder():
                     os.unlink(file_path)  # eliminar archivo o link
                 elif os.path.isdir(file_path):
                     shutil.rmtree(file_path)  # eliminar carpeta
-                print("Deleted: %s", file_path)
+                print(f"Deleted: {file_path}")
             except Exception as e:
-                print("Failed to delete %s. Reason: %s", file_path, e)
+                print(f"Failed to delete {file_path}. Reason: {e}")
     else:
-        print("Result directory does not exist: %s", resultados_path)
+        print(f"Result directory does not exist: {resultados_path}")
 
 
 def clean_storage_folder():
@@ -319,11 +319,11 @@ def clean_storage_folder():
                     os.unlink(file_path)  # eliminar archivo o link
                 elif os.path.isdir(file_path):
                     shutil.rmtree(file_path)  # eliminar carpeta
-                print("Deleted: %s", file_path)
+                print(f"Deleted: {file_path}")
             except Exception as e:
-                print("Failed to delete %s. Reason: %s", file_path, e)
+                print(f"Failed to delete {file_path}. Reason: {e}")
     else:
-        print("Result directory does not exist: %s", storage_path)
+        print(f"Result directory does not exist: {storage_path}")
 
 
 def main():
