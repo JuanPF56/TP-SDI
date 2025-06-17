@@ -93,8 +93,16 @@ class MoviesHandler(multiprocessing.Process):
                         self.movies_table_ready.set()
                 else:
                     try:
-                        data = json.loads(body)
-                        movies_data = data
+                        decoded = json.loads(body)
+                        if isinstance(decoded, list):
+                            logger.debug(f"Received list: {decoded}")
+                            movies_data = decoded
+                        elif isinstance(decoded, dict):
+                            logger.debug(f"Received dict: {decoded}")
+                            movies_data = [decoded]
+                        else:
+                            logger.warning(f"Unexpected JSON format: {decoded}")
+                            return
                     except json.JSONDecodeError:
                         logger.error("Error decoding JSON: %s", body)
                         return
