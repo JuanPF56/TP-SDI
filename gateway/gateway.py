@@ -68,7 +68,11 @@ class Gateway:
                     proxy_socket.close()
                     continue
 
-                client_id = client_id.decode("utf-8")
+                client_id = client_id.decode("utf-8").rstrip("\x00")
+                logger.debug(
+                    "Received client ID: '%s' (len=%d)", client_id, len(client_id)
+                )
+
                 new_connected_client = ConnectedClient(
                     client_id=client_id,
                     client_socket=proxy_socket,

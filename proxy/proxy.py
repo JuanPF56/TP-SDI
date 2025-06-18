@@ -3,17 +3,13 @@
 import os
 import socket
 import threading
-import struct
 import signal
 import logging
 import time
 
 from gateways_listener import gateways_listener
-from clients_listener import clients_listener
+from clients_listener import ClientsListener
 
-from common.protocol import SIZE_OF_HEADER, SIZE_OF_UUID
-import common.receiver as receiver
-import common.sender as sender
 from common.logger import get_logger
 
 logger = get_logger("proxy")
@@ -61,6 +57,9 @@ class Proxy:
         # initialize the client dictionary: client_id -> (client_socket, gateway_socket)
         self._connected_clients: dict[str, tuple[socket.socket, socket.socket]] = {}
 
+        # Start the clients listener thread
+        self.clients_listener = ClientsListener(self)
+
         # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -92,6 +91,14 @@ class Proxy:
     def _stop_proxy(self):
         logger.info("Stopping proxy...")
         self._was_closed = True
+
+        if self.clients_listener:
+            try:
+                self.clients_listener.stop()
+                self.clients_listener.join()
+                logger.info("Clients listener stopped.")
+            except Exception as e:
+                logger.error("Error stopping clients listener: %s", e)
 
         # Close all client <-> gateway connections
         for client_id, (client_sock, gateway_sock) in self._connected_clients.items():
@@ -129,6 +136,6 @@ class Proxy:
         It listens on the specified port and handles incoming client connections.
         """
         threading.Thread(target=gateways_listener, args=(self,), daemon=True).start()
-        threading.Thread(target=clients_listener, args=(self,), daemon=True).start()
+        self.clients_listener.start()
         while not self._was_closed:
             time.sleep(1)

@@ -139,8 +139,6 @@ class ConnectedClient(threading.Thread):
         """
         logger.info("Connected client %s started.", self._client_id)
         try:
-            self._protocol_gateway.send_client_id(self._client_id)
-
             self.broker = RabbitMQProcessor(
                 config=self.config,
                 source_queues=[],  # Connected client does not consume messages, so empty list
@@ -425,9 +423,7 @@ class ConnectedClient(threading.Thread):
         Send the result data to the client.
         """
         try:
-            logger.debug(
-                "Sending result to client %s: %s", self._client_id, result_data
-            )
+            logger.info("Sending result to client %s: %s", self._client_id, result_data)
             self._protocol_gateway.send_result(result_data)
             self.add_sent_answer()
 

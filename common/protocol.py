@@ -15,6 +15,7 @@ SIZE_OF_UINT32 = 4
  """
 
 TIPO_MENSAJE = {
+    "CLIENT_ID": 0,
     "BATCH_MOVIES": 1,
     "BATCH_CREDITS": 2,
     "BATCH_RATINGS": 3,
@@ -44,8 +45,8 @@ IS_LAST_BATCH_FLAG = 1
         payload_len bytes: data
  """
 SIZE_OF_HEADER_RESULTS = (
-    1 + SIZE_OF_UUID + 4 + 1 + 4
-)  # tipo_de_mensaje (1 byte) + UUID (36 bytes) + nro_batch_actual_igual_a_0 (4 bytes) + query_id (1 byte) + payload_len (4 bytes)
+    1 + 1 + 4
+)  # tipo_de_mensaje (1 byte) + query_id (1 byte) + payload_len (4 bytes)
 
 
 # Exceptions for protocol errors
