@@ -151,28 +151,21 @@ class SentimentAnalyzer:
                 "negative": [],
             }
 
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = {
-                    executor.submit(self.analyze_sentiment, movie.get("overview")): movie
-                    for movie in movies
-                }
+            for movie in movies:
+                try:
+                    sentiment = self.analyze_sentiment(movie.get("overview", ""))
+                    title = movie.get("original_title")
+                    logger.debug("[Worker] Analyzed '%s' → %s", title, sentiment)
 
-                for future in futures:
-                    movie = futures[future]
-                    try:
-                        sentiment = future.result()
-                        title = movie.get("original_title")
-                        logger.debug("[Worker] Analyzed '%s' → %s", title, sentiment)
+                    if sentiment == "neutral":
+                        logger.debug("[Worker] Movie '%s' is neutral, skipping.", title)
+                    elif sentiment in ("positive", "negative"):
+                        sentiment_batches[sentiment].append(movie)
+                    else:
+                        logger.warning("[Worker] Unknown sentiment '%s' for movie '%s'", sentiment, title)
 
-                        if sentiment == "neutral":
-                            logger.debug("[Worker] Movie '%s' is neutral, skipping.", title)
-                        elif sentiment in ("positive", "negative"):
-                            sentiment_batches[sentiment].append(movie)
-                        else:
-                            logger.warning("[Worker] Unknown sentiment '%s' for movie '%s'", sentiment, title)
-
-                    except Exception as e:
-                        logger.error("[Worker] Error analyzing sentiment for movie '%s': %s", movie.get("original_title"), e)
+                except Exception as e:
+                    logger.error("[Worker] Error analyzing sentiment for movie '%s': %s", movie.get("original_title"), e)
 
             for sentiment, movies_batch in sentiment_batches.items():
                 if movies_batch:
