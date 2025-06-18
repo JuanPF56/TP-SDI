@@ -7,7 +7,7 @@ import signal
 import logging
 import time
 
-from gateways_listener import gateways_listener
+from gateways_listener import GatewaysListener
 from clients_listener import ClientsListener
 
 from common.logger import get_logger
@@ -43,6 +43,7 @@ class Proxy:
         self.proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.proxy_socket.bind(("", self.port))
         self.proxy_socket.listen(int(self.config["DEFAULT"].get("LISTEN_BACKLOG", 5)))
+        self.proxy_socket.settimeout(1.0)
         logger.info("Proxy listening on port %s", self.port)
         self._was_closed = False
 
@@ -57,8 +58,9 @@ class Proxy:
         # initialize the client dictionary: client_id -> (client_socket, gateway_socket)
         self._connected_clients: dict[str, tuple[socket.socket, socket.socket]] = {}
 
-        # Start the clients listener thread
+        # Start the clients and gateways listener thread
         self.clients_listener = ClientsListener(self)
+        self.gateways_listener = GatewaysListener(self)
 
         # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -93,6 +95,7 @@ class Proxy:
         self._was_closed = True
 
         if self.clients_listener:
+            logger.info("Stopping clients listener...")
             try:
                 self.clients_listener.stop()
                 self.clients_listener.join()
@@ -100,7 +103,17 @@ class Proxy:
             except Exception as e:
                 logger.error("Error stopping clients listener: %s", e)
 
+        if self.gateways_listener:
+            logger.info("Stopping gateways listener...")
+            try:
+                self.gateways_listener.stop()
+                self.gateways_listener.join()
+                logger.info("Gateways listener stopped.")
+            except Exception as e:
+                logger.error("Error stopping gateways listener: %s", e)
+
         # Close all client <-> gateway connections
+        logger.info("Closing all client-gateway connections...")
         for client_id, (client_sock, gateway_sock) in self._connected_clients.items():
             try:
                 client_sock.shutdown(socket.SHUT_RDWR)
@@ -135,7 +148,8 @@ class Proxy:
         Run the proxy server.
         It listens on the specified port and handles incoming client connections.
         """
-        threading.Thread(target=gateways_listener, args=(self,), daemon=True).start()
+        self.gateways_listener.start()
         self.clients_listener.start()
+
         while not self._was_closed:
             time.sleep(1)

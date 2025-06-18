@@ -1,6 +1,7 @@
 # proxy/threads/clients_listener.py
 
 import threading
+import socket
 
 from client_handler import client_handler
 from common.logger import get_logger
@@ -14,7 +15,6 @@ class ClientsListener(threading.Thread):
         self._stop_flag = threading.Event()
 
         self.proxy = proxy
-        self._was_closed = False
         self.current_index = 0
 
     def run(self):
@@ -41,6 +41,11 @@ class ClientsListener(threading.Thread):
                 gateway = available_gateways[
                     self.current_index % len(available_gateways)
                 ]
+                logger.info(
+                    "Selected gateway %s for client %s",
+                    gateway,
+                    addr,
+                )
                 self.current_index += 1
 
                 threading.Thread(
@@ -49,8 +54,17 @@ class ClientsListener(threading.Thread):
                     daemon=True,
                 ).start()
 
+            except socket.timeout:
+                continue  # volver al loop para chequear el _stop_flag
+
             except Exception as e:
                 if self.proxy._was_closed:
                     logger.info("Proxy closing, stopping client listener.")
                     break
                 logger.error("Error accepting client: %s", e)
+
+    def stop(self):
+        logger.info("Stopping clients listener...")
+        self._stop_flag.set()
+        self.join()
+        logger.info("Clients listener stopped.")
