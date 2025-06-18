@@ -50,7 +50,7 @@ class ResultDispatcher(threading.Thread):
             client = self._clients_connected.get_by_uuid(client_id)
             if client and client.client_is_connected():
                 client.send_result(result_data)
-                logger.debug("Dispatched result to client %s", client_id)
+                logger.info("Dispatched result to client %s", client_id)
                 channel.basic_ack(delivery_tag=method.delivery_tag)
             else:
                 logger.warning(

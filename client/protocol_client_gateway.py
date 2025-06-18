@@ -346,7 +346,9 @@ class ProtocolClient:
         if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
             return None
 
-        tipo_mensaje, query_id, payload_len = struct.unpack(">BBI", header_bytes)
+        tipo_mensaje, _, _, query_id, payload_len = struct.unpack(
+            ">B36sIBI", header_bytes
+        )
 
         if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
             logger.error("Unexpected message type: %s", tipo_mensaje)

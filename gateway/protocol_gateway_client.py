@@ -10,7 +10,12 @@ import json
 import common.receiver as receiver
 import common.sender as sender
 from common.decoder import Decoder
-from common.protocol import SIZE_OF_HEADER, TIPO_MENSAJE, SIZE_OF_UUID
+from common.protocol import (
+    SIZE_OF_HEADER,
+    TIPO_MENSAJE,
+    SIZE_OF_UUID,
+    SIZE_OF_HEADER_RESULTS,
+)
 
 from common.logger import get_logger
 
@@ -216,26 +221,51 @@ class ProtocolGateway:
             return None
 
     def _build_result_message(self, result_data):
-        tipo_de_mensaje = TIPO_MENSAJE["RESULTS"]
+        try:
+            tipo_de_mensaje = TIPO_MENSAJE["RESULTS"]
+            client_id = result_data.get("client_id")
+            encoded_id = client_id.encode("utf-8")
+            if len(encoded_id) < 36:
+                encoded_id = encoded_id.ljust(36, b"\x00")  # rellena con ceros
+            elif len(encoded_id) > 36:
+                encoded_id = encoded_id[:36]
 
-        # client_id not needed
+            nro_batch_actual = 0
 
-        query_id_str = result_data.get("query", "Q0")  # fallback for missing query
-        # Extract number from query_id_str (Q1 -> 1)
-        query_id = int(query_id_str[1:])
+            query_id_str = result_data.get("query", "Q0")  # fallback for missing query
+            # Extract number from query_id_str (Q1 -> 1)
+            query_id = int(query_id_str[1:])
 
-        result_of_query = result_data.get("results", {})
+            result_of_query = result_data.get("results", {})
 
-        # Serialize payload
-        payload = json.dumps(result_of_query).encode()
-        payload_len = len(payload)
+            # Serialize payload
+            payload = json.dumps(result_of_query).encode()
+            payload_len = len(payload)
 
-        # Header: tipo(1 byte), query_id(1 byte), payload_len(4 bytes)
-        header = struct.pack(">BBI", tipo_de_mensaje, query_id, payload_len)
+            # Header: tipo(1 byte), UUID (36 bytes), nro_batch_actual (4 bytes), query_id(1 byte), payload_len(4 bytes)
+            header = struct.pack(
+                ">B36sIBI",
+                tipo_de_mensaje,
+                encoded_id,
+                nro_batch_actual,
+                query_id,
+                payload_len,
+            )
+            if len(header) != SIZE_OF_HEADER_RESULTS:
+                logger.error(
+                    "Header length is not %d bytes, got %d bytes",
+                    SIZE_OF_HEADER_RESULTS,
+                    len(header),
+                )
+                raise ValueError("Header length is not correct")
 
-        full_message = header + payload
+            full_message = header + payload
 
-        return full_message
+            return full_message
+
+        except Exception as e:
+            logger.error("Error building result message: %s", e)
+            raise
 
     def send_result(self, result_data: dict) -> None:
         """
