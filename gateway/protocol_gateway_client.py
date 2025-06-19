@@ -96,11 +96,18 @@ class ProtocolGateway:
                 self._client_socket, SIZE_OF_HEADER, timeout=TIMEOUT_HEADER
             )
 
-            if not header or len(header) != SIZE_OF_HEADER:
-                logger.error("Invalid or incomplete header received")
+            if not header:
+                logger.warning("Connection closed by client before sending header.")
+                return None
+            if len(header) != SIZE_OF_HEADER:
+                logger.error(
+                    "Incomplete header received. Expected %d bytes, got %d bytes",
+                    SIZE_OF_HEADER,
+                    len(header),
+                )
                 self.stop_client()
                 return None
-
+            
             (
                 message_id,
                 type_of_batch,

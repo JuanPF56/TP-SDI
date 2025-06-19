@@ -7,6 +7,7 @@ import json
 import socket
 import threading
 from dataclasses import asdict, is_dataclass
+import tempfile
 
 from protocol_gateway_client import ProtocolGateway
 from batch_message import BatchMessage
@@ -44,6 +45,10 @@ class ConnectedClient(threading.Thread):
         self._protocol_gateway = ProtocolGateway(client_socket, client_id)
         self.was_closed = False
 
+        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
+        self.accumulated_batches = 0
+        self.batches_stored = []
+
         self.recovery_mode = self.config.getboolean(
             "DEFAULT", "RECOVERY_MODE", fallback=True
         )
@@ -52,10 +57,6 @@ class ConnectedClient(threading.Thread):
             self._load_batches_from_disk()
         else:
             logger.info("Recovery mode is disabled for client %s", self._client_id)
-
-        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
-        self.accumulated_batches = 0
-        self.batches_stored = []
 
         self._expected_datasets_to_receive_per_request = DATASETS_PER_REQUEST
         self._received_datasets = 0
@@ -438,11 +439,22 @@ class ConnectedClient(threading.Thread):
         try:
             client_dir = os.path.join("storage", batch.client_id)
             os.makedirs(client_dir, exist_ok=True)
-            filename = os.path.join(
+            final_path = os.path.join(
                 client_dir, f"{batch.message_code}_{batch.current_batch}.json"
             )
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(asdict(batch), f, ensure_ascii=False, indent=2)
+
+            # Write to a temporary file first
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", dir=client_dir, delete=False
+            ) as tmp_file:
+                json.dump(asdict(batch), tmp_file, ensure_ascii=False, indent=2)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+                temp_path = tmp_file.name
+
+            # Atomically replace the final file with the temp file
+            os.replace(temp_path, final_path)
+
         except Exception as e:
             logger.error(
                 "Error saving batch to disk for client %s: %s", batch.client_id, e

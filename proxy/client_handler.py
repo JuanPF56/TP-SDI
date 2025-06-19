@@ -1,10 +1,11 @@
 # proxy/threads/client_handler.py
 
 import socket
-import struct
 import threading
 import uuid
 import logging
+
+from gateway_connection import GatewayConnection
 
 from common.protocol import (
     SIZE_OF_HEADER,
@@ -24,11 +25,11 @@ TIMEOUT_HEADER = 3600
 TIMEOUT_PAYLOAD = 3600
 
 
-def _forward_client_to_gateway(source: socket.socket, destination: socket.socket):
+def _forward_client_to_gateway(source: socket.socket, destination: GatewayConnection):
     logger.debug(
         "⬅️ FORWARD thread started: source=%s -> destination=%s",
         source.getsockname(),
-        destination.getsockname(),
+        destination.host,
     )
 
     try:
@@ -87,17 +88,17 @@ def _forward_client_to_gateway(source: socket.socket, destination: socket.socket
                 logger.debug("Connection closed while reading payload.")
                 break
 
-            sender.send(destination, header)
-            sender.send(destination, payload)
+            destination.send(header)
+            destination.send(payload)
 
     except Exception as e:
         logger.error("Forwarding error: %s", e)
 
 
-def _forward_gateway_to_client(source: socket.socket, destination: socket.socket):
+def _forward_gateway_to_client(source: GatewayConnection, destination: socket.socket):
     logger.debug(
         "⬅️ FORWARD thread started: source=%s -> destination=%s",
-        source.getsockname(),
+        source.host,
         destination.getsockname(),
     )
 
@@ -116,9 +117,7 @@ def _forward_gateway_to_client(source: socket.socket, destination: socket.socket
                 )
                 break
 
-            header = receiver.receive_data(
-                source, SIZE_OF_HEADER_RESULTS, timeout=TIMEOUT_HEADER
-            )
+            header = source.receive(SIZE_OF_HEADER_RESULTS, timeout=TIMEOUT_HEADER)
             logger.debug("Received header: %s, en hexa: %s", header, header.hex())
 
             if not header:
@@ -145,9 +144,7 @@ def _forward_gateway_to_client(source: socket.socket, destination: socket.socket
             if int(tipo_mensaje) not in TIPO_MENSAJE.values():
                 logger.warning("Received unknown message type: %r", tipo_mensaje)
 
-            payload = receiver.receive_data(
-                source, payload_len, timeout=TIMEOUT_PAYLOAD
-            )
+            payload = source.receive(payload_len, timeout=TIMEOUT_PAYLOAD)
             if not payload:
                 logger.error("Connection closed while reading payload.")
                 break
@@ -177,11 +174,6 @@ def client_handler(proxy, client_socket, addr, gateway):
     host, port = gateway
 
     try:
-        gateway_socket = socket.create_connection((host, port), timeout=None)
-        logger.info("Connected to %s:%s for client %s", host, port, client_id)
-
-        proxy._connected_clients[client_id] = (client_socket, gateway_socket)
-
         encoded_client_id = client_id.encode("utf-8")
         if len(encoded_client_id) > 36:
             logger.error(
@@ -196,7 +188,13 @@ def client_handler(proxy, client_socket, addr, gateway):
             )
             encoded_client_id = encoded_client_id.ljust(36, b"\x00")
 
-        sender.send(gateway_socket, encoded_client_id)
+        gateway_conn = GatewayConnection(host, port, encoded_client_id, logger)
+        logger.info("Connected to %s:%s for client %s", host, port, client_id)
+
+        proxy._connected_clients[client_id] = (client_socket, gateway_conn)
+        proxy.gateway_connections[(host, port)] = gateway_conn
+
+        gateway_conn.send(encoded_client_id)
         logger.info(
             "Sent client ID %s as encoded %s to gateway %s:%s",
             client_id,
@@ -215,13 +213,13 @@ def client_handler(proxy, client_socket, addr, gateway):
 
         threading.Thread(
             target=_forward_client_to_gateway,
-            args=(client_socket, gateway_socket),
+            args=(client_socket, gateway_conn),
             daemon=True,
         ).start()
 
         threading.Thread(
             target=_forward_gateway_to_client,
-            args=(gateway_socket, client_socket),
+            args=(gateway_conn, client_socket),
             daemon=True,
         ).start()
 
