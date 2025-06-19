@@ -8,6 +8,7 @@ from textblob import TextBlob
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from collections import defaultdict
+from common.leader_election import LeaderElector
 
 from common.eos_handling import handle_eos
 from common.logger import get_logger
@@ -58,6 +59,12 @@ class SentimentAnalyzer:
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
         )
+        self.election_port = int(os.getenv("ELECTION_PORT", 9001))
+        self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
+        self.node_name = os.getenv("NODE_NAME")
+        self.elector = LeaderElector(self.node_id, self.peers, self.election_port)
+        self.elector.start_election()
+
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
