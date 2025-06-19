@@ -4,7 +4,6 @@ This module implements the ProtocolGateway class, which handles communication wi
 """
 
 import socket
-import struct
 import json
 
 import common.receiver as receiver
@@ -15,6 +14,8 @@ from common.protocol import (
     TIPO_MENSAJE,
     SIZE_OF_UUID,
     SIZE_OF_HEADER_RESULTS,
+    pack_result_header,
+    unpack_header,
 )
 
 from common.logger import get_logger
@@ -101,12 +102,13 @@ class ProtocolGateway:
                 return None
 
             (
+                message_id,
                 type_of_batch,
                 encoded_id,
                 current_batch,
                 is_last_batch,
                 payload_len,
-            ) = struct.unpack(">B36sIBI", header)
+            ) = unpack_header(header)
             message_code = TIPO_MENSAJE_INVERSO.get(type_of_batch)
 
             if message_code is None:
@@ -115,6 +117,7 @@ class ProtocolGateway:
                 return None
 
             return (
+                message_id,
                 message_code,
                 encoded_id,
                 current_batch,
@@ -221,7 +224,7 @@ class ProtocolGateway:
             return None
 
     def _build_result_message(self, result_data):
-        tipo_de_mensaje = TIPO_MENSAJE["RESULTS"]
+        tipo_mensaje = TIPO_MENSAJE["RESULTS"]
 
         # client_id not needed
 
@@ -236,7 +239,7 @@ class ProtocolGateway:
         payload_len = len(payload)
 
         # Header: tipo(1 byte), query_id(1 byte), payload_len(4 bytes)
-        header = struct.pack(">BBI", tipo_de_mensaje, query_id, payload_len)
+        header = pack_result_header(tipo_mensaje, query_id, payload_len)
         if len(header) != SIZE_OF_HEADER_RESULTS:
             logger.error(
                 "Header length is not %d bytes, got %d bytes",

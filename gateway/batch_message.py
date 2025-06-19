@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class BatchMessage:
+    message_id: int
     message_code: str
     client_id: str
     current_batch: int

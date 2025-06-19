@@ -9,7 +9,6 @@ import socket
 import os
 import csv
 
-import struct
 import json
 
 import common.receiver as receiver
@@ -20,6 +19,8 @@ from common.protocol import (
     SIZE_OF_HEADER,
     SIZE_OF_HEADER_RESULTS,
     ProtocolError,
+    pack_header,
+    unpack_result_header,
 )
 
 from common.logger import get_logger
@@ -38,6 +39,7 @@ class ProtocolClient:
         self._socket = socket
         self._max_batch_size = max_batch_size
         self._connected = True
+        self.message_id = 0
 
     def get_client_id(self):
         """
@@ -254,8 +256,8 @@ class ProtocolClient:
 
         is_last_batch = 1 if is_last else 0
 
-        header = struct.pack(
-            ">B36sIBI",
+        header = pack_header(
+            self.message_id,
             tipo_de_mensaje,
             encoded_id,
             batch_number,
@@ -272,6 +274,7 @@ class ProtocolClient:
 
         try:
             self.send_batch(header, payload)
+            self.message_id += 1
 
         except ServerNotConnectedError:
             logger.error("Connection closed by server while sending batch")
@@ -346,11 +349,7 @@ class ProtocolClient:
         if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
             return None
 
-        (
-            tipo_mensaje,
-            query_id,
-            payload_len,
-        ) = struct.unpack(">BBI", header_bytes)
+        tipo_mensaje, query_id, payload_len = unpack_result_header(header_bytes)
 
         if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
             logger.error("Unexpected message type: %s", tipo_mensaje)
