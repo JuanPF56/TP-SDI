@@ -1,6 +1,7 @@
 import logging
 import colorlog
 
+logging.getLogger("pika").setLevel(logging.WARNING)
 
 def get_logger(name):
     logger = logging.getLogger(name)
