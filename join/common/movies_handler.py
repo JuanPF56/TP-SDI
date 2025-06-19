@@ -86,7 +86,7 @@ class MoviesHandler(multiprocessing.Process):
                         self.year_eos_flags[id_tuple] = self.manager.dict()
                     if node_id not in self.year_eos_flags[id_tuple]:
                         self.year_eos_flags[id_tuple][node_id] = True
-                        self.write_storage("eos", self.year_eos_flags[id_tuple], self.current_client_id)
+                        self.write_storage("moveos", self.year_eos_flags[id_tuple], self.current_client_id)
                         logger.debug("EOS received for node %s.", node_id)
                     if not self.ready and self.client_ready(self.current_client_id):
                         self.ready = True
@@ -245,8 +245,8 @@ class MoviesHandler(multiprocessing.Process):
             return
 
         for filename in os.listdir(storage_dir):
-            if filename.startswith("eos_") and filename.endswith(".json"):
-                type = "eos"
+            if filename.startswith("moveos_") and filename.endswith(".json"):
+                type = "moveos"
             elif filename.startswith("movies_") and filename.endswith(".json"):
                 type = "movies"
             else:
@@ -268,7 +268,7 @@ class MoviesHandler(multiprocessing.Process):
         """
         Compare the data read from storage with the current state and update file if necessary.
         """
-        if type == "eos":
+        if type == "moveos":
             if client_id not in self.year_eos_flags:
                 self.year_eos_flags[client_id] = self.manager.dict()
             current_flags = self.year_eos_flags[client_id]
@@ -278,7 +278,7 @@ class MoviesHandler(multiprocessing.Process):
                     current_flags[node_id] = flag
                     updated = True
             if updated:
-                self.write_storage("eos", current_flags, client_id)
+                self.write_storage("moveos", current_flags, client_id)
                 logger.debug(f"EOS data for client {client_id} updated.")
         elif type == "movies":
             if client_id not in self.movies:
