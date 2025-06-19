@@ -31,8 +31,8 @@ def main():
         logger.info(f"{key}: {value}")
 
     client = Client(
-        config["DEFAULT"]["GATEWAY_HOST"],
-        int(config["DEFAULT"]["GATEWAY_PORT"]),
+        config["DEFAULT"]["PROXY_HOST"],
+        int(config["DEFAULT"]["PROXY_PORT"]),
         int(config["DEFAULT"]["MAX_BATCH_SIZE"]),
     )
 

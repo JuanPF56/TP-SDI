@@ -10,7 +10,12 @@ import json
 import common.receiver as receiver
 import common.sender as sender
 from common.decoder import Decoder
-from common.protocol import SIZE_OF_HEADER, TIPO_MENSAJE, SIZE_OF_UUID
+from common.protocol import (
+    SIZE_OF_HEADER,
+    TIPO_MENSAJE,
+    SIZE_OF_UUID,
+    SIZE_OF_HEADER_RESULTS,
+)
 
 from common.logger import get_logger
 
@@ -232,6 +237,13 @@ class ProtocolGateway:
 
         # Header: tipo(1 byte), query_id(1 byte), payload_len(4 bytes)
         header = struct.pack(">BBI", tipo_de_mensaje, query_id, payload_len)
+        if len(header) != SIZE_OF_HEADER_RESULTS:
+            logger.error(
+                "Header length is not %d bytes, got %d bytes",
+                SIZE_OF_HEADER_RESULTS,
+                len(header),
+            )
+            raise ValueError("Header length mismatch")
 
         full_message = header + payload
 

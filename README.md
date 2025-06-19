@@ -21,11 +21,12 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
      - [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
 4. [▶️ Correr el sistema](#️-correr-el-sistema)  
 5. [🧱 Comandos disponibles (`Makefile`)](#-comandos-disponibles-makefile)  
-6. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
-7. [💯 Respuestas esperadas](#-respuestas-esperadas)  
-8. [🛠️ Construido con](#️-construido-con)  
-9. [✒️ Autores](#️-autores)  
-10. [📑 Documentación](#-documentación)
+6. [💀 Introducción de fallas)](#-introducción-de-fallas)
+7. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
+8. [💯 Respuestas esperadas](#-respuestas-esperadas)  
+9. [🛠️ Construido con](#️-construido-con)  
+10. [✒️ Autores](#️-autores)  
+11. [📑 Documentación](#-documentación)
 
 ---
 
@@ -74,6 +75,7 @@ Antes de generar el archivo `docker-compose.system.yml`, podés editar el archiv
 
 ```ini
 [DEFAULT]
+gateway_nodes = 1
 cleanup_filter_nodes = 2
 production_filter_nodes = 2
 year_filter_nodes = 2
@@ -141,7 +143,7 @@ pip install -r requirements.txt
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh -test test_config.yaml -cant_clientes 1
+./generate-compose.sh -test test_config.yaml -cant_clientes 10
 ```
 
 ![expected_output_test_and_multiclient](resources/expected_output_test_and_multiclient.png)
@@ -245,6 +247,16 @@ make docker-kill-clients  # Detiene solo los contenedores de los clientes con SI
 
 ---
 
+## 💀 Introducción de fallas
+
+Para probar la tolerancia a fallos, se cuenta con un script para testear la resiliencia del sistema a la caída de los nodos: gateway, filter_cleanup, filter_year, filter_production, sentiment_analyzer, join_credits y join_ratings.
+
+```bash
+./fault_injector.sh
+```
+
+---
+
 ## 📊 Monitoreo de las colas (RabbitMQ)
 
 Podés visualizar el estado de las **queues** y monitorear la actividad del sistema accediendo al panel de administración de **RabbitMQ** desde tu navegador:
@@ -260,11 +272,23 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ## 💯 Respuestas esperadas
 
-![query_1](resources/query_1.png)
-![query_2](resources/query_2.png)
-![query_3](resources/query_3.png)
-![query_4](resources/query_4.png)
-![query_5](resources/query_5.png)
+### Datasets al 100 %
+
+![query_1](resources/answers_datasets_100/query_1.png)
+![query_2](resources/answers_datasets_100/query_2.png)
+![query_3](resources/answers_datasets_100/query_3.png)
+![query_4](resources/answers_datasets_100/query_4.png)
+![query_5](resources/answers_datasets_100/query_5.png)
+
+---
+
+### Datasets al 20 %
+
+![query_1](resources/answers_datasets_20/query_1.png)
+![query_2](resources/answers_datasets_20/query_2.png)
+![query_3](resources/answers_datasets_20/query_3.png)
+![query_4](resources/answers_datasets_20/query_4.png)
+![query_5](resources/answers_datasets_20/query_5.png)
 
 ---
 

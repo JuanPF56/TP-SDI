@@ -22,6 +22,12 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         print("Error: global_config.ini not found.")
         sys.exit(1)
 
+    gateway_nodes = config["DEFAULT"].getint("gateway_nodes", 1)
+    gateway_node_names = [f"gateway_{i}" for i in range(1, gateway_nodes + 1)]
+    gateway_depends = {
+        name: {"condition": "service_healthy"} for name in gateway_node_names
+    }
+
     cleanup = config["DEFAULT"].getint("cleanup_filter_nodes", 1)
     year = config["DEFAULT"].getint("year_filter_nodes", 1)
     production = config["DEFAULT"].getint("production_filter_nodes", 1)
@@ -66,7 +72,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
     ]:
         depends = {
             "rabbitmq": {"condition": "service_healthy"},
-            "gateway": {"condition": "service_healthy"},
+            **gateway_depends,
         }
         if subtype == "year":
             for node in j_nodes:
@@ -132,7 +138,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"},
+                **gateway_depends,
             },
             "networks": ["testing_net"],
         }
@@ -170,7 +176,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 },
                 "depends_on": {
                     "rabbitmq": {"condition": "service_healthy"},
-                    "gateway": {"condition": "service_healthy"},
+                    **gateway_depends,
                 },
                 "networks": ["testing_net"],
             }
@@ -204,37 +210,63 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"},
+                **gateway_depends,
             },
             "networks": ["testing_net"],
         }
 
-    # Gateway node
+    # Gateway nodes
     full_dependencies = (
         filter_node_names + sentiment_node_names + join_node_names + query_node_names
     )
-    services["gateway"] = {
-        "container_name": "gateway",
-        "image": "gateway:latest",
-        "entrypoint": "python3 /app/main.py",
+    for i, name in enumerate(gateway_node_names, start=1):
+        services[name] = {
+            "container_name": name,
+            "image": "gateway:latest",
+            "entrypoint": "python3 /app/main.py",
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock",
+                "./gateway/config.ini:/app/config.ini",
+                "./gateway/storage:/app/storage",
+            ],
+            "environment": {
+                "SYSTEM_NODES": ",".join(full_dependencies),
+                "NODE_NAME": name,
+                "GATEWAY_PORT": f"{9000+i}",
+            },
+            "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+            },
+            "networks": ["testing_net"],
+            "ports": [f"{9000+i}:{9000+i}"],
+            "healthcheck": {
+                "test": ["CMD", "test", "-f", f"/tmp/{name}_ready"],
+                "interval": "5s",
+                "timeout": "5s",
+                "retries": 10,
+            },
+        }
+
+    # proxy node for gateways
+    services["proxy"] = {
+        "container_name": "proxy",
+        "image": "proxy:latest",
         "volumes": [
             "/var/run/docker.sock:/var/run/docker.sock",
-            "./gateway/config.ini:/app/config.ini",
-            "./gateway/storage:/app/storage",
+            "./proxy/config.ini:/app/config.ini",
         ],
         "environment": {
-            "SYSTEM_NODES": ",".join(full_dependencies),
+            "GATEWAYS": ",".join(
+                [
+                    f"{name}:{9000+i}"
+                    for i, name in enumerate(gateway_node_names, start=1)
+                ]
+            ),
+            "NODE_NAME": "proxy",
         },
-        "depends_on": {
-            "rabbitmq": {"condition": "service_healthy"},
-        },
+        "depends_on": gateway_depends,
         "networks": ["testing_net"],
-        "healthcheck": {
-            "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
-            "interval": "5s",
-            "timeout": "5s",
-            "retries": 10,
-        },
+        "ports": ["9000:9000"],
     }
 
     # Coordinator node
@@ -243,8 +275,12 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         + sentiment_node_names
         + join_node_names
         + query_node_names
-        + ["gateway"]
+        + gateway_node_names
+        + ["proxy"]
     )
+    depends_coordinator = {
+        node: {"condition": "service_started"} for node in monitored_nodes
+    }
     services["coordinator"] = {
         "container_name": "coordinator",
         "image": "coordinator:latest",
@@ -256,6 +292,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         "environment": {
             "MONITORED_NODES": ",".join(monitored_nodes),
         },
+        "depends_on": {**gateway_depends, **depends_coordinator},
         "networks": ["testing_net"],
     }
 
