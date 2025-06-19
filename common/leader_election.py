@@ -8,7 +8,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LeaderElector")
 
 class LeaderElector:
-    def __init__(self, node_id, peers, election_port=9000):
+    def __init__(self, node_id, peers, election_port=9000,
+                 election_logic: callable = None):
         """
         node_id: int, unique id of this node (higher wins)
         peers: dict of {node_id: (ip, port)} for all other nodes
@@ -17,6 +18,7 @@ class LeaderElector:
         self.node_id = node_id
         self.peers = self._parse_peers(peers)
         self.election_port = election_port
+        self.election_logic = election_logic
 
         self.election_in_progress = False
         self.highest_seen_id = self.node_id  # track highest ID seen in election messages
@@ -150,6 +152,11 @@ class LeaderElector:
             self.leader_id = sender_id
             self.election_in_progress = False
             self.highest_seen_id = max(self.highest_seen_id, sender_id)
+
+            # If election logic is provided, call it with the new leader ID
+            if self.election_logic:
+                logger.info(f"[Node {self.node_id}] Calling election logic with leader ID {self.leader_id}")
+                self.election_logic(self.leader_id)
             
             # Log leader change for debugging
             if old_leader != sender_id:
@@ -450,6 +457,10 @@ class LeaderElector:
 
         threading.Thread(target=broadcast_multiple_times, daemon=True).start()
 
+        # If election logic is provided, call it with the new leader ID
+        if self.election_logic:
+            logger.info(f"[Node {self.node_id}] Calling election logic with leader ID {self.leader_id}")
+            self.election_logic(self.leader_id)
 
     def cleanup(self):
         """
