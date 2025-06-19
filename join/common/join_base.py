@@ -3,7 +3,7 @@ import os
 import pika
 import multiprocessing
 import signal
-
+from common.leader_election import LeaderElector
 from common.client_state import ClientState
 from common.client_state_manager import ClientManager
 from common.eos_handling import handle_eos
@@ -71,6 +71,10 @@ class JoinBase:
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
         )
+        self.election_port = int(os.getenv("ELECTION_PORT", 9001))
+        self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
+        self.node_name = os.getenv("NODE_NAME")
+        self.elector = LeaderElector(self.node_id, self.peers, self.election_port)
 
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
@@ -88,12 +92,7 @@ class JoinBase:
 
         # Start the master logic process
         self.master_logic.start()
-
-        # TODO: Leader election logic
-        # For now, we assume the node with the highest node_id is the leader
-        if self.node_id == self.nodes_of_type:
-            self.log_info("This node is the leader. Starting master logic...")
-            self.master_logic.toggle_leader()
+        self.elector.start_election()
 
         # Start the loop to receive the batches
         self.receive_batch()
