@@ -92,18 +92,14 @@ class JoinBase:
         except Exception as e:
             self.log_info(f"Error closing connection: {e}")
 
-    def _election_logic(self, leader_id: int):
+    def _election_logic(self, leader_id):
         election_logic(
-            first_run=self.first_run,
+            self,
             leader_id=leader_id,
-            node_id=self.node_id,
             leader_queues=self.clean_batch_queue,
-            master_logic=self.master_logic,
-            rabbitmq_config=self.config,
-            read_storage=self._read_storage
         )
-    
-    def _read_storage(self):
+
+    def read_storage(self):
         self.movies_handler.read_storage()
         self.client_manager.read_storage()
 

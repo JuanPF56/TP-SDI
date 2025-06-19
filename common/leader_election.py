@@ -4,7 +4,7 @@ import threading
 import time
 import random
 
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LeaderElector")
 
 class LeaderElector:

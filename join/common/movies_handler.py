@@ -28,7 +28,7 @@ class MoviesHandler(multiprocessing.Process):
         )
         self.node_id = node_id
         self.stopped = False
-        self.rabbitmq_processor.connect(node_name=node_name+f"_{self.node_id}")
+        self.rabbitmq_processor.connect(node_name=node_name)
         self.manager = manager
         self.movies = self.manager.dict()
 
@@ -186,9 +186,10 @@ class MoviesHandler(multiprocessing.Process):
             return
         for client_id in self.movies:
             movies_table = self.get_movies_table(client_id)
+            type_of_node = self.node_name.split("_")[0]
             if movies_table:
                 self.rabbitmq_processor.publish(
-                    target=f"movies_exchange_node_{self.node_name + f'_{node_id}'}",
+                    target=f"movies_exchange_node_{type_of_node}_{node_id}",
                     message={movies_table},
                     headers={"client_id": client_id},
                 )
@@ -196,7 +197,7 @@ class MoviesHandler(multiprocessing.Process):
             if year_eos_flags:
                 for node in year_eos_flags:
                     self.rabbitmq_processor.publish(
-                        target=f"movies_exchange_node_{self.node_name + f'_{node_id}'}",
+                        target=f"movies_exchange_node_{type_of_node}_{node_id}",
                         message={"node_id": node},
                         msg_type=EOS_TYPE,
                         headers={"client_id": client_id},

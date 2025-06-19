@@ -47,16 +47,12 @@ class FilterBase:
     
     def _election_logic(self, leader_id):
         election_logic(
-            first_run=self.first_run,
+            self,
             leader_id=leader_id,
-            node_id=self.node_id,
             leader_queues=self.main_source_queues,
-            master_logic=self.master_logic,
-            rabbitmq_config=self.config,
-            read_storage=self._read_storage
         )
 
-    def _read_storage(self):
+    def read_storage(self):
         self.client_manager.read_storage()
 
     def __handleSigterm(self, signum, frame):
