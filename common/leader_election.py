@@ -70,7 +70,7 @@ class LeaderElector:
         elif cmd == "ALIVE":
             self.handle_alive_message(sender_id)
         elif cmd == "COORDINATOR":
-            logger.info(f"[Node {self.node_id}] Received COORDINATOR from {sender_id}")
+            self.handle_coordinator_message(sender_id)
         else:
             logger.warning(f"[Node {self.node_id}] Unknown command: {cmd}")
 
@@ -105,6 +105,24 @@ class LeaderElector:
         # This means our election attempt should wait for them to become leader
         self.alive_received = True
         logger.info(f"[Node {self.node_id}] Marking alive_received=True, waiting for higher node to become leader")
+
+    def handle_coordinator_message(self, sender_id):
+        """Handle incoming COORDINATOR messages - accept new leader."""
+        logger.info(f"[Node {self.node_id}] Received COORDINATOR: New leader is {sender_id}")
+        
+        # Basic validation: accept if sender has higher or equal ID than us
+        # (Equal ID case shouldn't happen in normal operation)
+        if sender_id >= self.node_id:
+            old_leader = self.leader_id
+            self.leader_id = sender_id
+            self.election_in_progress = False
+            self.alive_received = False  # Reset for next election
+            
+            # Log leader change for debugging
+            if old_leader != sender_id:
+                logger.info(f"[Node {self.node_id}] Leader changed from {old_leader} to {sender_id}")
+        else:
+            logger.warning(f"[Node {self.node_id}] Rejecting invalid leader {sender_id} (lower than my ID)")
 
     def send_message(self, cmd, target_id):
         """Send a message to a specific node."""
