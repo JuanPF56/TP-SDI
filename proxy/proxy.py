@@ -2,12 +2,12 @@
 
 import os
 import socket
-import threading
 import signal
 import logging
 import time
 
 from gateways_listener import GatewaysListener
+from gateway_connection import GatewayConnection
 from clients_listener import ClientsListener
 
 from common.logger import get_logger
@@ -49,14 +49,15 @@ class Proxy:
 
         # initialize the gateway connections
         self._gateways_connected = {}
+        self.gateway_connections: dict[tuple[str, int], GatewayConnection] = {}
         self._setup_gateways()
         logger.info("Proxy server initialized with gateways: %s", self.gateways)
         if not self._gateways_connected:
             logger.error("No gateways are reachable. Exiting proxy server.")
             return
 
-        # initialize the client dictionary: client_id -> (client_socket, gateway_socket)
-        self._connected_clients: dict[str, tuple[socket.socket, socket.socket]] = {}
+        # client_id -> (client_socket, gateway_connection)
+        self._connected_clients: dict[str, tuple[socket.socket, GatewayConnection]] = {}
 
         # Start the clients and gateways listener thread
         self.clients_listener = ClientsListener(self)
@@ -114,7 +115,7 @@ class Proxy:
 
         # Close all client <-> gateway connections
         logger.info("Closing all client-gateway connections...")
-        for client_id, (client_sock, gateway_sock) in self._connected_clients.items():
+        for client_id, (client_sock, gateway_conn) in self._connected_clients.items():
             try:
                 client_sock.shutdown(socket.SHUT_RDWR)
             except Exception:
@@ -123,11 +124,12 @@ class Proxy:
                 client_sock.close()
 
             try:
-                gateway_sock.shutdown(socket.SHUT_RDWR)
+                # GatewayConnection has a .socket attribute
+                gateway_conn.get_socket().shutdown(socket.SHUT_RDWR)
             except Exception:
                 pass
             finally:
-                gateway_sock.close()
+                gateway_conn.get_socket().close()
 
             logger.info("Closed connection for client: %s", client_id)
 
