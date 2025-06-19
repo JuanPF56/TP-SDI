@@ -63,6 +63,17 @@ logs-all:
 down:
 	docker compose -f $(SYSTEM_FILE) -p sistema down
 	docker compose -f $(CLIENTS_FILE) -p clientes down
+	rm -rf ./join/ratings/storage/*
+	rm -rf ./join/credits/storage/*
+	rm -rf ./filter/cleanup/storage/*
+	rm -rf ./filter/year/storage/*
+	rm -rf ./filter/production/storage/*
+	rm -rf ./sentiment_analyzer/storage/*
+	rm -rf ./query/q1/storage/*
+	rm -rf ./query/q2/storage/*
+	rm -rf ./query/q3/storage/*
+	rm -rf ./query/q4/storage/*
+	rm -rf ./query/q5/storage/*
 
 # Muestra los contenedores activos relacionados
 ps:
