@@ -56,7 +56,7 @@ class ResultDispatcher(threading.Thread):
                 logger.warning(
                     "Client %s not found or disconnected. Not ACKing.", client_id
                 )
-                # No ack para reentrega
+                channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
         except Exception as e:
             logger.error("Error processing result: %s", e)
             # En caso de error también no hacer ack para reintento
