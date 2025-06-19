@@ -19,6 +19,7 @@ class LeaderElector:
         # Election state
         self.leader_id = None
         self.election_in_progress = False
+        self.alive_received = False  # Track if we received ALIVE responses
         
         # Setup UDP socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -67,7 +68,7 @@ class LeaderElector:
         if cmd == "ELECTION":
             self.handle_election_message(sender_id)
         elif cmd == "ALIVE":
-            logger.info(f"[Node {self.node_id}] Received ALIVE from {sender_id}")
+            self.handle_alive_message(sender_id)
         elif cmd == "COORDINATOR":
             logger.info(f"[Node {self.node_id}] Received COORDINATOR from {sender_id}")
         else:
@@ -77,20 +78,33 @@ class LeaderElector:
         """Handle incoming ELECTION messages according to Bully algorithm."""
         logger.info(f"[Node {self.node_id}] Received ELECTION from {sender_id}")
 
+        # If sender has lower ID, respond with ALIVE and potentially start own election
         if sender_id < self.node_id:
             logger.info(f"[Node {self.node_id}] Sending ALIVE to lower ID {sender_id}")
             self.send_message("ALIVE", sender_id)
             
+            # Start own election if not already in progress and no current leader
             if not self.election_in_progress and self.leader_id is None:
                 logger.info(f"[Node {self.node_id}] Starting own election due to lower ID message")
-                # TODO: implementar logica de iniciar eleccion
+                # TODO: Implement start_election()
                 
+        # If sender has higher ID, step back and let them handle it
         elif sender_id > self.node_id:
             logger.info(f"[Node {self.node_id}] Higher ID {sender_id} started election, stepping back")
             self.election_in_progress = False
             
+        # If sender has same ID (shouldn't happen but handle gracefully)
         else:
             logger.warning(f"[Node {self.node_id}] Received ELECTION from same ID - ignoring")
+
+    def handle_alive_message(self, sender_id):
+        """Handle incoming ALIVE messages."""
+        logger.info(f"[Node {self.node_id}] Received ALIVE from {sender_id}")
+        
+        # If we get ALIVE, another node with higher ID is alive, so we wait
+        # This means our election attempt should wait for them to become leader
+        self.alive_received = True
+        logger.info(f"[Node {self.node_id}] Marking alive_received=True, waiting for higher node to become leader")
 
     def send_message(self, cmd, target_id):
         """Send a message to a specific node."""
