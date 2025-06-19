@@ -53,7 +53,7 @@ class ResultDispatcher(threading.Thread):
                 logger.info("Dispatched result to client %s", client_id)
                 channel.basic_ack(delivery_tag=method.delivery_tag)
             else:
-                logger.warning(
+                logger.debug(
                     "Client %s not found or disconnected. Not ACKing.", client_id
                 )
                 channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
