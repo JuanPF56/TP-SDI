@@ -142,7 +142,7 @@ pip install -r requirements.txt
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh -test test_config.yaml -cant_clientes 1
+./generate-compose.sh -test test_config.yaml -cant_clientes 10
 ```
 
 ![expected_output_test_and_multiclient](resources/expected_output_test_and_multiclient.png)
@@ -261,11 +261,23 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ## 💯 Respuestas esperadas
 
-![query_1](resources/query_1.png)
-![query_2](resources/query_2.png)
-![query_3](resources/query_3.png)
-![query_4](resources/query_4.png)
-![query_5](resources/query_5.png)
+### Datasets al 100 %
+
+![query_1](resources/answers_datasets_100/query_1.png)
+![query_2](resources/answers_datasets_100/query_2.png)
+![query_3](resources/answers_datasets_100/query_3.png)
+![query_4](resources/answers_datasets_100/query_4.png)
+![query_5](resources/answers_datasets_100/query_5.png)
+
+---
+
+### Datasets al 20 %
+
+![query_1](resources/answers_datasets_20/query_1.png)
+![query_2](resources/answers_datasets_20/query_2.png)
+![query_3](resources/answers_datasets_20/query_3.png)
+![query_4](resources/answers_datasets_20/query_4.png)
+![query_5](resources/answers_datasets_20/query_5.png)
 
 ---
 
