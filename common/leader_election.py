@@ -16,10 +16,10 @@ class LeaderElector:
         self.peers = self._parse_peers(peers)
         self.election_port = election_port
         
-        # Basic state
+        # Leader ID, None if no leader elected yet
         self.leader_id = None
         
-        # Setup UDP socket
+        # Setup UDP socket for election messages
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("0.0.0.0", self.election_port))
         
@@ -66,7 +66,7 @@ class LeaderElector:
         
         logger.info(f"[Node {self.node_id}] Handling {cmd} from node {sender_id}")
         
-        # TODO: Implementar la logica de que hacer con cada mensaje recibido
+        # TODO: Implement specific message handlers
         if cmd == "ELECTION":
             logger.info(f"[Node {self.node_id}] Received ELECTION from {sender_id}")
         elif cmd == "ALIVE":
@@ -75,3 +75,21 @@ class LeaderElector:
             logger.info(f"[Node {self.node_id}] Received COORDINATOR from {sender_id}")
         else:
             logger.warning(f"[Node {self.node_id}] Unknown command: {cmd}")
+
+    def send_message(self, cmd, target_id):
+        """Send a message to a specific node."""
+        if target_id not in self.peers:
+            logger.warning(f"[Node {self.node_id}] No peer info for node {target_id}")
+            return False
+        
+        try:
+            addr = self.peers[target_id]
+            msg = f"{cmd} {self.node_id}".encode()
+            
+            self.sock.sendto(msg, addr)
+            logger.info(f"[Node {self.node_id}] Sent {cmd} to node {target_id} at {addr}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"[Node {self.node_id}] Failed to send {cmd} to {target_id}: {e}")
+            return False
