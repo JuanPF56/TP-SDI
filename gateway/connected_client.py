@@ -44,6 +44,10 @@ class ConnectedClient(threading.Thread):
         self._protocol_gateway = ProtocolGateway(client_socket, client_id)
         self.was_closed = False
 
+        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
+        self.accumulated_batches = 0
+        self.batches_stored = []
+        
         self.recovery_mode = self.config.getboolean(
             "DEFAULT", "RECOVERY_MODE", fallback=True
         )
@@ -53,9 +57,7 @@ class ConnectedClient(threading.Thread):
         else:
             logger.info("Recovery mode is disabled for client %s", self._client_id)
 
-        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
-        self.accumulated_batches = 0
-        self.batches_stored = []
+
 
         self._expected_datasets_to_receive_per_request = DATASETS_PER_REQUEST
         self._received_datasets = 0
