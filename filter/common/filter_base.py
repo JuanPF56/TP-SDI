@@ -5,7 +5,7 @@ import signal
 import pika
 
 from common.logger import get_logger
-
+from common.leader_election import LeaderElector
 logger = get_logger("Filter-Base")
 
 
@@ -24,9 +24,13 @@ class FilterBase:
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
+        self.election_port = int(os.getenv("ELECTION_PORT", 9001))
+        self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
+        self.node_name = os.getenv("NODE_NAME")
+        self.elector = LeaderElector(self.node_id, self.peers, self.election_port)
+
         self.rabbitmq_processor = None
         self.client_manager = None
-        self.node_name = os.getenv("NODE_NAME", "unknown")
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -70,14 +74,9 @@ class FilterBase:
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.main_source_queues,
         )
-        # Start the master logic process
         self.master_logic.start()
+        self.elector.start_election()
 
-        # TODO: Leader election logic
-        # For now, we assume the node with the highest node_id is the leader
-        if self.node_id == self.nodes_of_type:
-            logger.info("This node is the leader. Starting master logic...")
-            self.master_logic.toggle_leader()
 
     def run_consumer(self):
         logger.info("Node is online")

@@ -62,6 +62,9 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         f"join_ratings_{i}" for i in range(1, j_ratings + 1)
     ]
 
+    election_port_start = 9000
+
+    # Filter nodes
     for subtype, count, await_count in [
         ("cleanup", cleanup, 1),
         ("year", year, production),
@@ -74,6 +77,11 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         if subtype == "year":
             for node in j_nodes:
                 depends[node] = {"condition": "service_started"}
+
+        peer_list = [
+            f"filter_{subtype}_{j}:{election_port_start + j}" for j in range(1, count + 1)
+        ]
+        peers_str = ",".join(peer_list)
 
         for i in range(1, count + 1):
             name = f"filter_{subtype}_{i}"
@@ -92,13 +100,22 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                     "NODES_TO_AWAIT": str(await_count),
                     "NODES_OF_TYPE": count,
                     "NODE_NAME": name,
+                    "ELECTION_PORT": str(election_port_start + i),
+                    "PEERS": peers_str,
                 },
                 "depends_on": deepcopy(depends),
                 "networks": ["testing_net"],
             }
 
-    # Sentiment analyzer node
+        election_port_start += count  # 🔧 Avoid port overlap
+
+    # Sentiment analyzer nodes
     sentiment_node_names = []
+    peer_list = [
+        f"sentiment_analyzer_{j}:{election_port_start + j}" for j in range(1, sentiment_analyzer + 1)
+    ]
+    peers_str = ",".join(peer_list)
+
     for i in range(1, sentiment_analyzer + 1):
         name = f"sentiment_analyzer_{i}"
         sentiment_node_names.append(name)
@@ -116,6 +133,8 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": sentiment_analyzer,
                 "NODE_NAME": name,
+                "ELECTION_PORT": str(election_port_start + i),  
+                "PEERS": peers_str,                              
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
@@ -124,9 +143,16 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "networks": ["testing_net"],
         }
 
+    election_port_start += sentiment_analyzer  
+
     # Join nodes
     join_node_names = []
     for typ, count in [("credits", j_credits), ("ratings", j_ratings)]:
+        peer_list = [
+            f"join_{typ}_{j}:{election_port_start + j}" for j in range(1, count + 1)
+        ]
+        peers_str = ",".join(peer_list)
+
         for i in range(1, count + 1):
             name = f"join_{typ}_{i}"
             join_node_names.append(name)
@@ -145,6 +171,8 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                     "NODES_OF_TYPE": count,
                     "YEAR_NODES_TO_AWAIT": str(year),
                     "NODE_NAME": name,
+                    "ELECTION_PORT": str(election_port_start + i),  
+                    "PEERS": peers_str,                              
                 },
                 "depends_on": {
                     "rabbitmq": {"condition": "service_healthy"},
