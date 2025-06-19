@@ -74,28 +74,53 @@ class LeaderElector:
         else:
             logger.warning(f"[Node {self.node_id}] Unknown command: {cmd}")
 
+    def start_election(self):
+        """
+        Iniciar proceso de elección.
+        Envía mensajes ELECTION a todos los peers con ID mayor.
+        """
+        logger.info(f"[Node {self.node_id}] Starting election")
+        self.election_in_progress = True
+        self.alive_received = False
+        self.highest_seen_id = self.node_id
+
+        # Encontrar peers con ID mayor
+        higher_peers = [nid for nid in self.peers.keys() if nid > self.node_id]
+        
+        if not higher_peers:
+            # Si no hay peers con ID mayor, soy el líder
+            logger.info(f"[Node {self.node_id}] No higher peers found, I should be leader")
+            return
+
+        # Enviar ELECTION a todos los peers con ID mayor
+        logger.info(f"[Node {self.node_id}] Sending ELECTION to higher peers: {higher_peers}")
+        for peer_id in higher_peers:
+            self.send_message("ELECTION", peer_id)
+
     def handle_election_message(self, sender_id):
-        """Handle incoming ELECTION messages according to Bully algorithm."""
         logger.info(f"[Node {self.node_id}] Received ELECTION from {sender_id}")
 
-        # If sender has lower ID, respond with ALIVE and potentially start own election
+        # Siempre responder con ALIVE si el sender tiene ID menor
         if sender_id < self.node_id:
             logger.info(f"[Node {self.node_id}] Sending ALIVE to lower ID {sender_id}")
             self.send_message("ALIVE", sender_id)
             
-            # Start own election if not already in progress and no current leader
+            # Solo iniciar elección si no hay líder actual y no estamos ya en elección
             if not self.election_in_progress and self.leader_id is None:
-                logger.info(f"[Node {self.node_id}] Starting own election due to lower ID message")
-                # TODO: Implement start_election()
-                
-        # If sender has higher ID, step back and let them handle it
-        elif sender_id > self.node_id:
+                logger.info(f"[Node {self.node_id}] Starting election due to message from lower ID")
+                self.start_election()
+            return
+
+        # Si sender tiene ID mayor, retroceder
+        if sender_id > self.node_id:
             logger.info(f"[Node {self.node_id}] Higher ID {sender_id} started election, stepping back")
             self.election_in_progress = False
-            
-        # If sender has same ID (shouldn't happen but handle gracefully)
-        else:
+            return
+
+        # Si sender tiene mismo ID (no debería pasar)
+        if sender_id == self.node_id:
             logger.warning(f"[Node {self.node_id}] Received ELECTION from same ID - ignoring")
+            return
 
     def handle_alive_message(self, sender_id):
         """Handle incoming ALIVE messages."""
@@ -141,3 +166,4 @@ class LeaderElector:
         except Exception as e:
             logger.error(f"[Node {self.node_id}] Failed to send {cmd} to {target_id}: {e}")
             return False
+        
