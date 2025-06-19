@@ -250,6 +250,9 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         + gateway_node_names
         + ["proxy"]
     )
+    depends_coordinator = {
+        node: {"condition": "service_started"} for node in monitored_nodes
+    }
     services["coordinator"] = {
         "container_name": "coordinator",
         "image": "coordinator:latest",
@@ -261,9 +264,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         "environment": {
             "MONITORED_NODES": ",".join(monitored_nodes),
         },
-        "depends_on": {
-            **gateway_depends,
-        },
+        "depends_on": {**gateway_depends, **depends_coordinator},
         "networks": ["testing_net"],
     }
 

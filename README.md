@@ -21,11 +21,12 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
      - [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
 4. [▶️ Correr el sistema](#️-correr-el-sistema)  
 5. [🧱 Comandos disponibles (`Makefile`)](#-comandos-disponibles-makefile)  
-6. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
-7. [💯 Respuestas esperadas](#-respuestas-esperadas)  
-8. [🛠️ Construido con](#️-construido-con)  
-9. [✒️ Autores](#️-autores)  
-10. [📑 Documentación](#-documentación)
+6. [💀 Introducción de fallas)](#-introducción-de-fallas)
+7. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
+8. [💯 Respuestas esperadas](#-respuestas-esperadas)  
+9. [🛠️ Construido con](#️-construido-con)  
+10. [✒️ Autores](#️-autores)  
+11. [📑 Documentación](#-documentación)
 
 ---
 
@@ -242,6 +243,16 @@ make ps               # Lista los contenedores activos relacionados
 ```bash
 make docker-kill-system   # Detiene solo los contenedores del sistema con SIGTERM
 make docker-kill-clients  # Detiene solo los contenedores de los clientes con SIGTERM
+```
+
+---
+
+## 💀 Introducción de fallas
+
+Para probar la tolerancia a fallos, se cuenta con un script para testear la resiliencia del sistema a la caída de los nodos: gateway, filter_cleanup, filter_year, filter_production, sentiment_analyzer, join_credits y join_ratings.
+
+```bash
+./fault_injector.sh
 ```
 
 ---
