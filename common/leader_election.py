@@ -22,7 +22,6 @@ class LeaderElector:
         self.highest_seen_id = self.node_id  # track highest ID seen in election messages
         self.leader_id = None
         self.alive_received = False  # Track if we received ALIVE responses
-        self.coordinator_announced = False  # Prevent duplicate announcements
 
         # Heartbeat mechanism
         self.heartbeat_interval = 3  # Send heartbeat every 3 seconds
@@ -255,7 +254,6 @@ class LeaderElector:
         if was_leader:
             logger.warning(f"[Node {self.node_id}] Leader/Potential leader {failed_node_id} has failed! Starting new election")
             self.leader_id = None
-            self.coordinator_announced = False
             
             # Start election after a brief delay to avoid immediate conflicts
             def delayed_election():
@@ -345,7 +343,6 @@ class LeaderElector:
         self.election_in_progress = True
         self.alive_received = False
         self.highest_seen_id = self.node_id
-        self.coordinator_announced = False
 
         # FIXED: Only consider reachable higher peers (exclude failed nodes)
         higher_peers = []
@@ -436,8 +433,6 @@ class LeaderElector:
         self.leader_id = self.node_id
         self.election_in_progress = False
         self.highest_seen_id = self.node_id
-        self.coordinator_announced = True
-        self.election_backoff_attempts = 0
 
         all_peers = list(self.peers.keys())
 
