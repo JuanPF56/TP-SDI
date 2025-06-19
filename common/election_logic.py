@@ -22,15 +22,13 @@ def election_logic(first_run: bool, leader_id: int,
     - read_storage: Optional callable to read from storage if this node is the leader.
     """
     logger.info(f"New leader elected: {leader_id}")
-    if leader_id == node_id:
-        logger.info("This node is the new leader.")
-        master_logic.leader.set()
-    elif master_logic.is_leader() and node_id != leader_id:
-        logger.info("This node is not the leader anymore.")
-        master_logic.leader.clear()
+    is_now_leader = (leader_id == node_id)
+    was_leader = master_logic.is_leader()
+    if is_now_leader != was_leader:
+        master_logic.toggle_leader()
     
     logger.info("Recovery process started.")
-    if master_logic.is_leader():
+    if not was_leader and is_now_leader:
         logger.info(f"[Node {node_id}] I am the leader. Reading from storage...")
         read_storage()
     elif first_run:

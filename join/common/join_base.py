@@ -94,7 +94,6 @@ class JoinBase:
 
     def _election_logic(self, leader_id: int):
         election_logic(
-            self,
             first_run=self.first_run,
             leader_id=leader_id,
             node_id=self.node_id,

@@ -27,7 +27,7 @@ class FilterBase:
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.election_port)
+        self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
 
         self.rabbitmq_processor = None
         self.client_manager = None
@@ -42,6 +42,9 @@ class FilterBase:
         - inicializar rabbitmq_processor
         """
         raise NotImplementedError()
+    
+    def _election_logic(self):
+        pass
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
@@ -73,6 +76,7 @@ class FilterBase:
             node_id=self.node_id,
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.main_source_queues,
+            client_manager=self.client_manager,
         )
         self.master_logic.start()
         self.elector.start_election()

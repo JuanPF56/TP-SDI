@@ -37,3 +37,10 @@ class ClientManager:
         Returns a dictionary of client_id to ClientState.
         """
         return self.clients
+    
+    def read_storage(self):
+        """
+        Placeholder for reading client states from persistent storage.
+        This method should be implemented to load client states from a database or file.
+        """
+        pass

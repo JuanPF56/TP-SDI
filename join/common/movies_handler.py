@@ -26,12 +26,12 @@ class MoviesHandler(multiprocessing.Process):
                 "movies_exchange", "movies_arg_post_2000"
             ),
         )
+        self.node_id = node_id
+        self.stopped = False
         self.rabbitmq_processor.connect(node_name=node_name+f"_{self.node_id}")
         self.manager = manager
         self.movies = self.manager.dict()
 
-        self.node_id = node_id
-        self.stopped = False
 
         self.year_eos_flags = self.manager.dict()
         self.year_nodes_to_await = year_nodes_to_await
@@ -181,6 +181,9 @@ class MoviesHandler(multiprocessing.Process):
         Recover the movies tables for the given node ID.
         This method will be called when a node requests recovery.
         """
+        if not self.movies and not self.year_eos_flags:
+            logger.warning("No movies tables or EOS flags to recover.")
+            return
         for client_id in self.movies:
             movies_table = self.get_movies_table(client_id)
             if movies_table:
@@ -198,3 +201,6 @@ class MoviesHandler(multiprocessing.Process):
                         msg_type=EOS_TYPE,
                         headers={"client_id": client_id},
                     )
+    
+    def read_storage(self):
+        pass

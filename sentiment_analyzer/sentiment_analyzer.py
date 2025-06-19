@@ -58,11 +58,12 @@ class SentimentAnalyzer:
             node_id=self.node_id,
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
+            client_manager=self.client_manager,
         )
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.election_port)
+        self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
         self.elector.start_election()
 
 
@@ -81,6 +82,9 @@ class SentimentAnalyzer:
             self.manager.shutdown()            
         except Exception as e:
             logger.error("Error closing connection: %s", e)
+    
+    def _election_logic(self):
+        pass
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():

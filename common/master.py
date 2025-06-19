@@ -2,7 +2,6 @@ import json
 import multiprocessing
 import signal
 
-from common.election_logic import REC_TYPE
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
 from common.logger import get_logger
@@ -11,6 +10,7 @@ from common.mom import RabbitMQProcessor
 logger = get_logger("MasterLogic")
 
 EOS_TYPE = "EOS"
+REC_TYPE = "RECOVERY"
 
 class MasterLogic(multiprocessing.Process):
     def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, client_manager, extra_recovery=None):
@@ -125,6 +125,9 @@ class MasterLogic(multiprocessing.Process):
         
         logger.info(f"Node {node_id} requested recovery for queue {queue_name}.")
         clients = self.client_manager.get_clients()
+        if not clients:
+            logger.warning("No clients found for recovery.")
+            return
         # Send all EOS messages to the requesting node for the specified queue
         for client_id, client_state in clients.items():
             if client_state:
