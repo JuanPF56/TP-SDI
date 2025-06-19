@@ -4,6 +4,7 @@ import json
 import signal
 import pika
 
+from common.election_logic import election_logic
 from common.logger import get_logger
 from common.leader_election import LeaderElector
 logger = get_logger("Filter-Base")
@@ -21,6 +22,7 @@ class FilterBase:
         self.main_source_queues = []
         self.source_queues = []
         self.target_queues = {}
+        self.first_run = True
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
@@ -43,8 +45,19 @@ class FilterBase:
         """
         raise NotImplementedError()
     
-    def _election_logic(self):
-        pass
+    def _election_logic(self, leader_id):
+        election_logic(
+            first_run=self.first_run,
+            leader_id=leader_id,
+            node_id=self.node_id,
+            leader_queues=self.main_source_queues,
+            master_logic=self.master_logic,
+            rabbitmq_config=self.config,
+            read_storage=self._read_storage
+        )
+
+    def _read_storage(self):
+        self.client_manager.read_storage()
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")

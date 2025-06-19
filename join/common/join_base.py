@@ -97,9 +97,9 @@ class JoinBase:
             first_run=self.first_run,
             leader_id=leader_id,
             node_id=self.node_id,
-            leader_queue=self.clean_batch_queue,
+            leader_queues=self.clean_batch_queue,
             master_logic=self.master_logic,
-            rabbitmq_processor=self.rabbitmq_processor,
+            rabbitmq_config=self.config,
             read_storage=self._read_storage
         )
     

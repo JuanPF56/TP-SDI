@@ -10,6 +10,7 @@ import threading
 from collections import defaultdict
 from common.leader_election import LeaderElector
 
+from common.election_logic import election_logic
 from common.eos_handling import handle_eos
 from common.logger import get_logger
 from common.master import MasterLogic
@@ -30,6 +31,7 @@ class SentimentAnalyzer:
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.first_run = True
 
         self.config = ConfigParser()
         self.config.read(config_path)
@@ -64,8 +66,6 @@ class SentimentAnalyzer:
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
         self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
-        self.elector.start_election()
-
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -83,8 +83,19 @@ class SentimentAnalyzer:
         except Exception as e:
             logger.error("Error closing connection: %s", e)
     
-    def _election_logic(self):
-        pass
+    def _election_logic(self, leader_id: int):
+        election_logic(
+            first_run=self.first_run,
+            leader_id=leader_id,
+            node_id=self.node_id,
+            leader_queues=self.clean_batch_queue,
+            master_logic=self.master_logic,
+            rabbitmq_config=self.config,
+            read_storage=self._read_storage
+        )
+
+    def _read_storage(self):
+        self.client_manager.read_storage()
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
@@ -221,11 +232,7 @@ class SentimentAnalyzer:
             # Start the master logic process
             self.master_logic.start()
 
-            # TODO: Leader election logic
-            # For now, we assume the node with the highest node_id is the leader
-            if self.node_id == self.nodes_of_type:
-                logger.info("This node is the leader. Starting master logic...")
-                self.master_logic.toggle_leader()
+            self.elector.start_election()
             
             logger.info("Starting message consumption...")
             self.rabbitmq_processor.consume(self.callback)
