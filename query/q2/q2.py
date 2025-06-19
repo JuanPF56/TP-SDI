@@ -2,6 +2,7 @@ import configparser
 import json
 from collections import defaultdict
 
+from common.duplicate_handler import DuplicateHandler
 from common.query_base import QueryBase, EOS_TYPE
 
 from common.logger import get_logger
@@ -17,6 +18,8 @@ class SoloCountryBudgetQuery(QueryBase):
     def __init__(self, config):
         source_queue = config["DEFAULT"].get("movies_solo_queue", "movies_solo")
         super().__init__(config, source_queue, logger_name="q2")
+
+        self.duplicate_handler = DuplicateHandler()
 
         self.budget_by_country_by_request = defaultdict(lambda: defaultdict(int))
 
@@ -85,6 +88,18 @@ class SoloCountryBudgetQuery(QueryBase):
         headers = getattr(properties, "headers", {}) or {}
 
         client_id = headers.get("client_id")
+        message_id = headers.get("message_id")
+        
+        if not message_id:
+            logger.error("Missing message_id in headers")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
+        if self.duplicate_handler.is_duplicate(message_id):
+            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
         if not client_id:
             logger.warning("❌ Missing client_id in headers. Skipping.")
             self.rabbitmq_processor.acknowledge(method)
@@ -139,7 +154,8 @@ class SoloCountryBudgetQuery(QueryBase):
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
             return
-
+        
+        self.duplicate_handler.add(message_id)
         self.rabbitmq_processor.acknowledge(method)
 
 

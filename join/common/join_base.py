@@ -3,6 +3,7 @@ import os
 import pika
 import multiprocessing
 import signal
+from common.duplicate_handler import DuplicateHandler
 from common.election_logic import election_logic
 from common.leader_election import LeaderElector
 from common.client_state import ClientState
@@ -78,6 +79,9 @@ class JoinBase:
             extra_recovery=self._movies_table_recovery,
             started_event=self.master_logic_started_event
         )
+
+        self.duplicate_handler = DuplicateHandler()
+
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
@@ -185,6 +189,15 @@ class JoinBase:
 
             headers = getattr(properties, "headers", {}) or {}
             current_client_id = headers.get("client_id")
+            message_id = headers.get("message_id")
+            
+            if not message_id:
+                self.log_error("Missing message_id in headers")
+                return
+            
+            if self.duplicate_handler.is_duplicate(message_id):
+                self.log_info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+                return
 
             if not current_client_id:
                 self.log_error("Missing client_id in headers")
@@ -254,6 +267,8 @@ class JoinBase:
                         msg_type=msg_type,
                         headers=headers,
                     )
+
+            self.duplicate_handler.add(message_id)
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.reconnect_and_restart(self.process_batch)

@@ -2,6 +2,7 @@ import configparser
 import json
 from collections import defaultdict
 
+from common.duplicate_handler import DuplicateHandler
 from common.query_base import QueryBase, EOS_TYPE
 
 from common.logger import get_logger
@@ -19,6 +20,8 @@ class ArgSpainGenreQuery(QueryBase):
             "movies_arg_spain_2000s_queue", "movies_arg_spain_2000s"
         )
         super().__init__(config, source_queue, logger_name="q1")
+
+        self.duplicate_handler = DuplicateHandler()
 
         self.results_by_request = defaultdict(list)
 
@@ -70,6 +73,17 @@ class ArgSpainGenreQuery(QueryBase):
         msg_type = properties.type if properties and properties.type else "UNKNOWN"
         headers = getattr(properties, "headers", {}) or {}
         client_id = headers.get("client_id")
+        message_id = headers.get("message_id")
+
+        if not message_id:
+            logger.error("Missing message_id in headers")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
+        if self.duplicate_handler.is_duplicate(message_id):
+            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+            self.rabbitmq_processor.acknowledge(method)
+            return
 
         if not client_id:
             logger.error("Missing client_id in headers")
@@ -123,7 +137,8 @@ class ArgSpainGenreQuery(QueryBase):
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
             return
-
+        
+        self.duplicate_handler.add(message_id)
         self.rabbitmq_processor.acknowledge(method)
 
 if __name__ == "__main__":

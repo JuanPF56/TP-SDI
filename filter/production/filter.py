@@ -111,6 +111,7 @@ class ProductionFilter(FilterBase):
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
         client_id = headers.get("client_id")
+        message_id = headers.get("message_id")
 
         if not client_id:
             logger.error("Missing client_id in headers")
@@ -118,6 +119,16 @@ class ProductionFilter(FilterBase):
             return
 
         client_state = self.client_manager.add_client(client_id, msg_type == EOS_TYPE)
+
+        if not message_id:
+            logger.error("Missing message_id in headers")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
+        if self.duplicate_handler.is_duplicate(message_id):
+            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+            self.rabbitmq_processor.acknowledge(method)
+            return
 
         if msg_type == EOS_TYPE:
             self._handle_eos(queue_name, body, method, headers, client_state)
@@ -158,6 +169,7 @@ class ProductionFilter(FilterBase):
             # Publish all categorized movies in batches
             self._publish_movie_batches(categorized_movies, queue_name, headers)
 
+            self.duplicate_handler.add(message_id)
         except Exception as e:
             logger.error("Error processing message from %s: %s", queue_name, e)
 

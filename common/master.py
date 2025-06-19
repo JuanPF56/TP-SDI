@@ -4,6 +4,7 @@ import signal
 
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
+from common.duplicate_handler import DuplicateHandler
 from common.logger import get_logger
 from common.mom import RabbitMQProcessor
 
@@ -41,6 +42,8 @@ class MasterLogic(multiprocessing.Process):
         self.extra_recovery = extra_recovery
         self.started_event = started_event
 
+        self.duplicate_handler = DuplicateHandler()
+
         if not self.rabbitmq_processor.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
             return
@@ -63,6 +66,15 @@ class MasterLogic(multiprocessing.Process):
         """
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
+            headers = getattr(properties, "headers", {}) or {}
+            client_id = headers.get("client_id")
+            message_id = headers.get("message_id")
+
+            if message_id and self.duplicate_handler.is_duplicate(message_id):
+                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+                self.rabbitmq_processor.acknowledge(method)
+                return
+            
             try:
                 decoded = json.loads(body)
             except json.JSONDecodeError:
@@ -92,6 +104,9 @@ class MasterLogic(multiprocessing.Process):
                 )
                 # Increment the current node ID for the next message
                 self.current_node_id = (self.current_node_id % self.nodes_of_type) + 1
+            
+            if message_id:
+                self.duplicate_handler.add(message_id)
         except Exception as e:
             logger.error(f"Error in load_balance callback: {e}")
         finally:

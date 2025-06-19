@@ -3,6 +3,7 @@ import json
 from collections import defaultdict
 
 from common.client_state_manager import ClientState
+from common.duplicate_handler import DuplicateHandler
 from common.query_base import QueryBase, EOS_TYPE
 from common.logger import get_logger
 
@@ -20,6 +21,8 @@ class SentimentStats(QueryBase):
             config["DEFAULT"].get("movies_negative_queue", "negative_movies"),
         ]
         super().__init__(config, source_queues, logger_name="q5")
+
+        self.duplicate_handler = DuplicateHandler()
 
         self.positive_rates = defaultdict(list)
         self.negative_rates = defaultdict(list)
@@ -80,6 +83,17 @@ class SentimentStats(QueryBase):
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             headers = getattr(properties, "headers", {}) or {}
             client_id = headers.get("client_id")
+            message_id = headers.get("message_id")
+            
+            if not message_id:
+                logger.error("Missing message_id in headers")
+                self.rabbitmq_processor.acknowledge(method)
+                return
+            
+            if self.duplicate_handler.is_duplicate(message_id):
+                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+                self.rabbitmq_processor.acknowledge(method)
+                return
 
             if not client_id:
                 logger.error("Missing client_id in headers")
@@ -125,11 +139,17 @@ class SentimentStats(QueryBase):
             for single_movie in movie:
                 self.process_movie(single_movie, client_id, sentiment)
 
+            self.duplicate_handler.add(message_id)
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
             return
-
+        
+        except Exception as e:
+            logger.error("❌ Error processing message: %s", e)
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
         self.rabbitmq_processor.acknowledge(method)
 
 

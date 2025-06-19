@@ -8,6 +8,7 @@ from textblob import TextBlob
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from collections import defaultdict
+from common.duplicate_handler import DuplicateHandler
 from common.leader_election import LeaderElector
 
 from common.election_logic import election_logic
@@ -64,6 +65,9 @@ class SentimentAnalyzer:
             client_manager=self.client_manager,
             started_event=self.master_logic_started_event
         )
+        
+        self.duplicate_handler = DuplicateHandler()
+
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
@@ -143,6 +147,17 @@ class SentimentAnalyzer:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             headers = getattr(properties, "headers", {}) or {}
             client_id = headers.get("client_id")
+            message_id = headers.get("message_id")
+            
+            if not message_id:
+                logger.error("Missing message_id in headers")
+                self.rabbitmq_processor.acknowledge(method)
+                return
+            
+            if self.duplicate_handler.is_duplicate(message_id):
+                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+                self.rabbitmq_processor.acknowledge(method)
+                return
 
             if not client_id:
                 logger.error("Missing client_id in headers")
@@ -195,7 +210,8 @@ class SentimentAnalyzer:
                         message=movies_batch,
                         headers=headers,
                     )
-
+            
+            self.duplicate_handler.add(message_id)
         except pika.exceptions.StreamLostError as e:
             logger.error("Stream lost, reconnecting: %s", e)
             self.rabbitmq_processor.reconnect_and_restart(self.callback)

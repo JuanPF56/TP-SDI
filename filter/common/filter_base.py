@@ -4,6 +4,7 @@ import json
 import signal
 import pika
 
+from common.duplicate_handler import DuplicateHandler
 from common.election_logic import election_logic
 from common.logger import get_logger
 from common.leader_election import LeaderElector
@@ -30,6 +31,8 @@ class FilterBase:
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
         self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+
+        self.duplicate_handler = DuplicateHandler()
 
         self.rabbitmq_processor = None
         self.client_manager = None

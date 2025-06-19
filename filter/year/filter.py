@@ -86,7 +86,19 @@ class YearFilter(FilterBase):
         msg_type = self._get_message_type(properties)
         headers = getattr(properties, "headers", {}) or {}
         client_id = headers.get("client_id")
+        message_id = headers.get("message_id")
         client_state = self.client_manager.add_client(client_id, msg_type == EOS_TYPE)
+
+        
+        if not message_id:
+            logger.error("Missing message_id in headers")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
+        if self.duplicate_handler.is_duplicate(message_id):
+            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+            self.rabbitmq_processor.acknowledge(method)
+            return
 
         if msg_type == EOS_TYPE:
             self._handle_eos(input_queue, body, method, headers, client_state)
@@ -114,6 +126,7 @@ class YearFilter(FilterBase):
             if processed_movies:
                 self._publish_movie_batch(processed_movies, input_queue, headers)
 
+            self.duplicate_handler.add(message_id)
         except Exception as e:
             logger.error("Error processing message from %s: %s", input_queue, e)
 
