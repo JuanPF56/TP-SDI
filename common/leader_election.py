@@ -1,7 +1,7 @@
 import logging
 import socket
 import threading
-
+import time
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LeaderElector")
 
@@ -29,6 +29,8 @@ class LeaderElector:
         self.listener_thread = threading.Thread(target=self.listen)
         self.listener_thread.daemon = True
         self.listener_thread.start()
+
+        self.coordinator_announced = False  # previene la duplicación de mensajes COORDINATOR
         
         logger.info(f"[Node {self.node_id}] Initialized with peers: {self.peers}")
 
@@ -74,28 +76,6 @@ class LeaderElector:
         else:
             logger.warning(f"[Node {self.node_id}] Unknown command: {cmd}")
 
-    def start_election(self):
-        """
-        Iniciar proceso de elección.
-        Envía mensajes ELECTION a todos los peers con ID mayor.
-        """
-        logger.info(f"[Node {self.node_id}] Starting election")
-        self.election_in_progress = True
-        self.alive_received = False
-        self.highest_seen_id = self.node_id
-
-        # Encontrar peers con ID mayor
-        higher_peers = [nid for nid in self.peers.keys() if nid > self.node_id]
-        
-        if not higher_peers:
-            # Si no hay peers con ID mayor, soy el líder
-            logger.info(f"[Node {self.node_id}] No higher peers found, I should be leader")
-            return
-
-        # Enviar ELECTION a todos los peers con ID mayor
-        logger.info(f"[Node {self.node_id}] Sending ELECTION to higher peers: {higher_peers}")
-        for peer_id in higher_peers:
-            self.send_message("ELECTION", peer_id)
 
     def handle_election_message(self, sender_id):
         logger.info(f"[Node {self.node_id}] Received ELECTION from {sender_id}")
@@ -135,6 +115,11 @@ class LeaderElector:
         """Handle incoming COORDINATOR messages - accept new leader."""
         logger.info(f"[Node {self.node_id}] Received COORDINATOR: New leader is {sender_id}")
         
+        # Aceptar el nuevo líder
+        self.leader_id = sender_id
+        self.election_in_progress = False
+        self.highest_seen_id = max(self.highest_seen_id, sender_id)
+
         # Basic validation: accept if sender has higher or equal ID than us
         # (Equal ID case shouldn't happen in normal operation)
         if sender_id >= self.node_id:
@@ -167,3 +152,55 @@ class LeaderElector:
             logger.error(f"[Node {self.node_id}] Failed to send {cmd} to {target_id}: {e}")
             return False
         
+
+    def announce_coordinator(self):
+        """
+        Anunciar que este nodo es el nuevo coordinador/líder.
+        Envía mensaje COORDINATOR a todos los peers.
+        """
+        logger.info(f"[Node {self.node_id}] Announcing self as leader")
+        self.leader_id = self.node_id
+        self.election_in_progress = False
+        self.highest_seen_id = self.node_id
+        self.coordinator_announced = True
+
+        # Enviar COORDINATOR a todos los peers
+        all_peers = list(self.peers.keys())
+        for peer_id in all_peers:
+            if peer_id != self.node_id:
+                self.send_message("COORDINATOR", peer_id)
+
+    def start_election(self):
+        """
+        Iniciar proceso de elección con timeout.
+        """
+        logger.info(f"[Node {self.node_id}] Starting election")
+        self.election_in_progress = True
+        self.alive_received = False
+        self.highest_seen_id = self.node_id
+        self.coordinator_announced = False
+
+        # Encontrar peers con ID mayor
+        higher_peers = [nid for nid in self.peers.keys() if nid > self.node_id]
+        
+        if not higher_peers:
+            # Si no hay peers con ID mayor, anunciar liderazgo
+            logger.info(f"[Node {self.node_id}] No higher peers found, declaring leadership")
+            self.announce_coordinator()
+            return
+
+        # Enviar ELECTION a todos los peers con ID mayor
+        logger.info(f"[Node {self.node_id}] Sending ELECTION to higher peers: {higher_peers}")
+        for peer_id in higher_peers:
+            self.send_message("ELECTION", peer_id)
+
+        # Configurar timeout para la elección
+        def election_timeout():
+            time.sleep(5)  # 5 segundos de timeout
+            if self.election_in_progress and not self.alive_received:
+                # No se recibió ALIVE de nodos con ID mayor
+                logger.info(f"[Node {self.node_id}] Timeout reached, no ALIVE responses, declaring leadership")
+                self.announce_coordinator()
+
+        # Ejecutar timeout en thread separado
+        threading.Thread(target=election_timeout, daemon=True).start()
