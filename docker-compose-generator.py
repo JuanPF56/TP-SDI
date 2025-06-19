@@ -93,6 +93,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "volumes": [
                     "/var/run/docker.sock:/var/run/docker.sock",
                     f"./filter/{subtype}/config.ini:/app/config.ini",
+                    f"./filter/{subtype}/storage:/app/storage",
                 ],
                 "environment": {
                     "NODE_ID": str(i),
@@ -126,6 +127,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "volumes": [
                 "/var/run/docker.sock:/var/run/docker.sock",
                 "./sentiment_analyzer/config.ini:/app/config.ini",
+                "./sentiment_analyzer/storage:/app/storage",
             ],
             "environment": {
                 "NODE_ID": str(i),
@@ -163,6 +165,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "volumes": [
                     "/var/run/docker.sock:/var/run/docker.sock",
                     f"./join/{typ}/config.ini:/app/config.ini",
+                    f"./join/{typ}/storage:/app/storage",
                 ],
                 "environment": {
                     "NODE_ID": str(i),
@@ -202,6 +205,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "volumes": [
                 "/var/run/docker.sock:/var/run/docker.sock",
                 f"./query/{qname}/config.ini:/app/config.ini",
+                f"./query/{qname}/storage:/app/storage",
             ],
             "environment": {
                 "NODE_TYPE": qname,
