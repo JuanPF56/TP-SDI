@@ -23,6 +23,11 @@ class LeaderElector:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("0.0.0.0", self.election_port))
         
+        # Start listener thread
+        self.listener_thread = threading.Thread(target=self.listen)
+        self.listener_thread.daemon = True
+        self.listener_thread.start()
+        
         logger.info(f"[Node {self.node_id}] Initialized with peers: {self.peers}")
 
     def _parse_peers(self, peers_str):
@@ -36,3 +41,37 @@ class LeaderElector:
             node_id = int(name.split("_")[-1])
             peers[node_id] = (name, int(port))
         return peers
+
+    def listen(self):
+        """Listen for incoming election messages."""
+        logger.info(f"[Node {self.node_id}] Listening for messages on port {self.election_port}")
+        while True:
+            try:
+                data, addr = self.sock.recvfrom(1024)
+                message = data.decode()
+                logger.info(f"[Node {self.node_id}] Received message: {message} from {addr}")
+                self.handle_message(message, addr)
+            except Exception as e:
+                logger.error(f"[Node {self.node_id}] Error receiving message: {e}")
+
+    def handle_message(self, message, addr):
+        """Parse and handle incoming messages."""
+        parts = message.split()
+        if len(parts) < 2:
+            logger.warning(f"[Node {self.node_id}] Malformed message: {message}")
+            return
+
+        cmd = parts[0]
+        sender_id = int(parts[1])
+        
+        logger.info(f"[Node {self.node_id}] Handling {cmd} from node {sender_id}")
+        
+        # TODO: Implementar la logica de que hacer con cada mensaje recibido
+        if cmd == "ELECTION":
+            logger.info(f"[Node {self.node_id}] Received ELECTION from {sender_id}")
+        elif cmd == "ALIVE":
+            logger.info(f"[Node {self.node_id}] Received ALIVE from {sender_id}")
+        elif cmd == "COORDINATOR":
+            logger.info(f"[Node {self.node_id}] Received COORDINATOR from {sender_id}")
+        else:
+            logger.warning(f"[Node {self.node_id}] Unknown command: {cmd}")
