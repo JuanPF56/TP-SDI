@@ -16,10 +16,11 @@ class LeaderElector:
         self.peers = self._parse_peers(peers)
         self.election_port = election_port
         
-        # Leader ID, None if no leader elected yet
+        # Election state
         self.leader_id = None
+        self.election_in_progress = False
         
-        # Setup UDP socket for election messages
+        # Setup UDP socket
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("0.0.0.0", self.election_port))
         
@@ -49,7 +50,6 @@ class LeaderElector:
             try:
                 data, addr = self.sock.recvfrom(1024)
                 message = data.decode()
-                logger.info(f"[Node {self.node_id}] Received message: {message} from {addr}")
                 self.handle_message(message, addr)
             except Exception as e:
                 logger.error(f"[Node {self.node_id}] Error receiving message: {e}")
@@ -64,17 +64,33 @@ class LeaderElector:
         cmd = parts[0]
         sender_id = int(parts[1])
         
-        logger.info(f"[Node {self.node_id}] Handling {cmd} from node {sender_id}")
-        
-        # TODO: Implement specific message handlers
         if cmd == "ELECTION":
-            logger.info(f"[Node {self.node_id}] Received ELECTION from {sender_id}")
+            self.handle_election_message(sender_id)
         elif cmd == "ALIVE":
             logger.info(f"[Node {self.node_id}] Received ALIVE from {sender_id}")
         elif cmd == "COORDINATOR":
             logger.info(f"[Node {self.node_id}] Received COORDINATOR from {sender_id}")
         else:
             logger.warning(f"[Node {self.node_id}] Unknown command: {cmd}")
+
+    def handle_election_message(self, sender_id):
+        """Handle incoming ELECTION messages according to Bully algorithm."""
+        logger.info(f"[Node {self.node_id}] Received ELECTION from {sender_id}")
+
+        if sender_id < self.node_id:
+            logger.info(f"[Node {self.node_id}] Sending ALIVE to lower ID {sender_id}")
+            self.send_message("ALIVE", sender_id)
+            
+            if not self.election_in_progress and self.leader_id is None:
+                logger.info(f"[Node {self.node_id}] Starting own election due to lower ID message")
+                # TODO: implementar logica de iniciar eleccion
+                
+        elif sender_id > self.node_id:
+            logger.info(f"[Node {self.node_id}] Higher ID {sender_id} started election, stepping back")
+            self.election_in_progress = False
+            
+        else:
+            logger.warning(f"[Node {self.node_id}] Received ELECTION from same ID - ignoring")
 
     def send_message(self, cmd, target_id):
         """Send a message to a specific node."""
