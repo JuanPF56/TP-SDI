@@ -6,7 +6,13 @@ import threading
 import uuid
 import logging
 
-from common.protocol import SIZE_OF_HEADER, TIPO_MENSAJE, SIZE_OF_HEADER_RESULTS
+from common.protocol import (
+    SIZE_OF_HEADER,
+    TIPO_MENSAJE,
+    SIZE_OF_HEADER_RESULTS,
+    unpack_header,
+    unpack_result_header,
+)
 import common.receiver as receiver
 import common.sender as sender
 from common.logger import get_logger
@@ -56,37 +62,16 @@ def _forward_client_to_gateway(source: socket.socket, destination: socket.socket
                 break
 
             (
+                message_id,
                 tipo_mensaje,
                 encoded_id,
                 _current_batch,
                 is_last_batch_o_query_id,
                 payload_len,
-            ) = struct.unpack(">B36sIBI", header)
-
-            if int(tipo_mensaje) == int(TIPO_MENSAJE["RESULTS"]):
-                logger.debug(
-                    "Received results header: tipo_mensaje=%d, client_id=%s, query_id=%d, payload_len=%d",
-                    tipo_mensaje,
-                    encoded_id.decode("utf-8"),
-                    is_last_batch_o_query_id,
-                    payload_len,
-                )
+            ) = unpack_header(header)
 
             if int(tipo_mensaje) not in TIPO_MENSAJE.values():
                 logger.warning("Received unknown message type: %r", tipo_mensaje)
-
-            if (
-                int(tipo_mensaje) != int(TIPO_MENSAJE["BATCH_MOVIES"])
-                and int(tipo_mensaje) != int(TIPO_MENSAJE["BATCH_CREDITS"])
-                and int(tipo_mensaje) != int(TIPO_MENSAJE["BATCH_RATINGS"])
-            ):
-                logger.debug(
-                    "Received RARO header: tipo_mensaje=%d, client_id=%s, query_id=%d, payload_len=%d",
-                    tipo_mensaje,
-                    encoded_id.decode("utf-8"),
-                    is_last_batch_o_query_id,
-                    payload_len,
-                )
 
             payload = receiver.receive_data(
                 source, payload_len, timeout=TIMEOUT_PAYLOAD
@@ -101,20 +86,6 @@ def _forward_client_to_gateway(source: socket.socket, destination: socket.socket
             if not payload:
                 logger.debug("Connection closed while reading payload.")
                 break
-
-            if int(tipo_mensaje) == TIPO_MENSAJE["RESULTS"]:
-                destination_id = encoded_id.decode("utf-8")
-                logger.debug(
-                    "Forwarding results to client %s with payload %s",
-                    destination_id,
-                    payload.decode("utf-8", errors="ignore"),
-                )
-
-            if int(tipo_mensaje) not in TIPO_MENSAJE.values() and payload:
-                logger.debug(
-                    "Forwarding RARO PAYLOAD: %s",
-                    payload.decode("utf-8", errors="ignore"),
-                )
 
             sender.send(destination, header)
             sender.send(destination, payload)
@@ -161,11 +132,7 @@ def _forward_gateway_to_client(source: socket.socket, destination: socket.socket
                 )
                 break
 
-            (
-                tipo_mensaje,
-                query_id,
-                payload_len,
-            ) = struct.unpack(">BBI", header)
+            tipo_mensaje, query_id, payload_len = unpack_result_header(header)
 
             if int(tipo_mensaje) == int(TIPO_MENSAJE["RESULTS"]):
                 logger.debug(

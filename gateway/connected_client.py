@@ -196,6 +196,7 @@ class ConnectedClient(threading.Thread):
                 return False
 
             (
+                message_id,
                 message_code,
                 encoded_id,
                 current_batch,
@@ -246,6 +247,7 @@ class ConnectedClient(threading.Thread):
 
             if self.recovery_mode:
                 new_batch = BatchMessage(
+                    message_id=message_id,
                     message_code=message_code,
                     client_id=client_id,
                     current_batch=current_batch,
@@ -271,6 +273,7 @@ class ConnectedClient(threading.Thread):
 
             else:
                 self._publish_message(
+                    message_id,
                     message_code,
                     client_id,
                     current_batch,
@@ -361,6 +364,7 @@ class ConnectedClient(threading.Thread):
 
     def _publish_message(
         self,
+        message_id,
         message_code,
         client_id,
         current_batch,
@@ -371,9 +375,7 @@ class ConnectedClient(threading.Thread):
             queue_key = self._get_queue_key(message_code)
 
             if queue_key:
-                headers = {
-                    "client_id": client_id,
-                }
+                headers = {"client_id": client_id, "message_id": message_id}
                 batch_payload = [asdict(item) for item in processed_data]
                 success = self.broker.publish(
                     target=queue_key,
