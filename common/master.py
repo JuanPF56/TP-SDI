@@ -35,8 +35,8 @@ class MasterLogic(multiprocessing.Process):
         )
         self.manager = manager
         self.node_id = node_id
-        self.current_node_id = 1
         self.nodes_of_type = nodes_of_type
+        self.target_index = 1
         self.leader = multiprocessing.Event()
         self.client_manager = client_manager
         self.extra_recovery = extra_recovery
@@ -93,18 +93,19 @@ class MasterLogic(multiprocessing.Process):
                 self._handle_node_recovery(decoded, queue_name)
                 self.extra_recovery(decoded, queue_name) if self.extra_recovery else None                
             else:
-                # Round-robin distribution of messages to nodes
-                # TODO: Hash the message to determine the target node
-                target_node = f"{queue_name}_node_{self.current_node_id}"
+                if not message_id:
+                    logger.error("Missing message_id in headers")
+                    self.rabbitmq_processor.acknowledge(method)
+                    return
+                
+                self.target_index = (hash(message_id) % self.nodes_of_type) + 1
+                target_node = f"{queue_name}_node_{self.target_index}"
                 self.rabbitmq_processor.publish(
                     target=target_node,
                     message=decoded,
                     msg_type=msg_type,
                     headers=properties.headers,
                 )
-                # Increment the current node ID for the next message
-                self.current_node_id = (self.current_node_id % self.nodes_of_type) + 1
-            
             if message_id:
                 self.duplicate_handler.add(message_id)
         except Exception as e:
@@ -112,7 +113,7 @@ class MasterLogic(multiprocessing.Process):
         finally:
             self.rabbitmq_processor.acknowledge(method)
             if self.leader.is_set():
-                logger.debug(f"Message processed and acknowledged for node {self.current_node_id}")
+                logger.debug(f"Message processed and acknowledged for node {self.target_index}")
             else:
                 logger.info("Leader untoggled, stopping consumption.")
                 self.rabbitmq_processor.stop_consuming()
