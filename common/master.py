@@ -15,6 +15,7 @@ class MasterLogic(multiprocessing.Process):
         Initialize the MasterLogic class with the given configuration and manager.
         """
         super().__init__(target=self.run)
+        self.stopped = False
         if not isinstance(clean_queues, list):
             self.clean_queues = [clean_queues]
         else:
@@ -25,26 +26,26 @@ class MasterLogic(multiprocessing.Process):
             source_queues=self.clean_queues,
             target_queues=[clean_queue + "_node_" + str(i) for i in range(1, nodes_of_type + 1) for clean_queue in self.clean_queues],
         )
-        if not self.rabbitmq_processor.connect():
-            self.log_error("Error connecting to RabbitMQ. Exiting...")
-            return
         self.manager = manager
         self.node_id = node_id
         self.current_node_id = 1
         self.nodes_of_type = nodes_of_type
         self.leader = multiprocessing.Event()
-        self.stopped = False
 
+        if not self.rabbitmq_processor.connect():
+            logger.error("Error connecting to RabbitMQ. Exiting...")
+            return
+        
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
         signal.signal(signal.SIGINT, self.__handleSigterm)
 
     def __handleSigterm(self, signum, frame):
-        self.log_info("SIGTERM signal received. Closing connection...")
+        logger.info("SIGTERM signal received. Closing connection...")
         try:
             self._close_connection()
         except Exception as e:
-            self.log_info(f"Error closing connection: {e}")
+            logger.info(f"Error closing connection: {e}")
 
     def load_balance(self, ch, method, properties, body, queue_name):
         """

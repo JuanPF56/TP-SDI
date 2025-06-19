@@ -1,74 +1,86 @@
-"""
-Gateway Node Main Script
-This script initializes the gateway node, loads the configuration
-and starts the gateway service.
-"""
-
 import socket
 import signal
-import uuid
 import os
 
 from client_registry import ClientRegistry
 from connected_client import ConnectedClient
 from result_dispatcher import ResultDispatcher
+from common.protocol import SIZE_OF_UUID
+import common.receiver as receiver
 from common.logger import get_logger
 
 logger = get_logger("Gateway")
+
+TIMEOUT_PROXY = 3600
 
 
 class Gateway:
     def __init__(self, config):
         self.config = config
+        self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.port = int(os.getenv("GATEWAY_PORT", config["DEFAULT"]["GATEWAY_PORT"]))
 
-        # Initialize gateway socket
+        # Actuar como servidor: escuchar conexiones del proxy
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._gateway_socket.bind(("", int(config["DEFAULT"]["GATEWAY_PORT"])))
+        self._gateway_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._gateway_socket.bind(("", self.port))
         self._gateway_socket.listen(int(config["DEFAULT"]["LISTEN_BACKLOG"]))
-        logger.info("Gateway listening on port %s", config["DEFAULT"]["GATEWAY_PORT"])
+        logger.info("Gateway listening on port %s", self.port)
+
         self._was_closed = False
 
-        # Initialize connected clients registry that monitors the connected clients
         self._clients_connected = ClientRegistry()
         self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
 
-        # Initialize and start the ResultDispatcher
         self._result_dispatcher = None
         self._setup_result_dispatcher()
 
         try:
-            with open("/tmp/gateway_ready", "w", encoding="utf-8") as f:
+            with open(f"/tmp/{self.node_name}_ready", "w", encoding="utf-8") as f:
                 f.write("ready")
             logger.info("Gateway is ready. Healthcheck file created.")
         except Exception as e:
             logger.error("Failed to create healthcheck file: %s", e)
 
-        # Signal handling
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
     def _setup_result_dispatcher(self):
-        """
-        Set up the ResultDispatcher.
-        """
         self._result_dispatcher = ResultDispatcher(
             self.config, clients_connected=self._clients_connected
         )
         self._result_dispatcher.start()
 
     def run(self):
+        logger.info("Gateway started. Waiting for proxy connections...")
         while not self._was_closed:
             try:
                 self._reap_disconnected_clients()
 
-                new_connected_client = self._accept_new_connection()
-                if new_connected_client is None:
-                    logger.error("Failed to accept new connection")
+                proxy_socket, proxy_addr = self._gateway_socket.accept()
+                logger.info("New connection from proxy address %s", proxy_addr)
+
+                client_id = receiver.receive_data(
+                    proxy_socket, SIZE_OF_UUID, timeout=TIMEOUT_PROXY
+                )
+                if not client_id:
+                    logger.warning("No UUID received. Closing connection.")
+                    proxy_socket.close()
                     continue
 
-                logger.info(
-                    "New client connected: %s", new_connected_client.get_client_id()
+                client_id = client_id.decode("utf-8").rstrip("\x00")
+                logger.debug(
+                    "Received client ID: '%s' (len=%d)", client_id, len(client_id)
                 )
+
+                new_connected_client = ConnectedClient(
+                    client_id=client_id,
+                    client_socket=proxy_socket,
+                    client_addr=proxy_addr,
+                    config=self.config,
+                )
+                self._clients_connected.add(new_connected_client)
+                logger.info("New client connected: %s", client_id)
                 new_connected_client.start()
 
             except OSError as e:
@@ -76,25 +88,10 @@ class Gateway:
                     break
                 logger.error("Error accepting new connection: %s", e)
 
-    def _accept_new_connection(self):
-        logger.info("Waiting for new connections...")
-        accepted_socket, accepted_address = self._gateway_socket.accept()
-        logger.info("New connection from %s", accepted_address)
-
-        new_connected_client = ConnectedClient(
-            client_id=str(uuid.uuid4()),
-            client_socket=accepted_socket,
-            client_addr=accepted_address,
-            config=self.config,
-        )
-        self._clients_connected.add(new_connected_client)
-        return new_connected_client
-
     def _reap_disconnected_clients(self):
         try:
             logger.info("Checking for any disconnected clients...")
-            all_clients = self._clients_connected.get_all()
-            for client in all_clients.values():
+            for client in list(self._clients_connected.get_all().values()):
                 if not client.client_is_connected():
                     logger.info(
                         "Removing disconnected client %s", client.get_client_id()
@@ -142,7 +139,7 @@ class Gateway:
                 self._gateway_socket = None
 
         try:
-            os.remove("/tmp/gateway_ready")
+            os.remove(f"/tmp/{self.node_name}_ready")
             logger.info("Healthcheck file removed.")
         except FileNotFoundError:
             pass

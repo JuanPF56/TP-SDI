@@ -15,6 +15,7 @@ SIZE_OF_UINT32 = 4
  """
 
 TIPO_MENSAJE = {
+    "CLIENT_ID": 0,
     "BATCH_MOVIES": 1,
     "BATCH_CREDITS": 2,
     "BATCH_RATINGS": 3,
