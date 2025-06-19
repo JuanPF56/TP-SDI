@@ -264,6 +264,14 @@ class MoviesHandler(multiprocessing.Process):
             except Exception as e:
                 logger.error(f"Error reading {type} data from {file_path}: {e}")
 
+        for client_id in self.year_eos_flags:
+            if not self.ready and self.client_ready(client_id):
+                self.ready = True
+                logger.debug(
+                    "One table is ready for at least 1 client. Notifying..."
+                )
+                self.movies_table_ready.set()
+
     def compare_and_update(self, type, data, client_id):
         """
         Compare the data read from storage with the current state and update file if necessary.

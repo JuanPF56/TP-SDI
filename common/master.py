@@ -67,13 +67,8 @@ class MasterLogic(multiprocessing.Process):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             headers = getattr(properties, "headers", {}) or {}
-            client_id = headers.get("client_id")
-            message_id = headers.get("message_id")
-
-            if message_id and self.duplicate_handler.is_duplicate(message_id):
-                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
-                self.rabbitmq_processor.acknowledge(method)
-                return
+            client_id = headers.get("client_id", None)
+            message_id = headers.get("message_id", None)
             
             try:
                 decoded = json.loads(body)
@@ -93,9 +88,14 @@ class MasterLogic(multiprocessing.Process):
                 self._handle_node_recovery(decoded, queue_name)
                 self.extra_recovery(decoded, queue_name) if self.extra_recovery else None                
             else:
-                if not message_id:
+                if client_id is None:
+                    logger.error("Missing client_id in headers")
+                    return
+                if message_id is None:
                     logger.error("Missing message_id in headers")
-                    self.rabbitmq_processor.acknowledge(method)
+                    return
+                if self.duplicate_handler.is_duplicate(client_id, queue_name, message_id):
+                    logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
                     return
                 
                 self.target_index = (hash(message_id) % self.nodes_of_type) + 1
@@ -104,10 +104,10 @@ class MasterLogic(multiprocessing.Process):
                     target=target_node,
                     message=decoded,
                     msg_type=msg_type,
-                    headers=properties.headers,
+                    headers=headers,
                 )
-            if message_id:
-                self.duplicate_handler.add(message_id)
+                if message_id:
+                    self.duplicate_handler.add(client_id, queue_name, message_id)
         except Exception as e:
             logger.error(f"Error in load_balance callback: {e}")
         finally:

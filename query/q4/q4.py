@@ -67,17 +67,7 @@ class ArgProdActorsQuery(QueryBase):
         client_id = headers.get("client_id")
         message_id = headers.get("message_id")
 
-        if not message_id:
-            logger.error("Missing message_id in headers")
-            self.rabbitmq_processor.acknowledge(method)
-            return
-        
-        if self.duplicate_handler.is_duplicate(message_id):
-            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
-            self.rabbitmq_processor.acknowledge(method)
-            return
-
-        if not client_id:
+        if client_id is None:
             logger.warning("❌ Missing client_id in headers. Skipping.")
             self.rabbitmq_processor.acknowledge(method)
             return
@@ -105,6 +95,17 @@ class ArgProdActorsQuery(QueryBase):
                 self._calculate_and_publish_results(client_state)
             self.rabbitmq_processor.acknowledge(method)
             return
+        
+        if message_id is None:
+            logger.error("Missing message_id in headers")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+
+        if self.duplicate_handler.is_duplicate(client_id, input_queue, message_id):
+            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+            self.rabbitmq_processor.acknowledge(method)
+            return
+
         try:
             movies = json.loads(body)
         except json.JSONDecodeError:
@@ -124,7 +125,7 @@ class ArgProdActorsQuery(QueryBase):
                     self.actor_participations[key][actor] = {"name": actor, "count": 0}
                 self.actor_participations[key][actor]["count"] += 1
 
-        self.duplicate_handler.add(message_id)
+        self.duplicate_handler.add(client_id, input_queue, message_id)
         self.rabbitmq_processor.acknowledge(method)
 
 

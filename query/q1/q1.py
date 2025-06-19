@@ -75,17 +75,7 @@ class ArgSpainGenreQuery(QueryBase):
         client_id = headers.get("client_id")
         message_id = headers.get("message_id")
 
-        if not message_id:
-            logger.error("Missing message_id in headers")
-            self.rabbitmq_processor.acknowledge(method)
-            return
-        
-        if self.duplicate_handler.is_duplicate(message_id):
-            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
-            self.rabbitmq_processor.acknowledge(method)
-            return
-
-        if not client_id:
+        if client_id is None:
             logger.error("Missing client_id in headers")
             self.rabbitmq_processor.acknowledge(method)
             return
@@ -117,6 +107,16 @@ class ArgSpainGenreQuery(QueryBase):
 
             self.rabbitmq_processor.acknowledge(method)
             return
+        
+        if message_id is None:
+            logger.error("Missing message_id in headers")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+
+        if self.duplicate_handler.is_duplicate(client_id, input_queue, message_id):
+            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+            self.rabbitmq_processor.acknowledge(method)
+            return
 
         # Normal message (single movie)
         try:
@@ -137,8 +137,8 @@ class ArgSpainGenreQuery(QueryBase):
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
             return
-        
-        self.duplicate_handler.add(message_id)
+
+        self.duplicate_handler.add(client_id, input_queue, message_id)
         self.rabbitmq_processor.acknowledge(method)
 
 if __name__ == "__main__":

@@ -89,18 +89,8 @@ class SoloCountryBudgetQuery(QueryBase):
 
         client_id = headers.get("client_id")
         message_id = headers.get("message_id")
-        
-        if not message_id:
-            logger.error("Missing message_id in headers")
-            self.rabbitmq_processor.acknowledge(method)
-            return
-        
-        if self.duplicate_handler.is_duplicate(message_id):
-            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
-            self.rabbitmq_processor.acknowledge(method)
-            return
-        
-        if not client_id:
+
+        if client_id is None:
             logger.warning("❌ Missing client_id in headers. Skipping.")
             self.rabbitmq_processor.acknowledge(method)
             return
@@ -133,8 +123,17 @@ class SoloCountryBudgetQuery(QueryBase):
                 self._calculate_and_publish_results(client_id)
 
             self.rabbitmq_processor.acknowledge(method)
-            return            # Normalize to list if necessary
+            return    
 
+        if message_id is None:
+            logger.error("Missing message_id in headers")
+            self.rabbitmq_processor.acknowledge(method)
+            return
+        
+        if self.duplicate_handler.is_duplicate(client_id, input_queue, message_id):
+            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+            self.rabbitmq_processor.acknowledge(method)
+            return
 
         try:
             movie = json.loads(body)
@@ -154,8 +153,8 @@ class SoloCountryBudgetQuery(QueryBase):
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
             return
-        
-        self.duplicate_handler.add(message_id)
+
+        self.duplicate_handler.add(client_id, input_queue, message_id)
         self.rabbitmq_processor.acknowledge(method)
 
 

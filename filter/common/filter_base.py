@@ -30,16 +30,17 @@ class FilterBase:
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
+
+        self.manager = multiprocessing.Manager()
+        self.master_logic = None
+        self.master_logic_started_event = multiprocessing.Event()
+
         self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
 
         self.duplicate_handler = DuplicateHandler()
 
         self.rabbitmq_processor = None
         self.client_manager = None
-
-        self.manager = multiprocessing.Manager()
-        self.master_logic = None
-        self.master_logic_started_event = multiprocessing.Event()
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 

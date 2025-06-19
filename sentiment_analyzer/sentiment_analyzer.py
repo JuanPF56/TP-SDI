@@ -148,20 +148,9 @@ class SentimentAnalyzer:
             headers = getattr(properties, "headers", {}) or {}
             client_id = headers.get("client_id")
             message_id = headers.get("message_id")
-            
-            if not message_id:
-                logger.error("Missing message_id in headers")
-                self.rabbitmq_processor.acknowledge(method)
-                return
-            
-            if self.duplicate_handler.is_duplicate(message_id):
-                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
-                self.rabbitmq_processor.acknowledge(method)
-                return
 
-            if not client_id:
+            if client_id is None:
                 logger.error("Missing client_id in headers")
-                self.rabbitmq_processor.acknowledge(method)
                 return
 
             key = client_id
@@ -169,6 +158,14 @@ class SentimentAnalyzer:
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(input_queue, body, method, headers, client_state)
+                return
+            
+            if message_id is None:
+                logger.error("Missing message_id in headers")
+                return
+            
+            if self.duplicate_handler.is_duplicate(client_id, input_queue, message_id):
+                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
                 return
 
             movies = json.loads(body)
@@ -178,7 +175,6 @@ class SentimentAnalyzer:
                 movies = [movies]
             elif not isinstance(movies, list):
                 logger.warning("❌ Unexpected movie format: %s, skipping.", type(movies))
-                self.rabbitmq_processor.acknowledge(method)
                 return
 
             sentiment_batches = {
@@ -210,8 +206,8 @@ class SentimentAnalyzer:
                         message=movies_batch,
                         headers=headers,
                     )
-            
-            self.duplicate_handler.add(message_id)
+
+            self.duplicate_handler.add(client_id, input_queue, message_id)
         except pika.exceptions.StreamLostError as e:
             logger.error("Stream lost, reconnecting: %s", e)
             self.rabbitmq_processor.reconnect_and_restart(self.callback)

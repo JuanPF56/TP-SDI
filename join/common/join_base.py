@@ -191,14 +191,6 @@ class JoinBase:
             current_client_id = headers.get("client_id")
             message_id = headers.get("message_id")
             
-            if not message_id:
-                self.log_error("Missing message_id in headers")
-                return
-            
-            if self.duplicate_handler.is_duplicate(message_id):
-                self.log_info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
-                return
-
             if not current_client_id:
                 self.log_error("Missing client_id in headers")
                 return
@@ -209,6 +201,14 @@ class JoinBase:
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(input_queue, body, method, headers, client_state)
+                return
+            
+            if message_id is None:
+                self.log_error("Missing message_id in headers")
+                return
+
+            if self.duplicate_handler.is_duplicate(current_client_id, input_queue, message_id):
+                self.log_info(f"Duplicate message detected: {message_id}. Acknowledging without processing.")
                 return
 
             # Load the data from the incoming message
@@ -268,7 +268,7 @@ class JoinBase:
                         headers=headers,
                     )
 
-            self.duplicate_handler.add(message_id)
+            self.duplicate_handler.add(current_client_id, input_queue, message_id)
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.reconnect_and_restart(self.process_batch)

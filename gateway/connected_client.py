@@ -304,6 +304,7 @@ class ConnectedClient(threading.Thread):
             if queue_key:
                 headers = {
                     "client_id": batch_message.client_id,
+                    "message_id": batch_message.message_id,
                 }
                 for i, item in enumerate(batch_message.processed_data):
                     if not is_dataclass(item):

@@ -2,27 +2,34 @@ from collections import OrderedDict
 
 class DuplicateHandler:
     """
-    Handles duplicate entries using an LRU cache for message IDs.
-    LRU (Least Recently Used) cache is used to keep track of recently processed message IDs.
+    Handles duplicate message detection per client and per queue using an LRU cache.
+    LRU (Least Recently Used) cache keeps track of the most recent messages processed for each client and queue.
+    Structure:
+        self.cache[client_id][queue_name] = OrderedDict of message_ids
     """
     def __init__(self, cache_size=1000):
-        self.cache = OrderedDict()
         self.cache_size = cache_size
+        self.cache = {}
 
-    def add(self, message_id):
+    def add(self, client_id, queue_name, message_id):
         """
-        Add a message ID to the cache. If it already exists, move it to the end.
-        If the cache exceeds its size limit, evict the oldest message ID.
+        Add a message ID to the cache for a specific client and queue.
         """
-        if message_id in self.cache:
-            self.cache.move_to_end(message_id)
+        queue_cache = self.cache.setdefault(client_id, {}).setdefault(queue_name, OrderedDict())
+
+        if message_id in queue_cache:
+            queue_cache.move_to_end(message_id)
         else:
-            if len(self.cache) >= self.cache_size:
-                self.cache.popitem(last=False)  # Evict the oldest
-            self.cache[message_id] = None  # No value needed
+            if len(queue_cache) >= self.cache_size:
+                queue_cache.popitem(last=False)
+            queue_cache[message_id] = None
 
-    def is_duplicate(self, message_id):
+    def is_duplicate(self, client_id, queue_name, message_id):
         """
-        Check if the message ID is a duplicate.
+        Check if a message ID is a duplicate for a specific client and queue.
         """
-        return message_id in self.cache
+        return (
+            client_id in self.cache and
+            queue_name in self.cache[client_id] and
+            message_id in self.cache[client_id][queue_name]
+        )

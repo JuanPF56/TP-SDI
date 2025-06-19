@@ -76,45 +76,39 @@ class YearFilter(FilterBase):
             ),
         )
         self._free_resources(client_state)
-        self.rabbitmq_processor.acknowledge(method)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queues):
             self.client_manager.remove_client(client_state.client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
-        msg_type = self._get_message_type(properties)
-        headers = getattr(properties, "headers", {}) or {}
-        client_id = headers.get("client_id")
-        message_id = headers.get("message_id")
-        client_state = self.client_manager.add_client(client_id, msg_type == EOS_TYPE)
-
-        
-        if not message_id:
-            logger.error("Missing message_id in headers")
-            self.rabbitmq_processor.acknowledge(method)
-            return
-        
-        if self.duplicate_handler.is_duplicate(message_id):
-            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
-            self.rabbitmq_processor.acknowledge(method)
-            return
-
-        if msg_type == EOS_TYPE:
-            self._handle_eos(input_queue, body, method, headers, client_state)
-            return
-
         try:
+            msg_type = self._get_message_type(properties)
+            headers = getattr(properties, "headers", {}) or {}
+            client_id = headers.get("client_id")
+            message_id = headers.get("message_id")
+            client_state = self.client_manager.add_client(client_id, msg_type == EOS_TYPE)
+
+            if msg_type == EOS_TYPE:
+                self._handle_eos(input_queue, body, method, headers, client_state)
+                return
+            
+            if message_id is None:
+                logger.error("Missing message_id in headers")
+                return
+
+            if self.duplicate_handler.is_duplicate(client_id, input_queue, message_id):
+                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
+                return
+            
             movie = self._decode_body(body, input_queue)
             if not movie:
-                self.rabbitmq_processor.acknowledge(method)
                 return
 
             if isinstance(movie, dict):
                 movie = [movie]
             elif not isinstance(movie, list):
                 logger.warning("Unexpected movie type: %s", type(movie))
-                self.rabbitmq_processor.acknowledge(method)
                 return
 
             processed_movies = []
@@ -126,7 +120,7 @@ class YearFilter(FilterBase):
             if processed_movies:
                 self._publish_movie_batch(processed_movies, input_queue, headers)
 
-            self.duplicate_handler.add(message_id)
+            self.duplicate_handler.add(client_id, input_queue, message_id)
         except Exception as e:
             logger.error("Error processing message from %s: %s", input_queue, e)
 
