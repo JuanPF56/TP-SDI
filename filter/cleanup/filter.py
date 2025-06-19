@@ -193,6 +193,7 @@ class CleanupFilter(FilterBase):
         Main processing function for the CleanupFilter.
         """
         logger.info("CleanupFilter is starting up")
+        self.elector.start_election()
         self.run_consumer()
 
 if __name__ == "__main__":

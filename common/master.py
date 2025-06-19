@@ -13,7 +13,10 @@ EOS_TYPE = "EOS"
 REC_TYPE = "RECOVERY"
 
 class MasterLogic(multiprocessing.Process):
-    def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, client_manager, extra_recovery=None):
+    def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, 
+                 client_manager,
+                 extra_recovery=None,
+                 started_event=None):
         """
         Initialize the MasterLogic class with the given configuration and manager.
         """
@@ -36,6 +39,7 @@ class MasterLogic(multiprocessing.Process):
         self.leader = multiprocessing.Event()
         self.client_manager = client_manager
         self.extra_recovery = extra_recovery
+        self.started_event = started_event
 
         if not self.rabbitmq_processor.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
@@ -103,6 +107,8 @@ class MasterLogic(multiprocessing.Process):
         Run the master logic process.
         """                
         try:
+            if self.started_event:
+                self.started_event.set()
             while not self.stopped:
                 self.leader.wait() # Wait to be set as leader
                 self.rabbitmq_processor.consume(self.load_balance) # Consume messages from the queue

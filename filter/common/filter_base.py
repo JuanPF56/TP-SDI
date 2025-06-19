@@ -34,6 +34,10 @@ class FilterBase:
         self.rabbitmq_processor = None
         self.client_manager = None
 
+        self.manager = multiprocessing.Manager()
+        self.master_logic = None
+        self.master_logic_started_event = multiprocessing.Event()
+
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
     def setup(self):
@@ -86,10 +90,9 @@ class FilterBase:
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.main_source_queues,
             client_manager=self.client_manager,
+            started_event=self.master_logic_started_event
         )
         self.master_logic.start()
-        self.elector.start_election()
-
 
     def run_consumer(self):
         logger.info("Node is online")

@@ -1,6 +1,8 @@
 import json
 import multiprocessing
+import os
 import signal
+import tempfile
 
 from common.logger import get_logger
 from common.mom import RabbitMQProcessor
@@ -84,6 +86,7 @@ class MoviesHandler(multiprocessing.Process):
                         self.year_eos_flags[id_tuple] = self.manager.dict()
                     if node_id not in self.year_eos_flags[id_tuple]:
                         self.year_eos_flags[id_tuple][node_id] = True
+                        self.write_storage("eos", self.year_eos_flags[id_tuple], self.current_client_id)
                         logger.debug("EOS received for node %s.", node_id)
                     if not self.ready and self.client_ready(self.current_client_id):
                         self.ready = True
@@ -116,6 +119,11 @@ class MoviesHandler(multiprocessing.Process):
                         }
                         if new_movie not in self.movies[id_tuple]:
                             self.movies[id_tuple].append(new_movie)
+                    self.write_storage(
+                        "movies",
+                        self.movies[id_tuple],
+                        self.current_client_id,
+                    )
                     logger.debug(
                         "Movies table updated for client %s, request %s: %s",
                         self.current_client_id,
@@ -203,5 +211,84 @@ class MoviesHandler(multiprocessing.Process):
                         headers={"client_id": client_id},
                     )
     
+    def write_storage(self, key, data, client_id):
+        storage_dir = "./storage"
+        os.makedirs(storage_dir, exist_ok=True)
+        file_path = os.path.join(storage_dir, f"{key}_{client_id}.json")
+        tmp_file = None
+
+        if isinstance(data, multiprocessing.managers.DictProxy):
+            serializable_data = dict(data)
+        elif isinstance(data, multiprocessing.managers.ListProxy):
+            serializable_data = list(data)
+        else:
+            serializable_data = data
+
+        try:
+            with tempfile.NamedTemporaryFile("w", dir=storage_dir, delete=False) as tf:
+                json.dump(serializable_data, tf)
+                tmp_file = tf.name
+            os.replace(tmp_file, file_path)
+            logger.debug("Client %s state written to %s", client_id, file_path)
+        except Exception as e:
+            logger.error(f"Failed to write {key} data for client {client_id}: {e}")
+            if tmp_file and os.path.exists(tmp_file):
+                os.remove(tmp_file)
+
     def read_storage(self):
-        pass
+        """
+        Load persisted EOS and movies data into memory on startup.
+        """
+        storage_dir = "./storage"
+        if not os.path.exists(storage_dir):
+            logger.warning("Storage directory not found.")
+            return
+
+        for filename in os.listdir(storage_dir):
+            if filename.startswith("eos_") and filename.endswith(".json"):
+                type = "eos"
+            elif filename.startswith("movies_") and filename.endswith(".json"):
+                type = "movies"
+            else:
+                continue
+            client_id = filename.split("_")[1][:-5]
+            file_path = os.path.join(storage_dir, filename)
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                self.compare_and_update(
+                    type,
+                    data,
+                    client_id
+                )
+            except Exception as e:
+                logger.error(f"Error reading {type} data from {file_path}: {e}")
+
+    def compare_and_update(self, type, data, client_id):
+        """
+        Compare the data read from storage with the current state and update file if necessary.
+        """
+        if type == "eos":
+            if client_id not in self.year_eos_flags:
+                self.year_eos_flags[client_id] = self.manager.dict()
+            current_flags = self.year_eos_flags[client_id]
+            updated = False
+            for node_id, flag in data.items():
+                if node_id not in current_flags or current_flags[node_id] != flag:
+                    current_flags[node_id] = flag
+                    updated = True
+            if updated:
+                self.write_storage("eos", current_flags, client_id)
+                logger.debug(f"EOS data for client {client_id} updated.")
+        elif type == "movies":
+            if client_id not in self.movies:
+                self.movies[client_id] = self.manager.list()
+            current_movies = self.movies[client_id]
+            updated = False
+            for movie in data:
+                if movie not in current_movies:
+                    current_movies.append(movie)
+                    updated = True
+            if updated:
+                self.write_storage("movies", list(current_movies), client_id)
+                logger.debug(f"Movies data for client {client_id} updated.")

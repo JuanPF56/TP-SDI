@@ -14,6 +14,8 @@ def election_logic(self, leader_id: int, leader_queues=None):
     Parameters:
     - leader_id: The ID of the newly elected leader.
     """
+    if self.master_logic_started_event:
+        self.master_logic_started_event.wait()
     logger.info(f"New leader elected: {leader_id}")
     is_now_leader = (leader_id == self.node_id)
     was_leader = self.master_logic.is_leader()

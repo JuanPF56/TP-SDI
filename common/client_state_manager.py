@@ -1,6 +1,11 @@
 # common/client_manager.py
+import os
+from common import logger
 from common.client_state import ClientState
+import json
+import tempfile
 
+logger = logger.get_logger("Client-Manager")
 
 class ClientManager:
     def __init__(self, expected_queues, nodes_to_await=1):
@@ -40,7 +45,60 @@ class ClientManager:
     
     def read_storage(self):
         """
-        Placeholder for reading client states from persistent storage.
-        This method should be implemented to load client states from a database or file.
+        Read the client states from storage.
         """
-        pass
+        storage_dir = "./storage"
+        
+        for filename in os.listdir(storage_dir):
+            if filename.startswith("eos_") and filename.endswith(".json"):
+                client_id = filename[4:-5]
+                file_path = os.path.join(storage_dir, filename)
+                updated = False
+                try:
+                    with open(file_path, "r") as f:
+                        eos_flags = json.load(f)
+                except Exception as e:
+                    logger.error(f"Error reading client state from {file_path}: {e}")
+                    continue
+
+                if client_id not in self.clients:
+                    self.clients[client_id] = ClientState(client_id, self.nodes_to_await)
+
+                # Compare and update
+                self.clients[client_id].eos_flags, updated = self.compare_flags(
+                    eos_flags,
+                    self.clients[client_id].get_eos_flags()
+                )
+
+                logger.debug("Client state read from storage for client %s", client_id)
+
+                # If updated, write back to storage
+                if updated:
+                    tmp_file = None
+                    try:
+                        # Write updated data atomically
+                        with tempfile.NamedTemporaryFile("w", dir=storage_dir, delete=False) as tf:
+                            json.dump(self.clients[client_id].eos_flags, tf)
+                            tmp_file = tf.name
+                        os.replace(tmp_file, file_path)
+                        logger.debug("Client state updated in storage for client %s", client_id)
+                    except Exception as e:
+                        logger.error(f"Error updating client state for {client_id}: {e}")
+                        if tmp_file and os.path.exists(tmp_file):
+                            os.remove(tmp_file)
+
+    def compare_flags(self, new_flags, existing_flags):
+        """
+        Compare the new flags with the existing flags and return the updated flags.
+        This is used to ensure that the client state is consistent with the storage.
+        """
+        updated = False
+        for queue_name, nodes in new_flags.items():
+            if queue_name not in existing_flags:
+                existing_flags[queue_name] = {}
+                updated = True
+            for node_id, flag in nodes.items():
+                existing_flags[queue_name][node_id] = flag
+                
+        return existing_flags, updated
+                

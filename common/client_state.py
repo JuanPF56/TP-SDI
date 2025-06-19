@@ -1,5 +1,8 @@
 # common/client_state.py
+import os
 from common.logger import get_logger
+import json
+import tempfile
 
 logger = get_logger("Client-State")
 
@@ -74,3 +77,20 @@ class ClientState:
         if queue_name in self.eos_flags:
             return len(self.eos_flags[queue_name])
         return 0
+
+
+    def write_storage(self):
+        tmp_dir = "./storage"
+        tmp_file = None
+        try:
+            # Create a temporary file in the same directory
+            with tempfile.NamedTemporaryFile("w", dir=tmp_dir, delete=False) as tf:
+                json.dump(self.eos_flags, tf)
+                tmp_file = tf.name
+            # Atomically replace the target file with the temp file
+            os.replace(tmp_file, f"{tmp_dir}/eos_{self.client_id}.json")
+            logger.debug("Client state written to storage for client %s", self.client_id)
+        except Exception as e:
+            logger.error(f"Error writing client state to storage: {e}")
+            if tmp_file and os.path.exists(tmp_file):
+                os.remove(tmp_file)

@@ -171,6 +171,7 @@ class ProductionFilter(FilterBase):
         to the respective queues.
         """
         logger.info("ProductionFilter is starting up")
+        self.elector.start_election()
         self.run_consumer()
 
 

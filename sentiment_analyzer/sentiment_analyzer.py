@@ -54,6 +54,7 @@ class SentimentAnalyzer:
         )
         
         self.manager = multiprocessing.Manager()
+        self.master_logic_started_event = self.manager.Event()
         self.master_logic = MasterLogic(
             config=self.config,
             manager=self.manager,
@@ -61,6 +62,7 @@ class SentimentAnalyzer:
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
             client_manager=self.client_manager,
+            started_event=self.master_logic_started_event
         )
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"

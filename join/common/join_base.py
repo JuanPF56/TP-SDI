@@ -57,6 +57,7 @@ class JoinBase:
         # Create a movie handler process to receive the movies tables
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
+        self.master_logic_started_event = self.manager.Event()
 
         self.movies_handler = MoviesHandler(
             config=self.config,
@@ -74,7 +75,8 @@ class JoinBase:
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
             client_manager=self.client_manager,
-            extra_recovery=self._movies_table_recovery
+            extra_recovery=self._movies_table_recovery,
+            started_event=self.master_logic_started_event
         )
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"

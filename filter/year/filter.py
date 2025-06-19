@@ -183,6 +183,7 @@ class YearFilter(FilterBase):
         - movies_arg_spain_2000s: Argentina+Spain movies between 2000-2009
         """
         logger.info("YearFilter is starting up")
+        self.elector.start_election()
         self.run_consumer()
 
     def extract_year(self, date_str):

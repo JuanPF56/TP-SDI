@@ -43,11 +43,12 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
 
     if client_state and not client_state.has_queue_received_eos_from_node(input_queue, n_id):
         client_state.mark_eos(input_queue, n_id)
+        client_state.write_storage()
         check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                         client_state, target_queues, target_exchanges)
 
     logger.debug(f"EOS received for node {n_id} from input queue {input_queue}")
-        
+
 def check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                     client_state: ClientState, target_queues=None, target_exchanges=None):
     """
