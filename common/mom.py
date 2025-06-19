@@ -15,6 +15,8 @@ RETRY_DELAY = 3  # seconds
 HEARTBEAT = 600
 CONNECTION_TIMEOUT = 300
 
+MAX_PRIORITY = 10
+
 
 class RabbitMQProcessor:
     def __init__(
@@ -46,7 +48,7 @@ class RabbitMQProcessor:
         self.connection = None
         self.channel = None
 
-    def connect(self):
+    def connect(self, node_name=None):
         """
         Stablishes a connection to RabbitMQ with retry logic.
         Retries the connection up to a specified number of times with exponential backoff.
@@ -74,29 +76,29 @@ class RabbitMQProcessor:
 
                 for queue in self.source_queues:
                     self.channel.queue_declare(
-                        queue=queue, arguments={"x-max-priority": 10}
+                        queue=queue, arguments={"x-max-priority": MAX_PRIORITY}
                     )
 
                 # Handle target_queues being a single item, list, or dict
                 if isinstance(self.target_queues, str):
                     self.channel.queue_declare(
-                        queue=self.target_queues, arguments={"x-max-priority": 10}
+                        queue=self.target_queues, arguments={"x-max-priority": MAX_PRIORITY}
                     )
                 elif isinstance(self.target_queues, list):
                     for queue in self.target_queues:
                         self.channel.queue_declare(
-                            queue=queue, arguments={"x-max-priority": 10}
+                            queue=queue, arguments={"x-max-priority": MAX_PRIORITY}
                         )
                 elif isinstance(self.target_queues, dict):
                     for target in self.target_queues.values():
                         if isinstance(target, list):
                             for queue in target:
                                 self.channel.queue_declare(
-                                    queue=queue, arguments={"x-max-priority": 10}
+                                    queue=queue, arguments={"x-max-priority": MAX_PRIORITY}
                                 )
                         else:
                             self.channel.queue_declare(
-                                queue=target, arguments={"x-max-priority": 10}
+                                queue=target, arguments={"x-max-priority": MAX_PRIORITY}
                             )
 
                 # Handle source_exchange and target_exchange if provided
@@ -104,9 +106,13 @@ class RabbitMQProcessor:
                     self.channel.exchange_declare(
                         exchange=self.source_exchange, exchange_type="fanout"
                     )
-                    # Declare a random exclusive queue for the source exchange
+                    # Declare a exclusive queue for the source exchange for this node
+                    if node_name is not None:
+                        queue_name = f"{self.source_exchange}_node_{node_name}"
+                    else:
+                        queue_name = f"{self.source_exchange}_node"
                     result = self.channel.queue_declare(
-                        queue="", exclusive=True, arguments={"x-max-priority": 10}
+                        queue=queue_name, exclusive=True, arguments={"x-max-priority": MAX_PRIORITY}
                     )
                     queue_name = result.method.queue
                     self.channel.queue_bind(
@@ -170,7 +176,7 @@ class RabbitMQProcessor:
             logger.error("Error inesperado al consumir mensajes: %s", e)
 
     def publish(
-        self, target, message, msg_type=None, exchange=False, headers=None, priority=10
+        self, target, message, msg_type=None, exchange=False, headers=None, priority=MAX_PRIORITY-1
     ):
         if not self.connection or self.connection.is_closed:
             logger.warning("Publish aborted: RabbitMQ connection is closed.")

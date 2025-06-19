@@ -3,6 +3,7 @@ import os
 import pika
 import multiprocessing
 import signal
+from common.election_logic import election_logic
 from common.leader_election import LeaderElector
 from common.client_state import ClientState
 from common.client_state_manager import ClientManager
@@ -12,7 +13,7 @@ from common.mom import RabbitMQProcessor
 from common.movies_handler import MoviesHandler
 
 EOS_TYPE = "EOS"
-
+REC_TYPE = "RECOVERY"
 
 class JoinBase:
     def __init__(self, config):
@@ -27,6 +28,7 @@ class JoinBase:
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
         self.stopped = False
+        self.first_run = True
 
         # Get the clean batch queue name from the config
         self.clean_batch_queue = self.config["DEFAULT"].get(
@@ -61,6 +63,7 @@ class JoinBase:
             manager=self.manager,
             ready_event=self.movies_handler_ready,
             node_id=self.node_id,
+            node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
         )
 
@@ -70,11 +73,14 @@ class JoinBase:
             node_id=self.node_id,
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
+            client_manager=self.client_manager,
+            extra_recovery=self._movies_table_recovery
         )
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.election_port)
+        self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 
+                                     self._election_logic)
 
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
@@ -86,6 +92,25 @@ class JoinBase:
         except Exception as e:
             self.log_info(f"Error closing connection: {e}")
 
+    def _election_logic(self, leader_id: int):
+        election_logic(
+            self,
+            first_run=self.first_run,
+            leader_id=leader_id,
+            node_id=self.node_id,
+            leader_queue=self.clean_batch_queue,
+            master_logic=self.master_logic,
+            rabbitmq_processor=self.rabbitmq_processor,
+            read_storage=self._read_storage
+        )
+    
+    def _read_storage(self):
+        self.movies_handler.read_storage()
+        self.client_manager.read_storage()
+
+    def _movies_table_recovery(self, node_id: int, queue_name: str):
+        self.movies_handler.recover_movies_table(node_id)    
+        
     def process(self):
         # Start the process to receive the movies table
         self.movies_handler.start()

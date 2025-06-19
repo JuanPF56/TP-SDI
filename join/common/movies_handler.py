@@ -11,7 +11,7 @@ EOS_TYPE = "EOS"
 
 
 class MoviesHandler(multiprocessing.Process):
-    def __init__(self, config, manager, ready_event, node_id, year_nodes_to_await):
+    def __init__(self, config, manager, ready_event, node_id, node_name, year_nodes_to_await):
         """
         Initialize the MoviesHandler class with the given configuration and manager.
         """
@@ -26,7 +26,7 @@ class MoviesHandler(multiprocessing.Process):
                 "movies_exchange", "movies_arg_post_2000"
             ),
         )
-        self.rabbitmq_processor.connect()
+        self.rabbitmq_processor.connect(node_name=node_name+f"_{self.node_id}")
         self.manager = manager
         self.movies = self.manager.dict()
 
@@ -114,7 +114,8 @@ class MoviesHandler(multiprocessing.Process):
                             "id": str(movie["id"]),
                             "original_title": movie["original_title"],
                         }
-                        self.movies[id_tuple].append(new_movie)
+                        if new_movie not in self.movies[id_tuple]:
+                            self.movies[id_tuple].append(new_movie)
                     logger.debug(
                         "Movies table updated for client %s, request %s: %s",
                         self.current_client_id,
@@ -174,3 +175,26 @@ class MoviesHandler(multiprocessing.Process):
             logger.debug("Movies table removed for client %s", client_id)
         else:
             logger.error("No movies table found for client %s", client_id)
+
+    def recover_movies_table(self, node_id):
+        """
+        Recover the movies tables for the given node ID.
+        This method will be called when a node requests recovery.
+        """
+        for client_id in self.movies:
+            movies_table = self.get_movies_table(client_id)
+            if movies_table:
+                self.rabbitmq_processor.publish(
+                    target=f"movies_exchange_node_{self.node_name + f'_{node_id}'}",
+                    message={movies_table},
+                    headers={"client_id": client_id},
+                )
+            year_eos_flags = self.year_eos_flags.get(client_id, {})
+            if year_eos_flags:
+                for node in year_eos_flags:
+                    self.rabbitmq_processor.publish(
+                        target=f"movies_exchange_node_{self.node_name + f'_{node_id}'}",
+                        message={"node_id": node},
+                        msg_type=EOS_TYPE,
+                        headers={"client_id": client_id},
+                    )

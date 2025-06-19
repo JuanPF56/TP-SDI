@@ -10,6 +10,12 @@ class ClientState:
         self.eos_flags = {}  # key: queue_name, value: dict(node_id: bool)
         self.amount_of_eos = nodes_to_await
 
+    def get_eos_flags(self):
+        """
+        Get the EOS flags for the client.
+        """
+        return self.eos_flags
+
     def mark_eos(self, queue_name, node_id=1):
         """
         Mark that an EOS message has been received for a specific queue and node

@@ -30,3 +30,10 @@ class ClientManager:
         key = client_id
         if key in self.clients:
             del self.clients[key]
+
+    def get_clients(self):
+        """
+        Get all clients managed by this ClientManager.
+        Returns a dictionary of client_id to ClientState.
+        """
+        return self.clients

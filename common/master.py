@@ -2,6 +2,9 @@ import json
 import multiprocessing
 import signal
 
+from common.election_logic import REC_TYPE
+from common.client_state_manager import ClientManager
+from common.client_state import ClientState
 from common.logger import get_logger
 from common.mom import RabbitMQProcessor
 
@@ -10,7 +13,7 @@ logger = get_logger("MasterLogic")
 EOS_TYPE = "EOS"
 
 class MasterLogic(multiprocessing.Process):
-    def __init__(self, config, manager, node_id, nodes_of_type, clean_queues):
+    def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, client_manager, extra_recovery=None):
         """
         Initialize the MasterLogic class with the given configuration and manager.
         """
@@ -31,6 +34,8 @@ class MasterLogic(multiprocessing.Process):
         self.current_node_id = 1
         self.nodes_of_type = nodes_of_type
         self.leader = multiprocessing.Event()
+        self.client_manager = client_manager
+        self.extra_recovery = extra_recovery
 
         if not self.rabbitmq_processor.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
@@ -68,6 +73,9 @@ class MasterLogic(multiprocessing.Process):
                         msg_type=msg_type,
                         headers=properties.headers,
                     )
+            elif msg_type == REC_TYPE:
+                self._handle_node_recovery(decoded, queue_name)
+                self.extra_recovery(decoded, queue_name) if self.extra_recovery else None                
             else:
                 # Round-robin distribution of messages to nodes
                 # TODO: Hash the message to determine the target node
@@ -105,6 +113,33 @@ class MasterLogic(multiprocessing.Process):
         finally:
             self._close_connection()
         
+    def _handle_node_recovery(self, data, queue_name):
+        """
+        Handle the recovery process for a node, sending all current EOS messages.
+        This method will be called when a node requests recovery.
+        """
+        node_id = data.get("node_id")
+        if not node_id:
+            logger.error("Node ID not found in recovery request.")
+            return
+        
+        logger.info(f"Node {node_id} requested recovery for queue {queue_name}.")
+        clients = self.client_manager.get_clients()
+        # Send all EOS messages to the requesting node for the specified queue
+        for client_id, client_state in clients.items():
+            if client_state:
+                eos_flags = client_state.get_eos_flags()
+                if queue_name in eos_flags:
+                    for target_node in eos_flags[queue_name]:
+                        self.rabbitmq_processor.publish(
+                            target=f"{queue_name}_node_{node_id}",
+                            message={"node_id": target_node},
+                            msg_type=EOS_TYPE,
+                            headers={"client_id": client_id}
+                        )
+        
+        logger.info(f"EOS messages sent to node {node_id} for queue {queue_name}.")
+
     def _close_connection(self):
         if not self.stopped:
             try:
