@@ -59,7 +59,7 @@ class ProductionFilter(FilterBase):
             client_state,
             target_queues=self.target_queues.get(queue_name),
         )
-        self._free_resources(client_state)
+        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queues):

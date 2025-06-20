@@ -19,14 +19,15 @@ class MoviesHandler(multiprocessing.Process):
         """
         super().__init__(target=self.run)
         self.config = config
+        self.source_exchange = config["DEFAULT"].get(
+            "movies_exchange", "movies_arg_post_2000"
+        )
         self.rabbitmq_processor = RabbitMQProcessor(
             config,
             [],
             [],
             config["DEFAULT"].get("rabbitmq_host", "rabbitmq"),
-            source_exchange=config["DEFAULT"].get(
-                "movies_exchange", "movies_arg_post_2000"
-            ),
+            source_exchange=self.source_exchange,
         )
         self.node_id = node_id
         self.node_name = node_name
@@ -192,29 +193,43 @@ class MoviesHandler(multiprocessing.Process):
         Recover the movies tables and EOS flags for the given node ID.
         Sends the list of movies and EOS messages for each client.
         """
-        type_of_node = self.node_name.split("_")[0]
+
+        rabbit = RabbitMQProcessor(
+            config=self.config,
+            source_queues=[],
+            target_queues=[],
+            target_exchange=self.source_exchange,
+        )
+        if not rabbit.connect():
+            logger.error("Error connecting to RabbitMQ. Exiting...")
+            return
+
         all_movies = self.get_movies_tables()
         all_eos_flags = self.get_year_eos_flags()
 
         for client_id, movie_list in all_movies.items():
-            logger.info("Recovering movies for client %s on node %s", client_id, node_id)
-
+            logger.info("Recovering movies for client %s, sending to exchange %s", client_id, self.source_exchange)
             # Send the movie list
-            self.rabbitmq_processor.publish(
-                target=f"movies_exchange_node_{type_of_node}_{node_id}",
+            rabbit.publish(
+                target=self.source_exchange,
                 message=movie_list,
+                exchange=True,
                 headers={"client_id": client_id},
             )
 
             # Send EOS messages if present
             client_eos_flags = all_eos_flags.get(client_id, {})
             for node in client_eos_flags:
-                self.rabbitmq_processor.publish(
-                    target=f"movies_exchange_node_{type_of_node}_{node_id}",
+                rabbit.publish(
+                    target=self.source_exchange,
                     message={"node_id": node},
+                    exchange=True,
                     msg_type=EOS_TYPE,
                     headers={"client_id": client_id},
+                    priority=1
                 )
+
+        rabbit.close()
     
     def get_movies_tables(self):
         """

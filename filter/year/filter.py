@@ -76,7 +76,7 @@ class YearFilter(FilterBase):
                 self.target_exchange if input_queue == self.source_queues[0] else None
             ),
         )
-        self._free_resources(client_state)
+        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queues):
