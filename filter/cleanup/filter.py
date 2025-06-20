@@ -3,6 +3,7 @@ from collections import defaultdict
 
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
+from common.election_logic import recover_node
 from common.eos_handling import handle_eos
 from common.filter_base import FilterBase, EOS_TYPE
 
@@ -115,7 +116,7 @@ class CleanupFilter(FilterBase):
             client_state,
             target_queues=self.target_queues.get(queue_name),
         )
-        self._free_resources(client_state)
+        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         try:
@@ -200,6 +201,7 @@ class CleanupFilter(FilterBase):
         """
         logger.info("CleanupFilter is starting up")
         self.elector.start_election()
+        recover_node(self, self.main_source_queues)
         self.run_consumer()
 
 if __name__ == "__main__":

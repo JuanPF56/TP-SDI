@@ -11,7 +11,7 @@ from collections import defaultdict
 from common.duplicate_handler import DuplicateHandler
 from common.leader_election import LeaderElector
 
-from common.election_logic import election_logic
+from common.election_logic import election_logic, recover_node
 from common.eos_handling import handle_eos
 from common.logger import get_logger
 from common.master import MasterLogic
@@ -136,7 +136,7 @@ class SentimentAnalyzer:
             client_state,
             target_queues=self.target_queues,
         )
-        self._free_resources(client_state)
+        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queue):
@@ -243,6 +243,7 @@ class SentimentAnalyzer:
             self.master_logic.start()
 
             self.elector.start_election()
+            recover_node(self, self.clean_batch_queue)
             
             logger.info("Starting message consumption...")
             self.rabbitmq_processor.consume(self.callback)

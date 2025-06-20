@@ -1,6 +1,7 @@
 import configparser
 from collections import defaultdict
 
+from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
@@ -58,7 +59,7 @@ class ProductionFilter(FilterBase):
             client_state,
             target_queues=self.target_queues.get(queue_name),
         )
-        self._free_resources(client_state)
+        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queues):
@@ -179,6 +180,7 @@ class ProductionFilter(FilterBase):
         """
         logger.info("ProductionFilter is starting up")
         self.elector.start_election()
+        recover_node(self, self.main_source_queues)
         self.run_consumer()
 
 

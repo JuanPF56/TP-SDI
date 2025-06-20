@@ -19,16 +19,18 @@ class MoviesHandler(multiprocessing.Process):
         """
         super().__init__(target=self.run)
         self.config = config
+        self.source_exchange = config["DEFAULT"].get(
+            "movies_exchange", "movies_arg_post_2000"
+        )
         self.rabbitmq_processor = RabbitMQProcessor(
             config,
             [],
             [],
             config["DEFAULT"].get("rabbitmq_host", "rabbitmq"),
-            source_exchange=config["DEFAULT"].get(
-                "movies_exchange", "movies_arg_post_2000"
-            ),
+            source_exchange=self.source_exchange,
         )
         self.node_id = node_id
+        self.node_name = node_name
         self.stopped = False
         self.rabbitmq_processor.connect(node_name=node_name)
         self.manager = manager
@@ -171,6 +173,8 @@ class MoviesHandler(multiprocessing.Process):
         id_tuple = client_id
         if id_tuple not in self.movies:
             return None
+        if self.movies[id_tuple] is None or len(self.movies[id_tuple]) == 0:
+            return None
         return list(self.movies[id_tuple])
 
     def remove_movies_table(self, client_id):
@@ -186,31 +190,66 @@ class MoviesHandler(multiprocessing.Process):
 
     def recover_movies_table(self, node_id):
         """
-        Recover the movies tables for the given node ID.
-        This method will be called when a node requests recovery.
+        Recover the movies tables and EOS flags for the given node ID.
+        Sends the list of movies and EOS messages for each client.
         """
-        if not self.movies and not self.year_eos_flags:
-            logger.warning("No movies tables or EOS flags to recover.")
+
+        rabbit = RabbitMQProcessor(
+            config=self.config,
+            source_queues=[],
+            target_queues=[],
+            target_exchange=self.source_exchange,
+        )
+        if not rabbit.connect():
+            logger.error("Error connecting to RabbitMQ. Exiting...")
             return
-        for client_id in self.movies:
-            movies_table = self.get_movies_table(client_id)
-            type_of_node = self.node_name.split("_")[0]
-            if movies_table:
-                self.rabbitmq_processor.publish(
-                    target=f"movies_exchange_node_{type_of_node}_{node_id}",
-                    message={movies_table},
+
+        all_movies = self.get_movies_tables()
+        all_eos_flags = self.get_year_eos_flags()
+
+        for client_id, movie_list in all_movies.items():
+            logger.info("Recovering movies for client %s, sending to exchange %s", client_id, self.source_exchange)
+            # Send the movie list
+            rabbit.publish(
+                target=self.source_exchange,
+                message=movie_list,
+                exchange=True,
+                headers={"client_id": client_id},
+            )
+
+            # Send EOS messages if present
+            client_eos_flags = all_eos_flags.get(client_id, {})
+            for node in client_eos_flags:
+                rabbit.publish(
+                    target=self.source_exchange,
+                    message={"node_id": node},
+                    exchange=True,
+                    msg_type=EOS_TYPE,
                     headers={"client_id": client_id},
+                    priority=1
                 )
-            year_eos_flags = self.year_eos_flags.get(client_id, {})
-            if year_eos_flags:
-                for node in year_eos_flags:
-                    self.rabbitmq_processor.publish(
-                        target=f"movies_exchange_node_{type_of_node}_{node_id}",
-                        message={"node_id": node},
-                        msg_type=EOS_TYPE,
-                        headers={"client_id": client_id},
-                    )
+
+        rabbit.close()
     
+    def get_movies_tables(self):
+        """
+        Get a deep copy of all movies tables.
+        """
+        return {
+            client_id: list(movies)
+            for client_id, movies in self.movies.items()
+            if movies is not None and len(movies) > 0
+        }
+    
+    def get_year_eos_flags(self):
+        """
+        Get a deep copy of all year EOS flags.
+        """
+        eos_copy = {}
+        for client_id, eos_dict in self.year_eos_flags.items():
+            eos_copy[client_id] = dict(eos_dict)
+        return eos_copy
+
     def write_storage(self, key, data, client_id):
         storage_dir = "./storage"
         os.makedirs(storage_dir, exist_ok=True)

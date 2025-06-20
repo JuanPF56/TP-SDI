@@ -4,7 +4,7 @@ import pika
 import multiprocessing
 import signal
 from common.duplicate_handler import DuplicateHandler
-from common.election_logic import election_logic
+from common.election_logic import election_logic, recover_node
 from common.leader_election import LeaderElector
 from common.client_state import ClientState
 from common.client_state_manager import ClientManager
@@ -76,8 +76,8 @@ class JoinBase:
             nodes_of_type=self.nodes_of_type,
             clean_queues=self.clean_batch_queue,
             client_manager=self.client_manager,
-            extra_recovery=self._movies_table_recovery,
-            started_event=self.master_logic_started_event
+            started_event=self.master_logic_started_event,
+            movies_handler=self.movies_handler,
         )
 
         self.duplicate_handler = DuplicateHandler()
@@ -109,9 +109,6 @@ class JoinBase:
         self.movies_handler.read_storage()
         self.client_manager.read_storage()
 
-    def _movies_table_recovery(self, node_id: int, queue_name: str):
-        self.movies_handler.recover_movies_table(node_id)    
-        
     def process(self):
         # Start the process to receive the movies table
         self.movies_handler.start()
@@ -119,6 +116,7 @@ class JoinBase:
         # Start the master logic process
         self.master_logic.start()
         self.elector.start_election()
+        recover_node(self, self.clean_batch_queue)
 
         # Start the loop to receive the batches
         self.receive_batch()
@@ -170,7 +168,7 @@ class JoinBase:
             client_state,
             target_queues=self.output_queue,
         )
-        self._free_resources(client_state)
+        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.input_queue):
