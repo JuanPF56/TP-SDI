@@ -5,19 +5,17 @@ This module implements the ProtocolGateway class, which handles communication wi
 
 import socket
 import json
-
+import threading
 import common.receiver as receiver
 import common.sender as sender
 from common.decoder import Decoder
 from common.protocol import (
     SIZE_OF_HEADER,
     TIPO_MENSAJE,
-    SIZE_OF_UUID,
     SIZE_OF_HEADER_RESULTS,
     pack_result_header,
     unpack_header,
 )
-
 from common.logger import get_logger
 
 logger = get_logger("Protocol Gateway")
@@ -29,63 +27,22 @@ TIMEOUT_PAYLOAD = 3600
 
 
 class ProtocolGateway:
-    def __init__(self, client_socket: socket.socket, client_id: str):
+    def __init__(
+        self,
+        gateway_socket: socket.socket,
+        client_id: str,
+        shared_socket_lock: threading.Lock,
+    ):
         self._client_id = client_id
-        self._client_socket = client_socket
+        self._gateway_socket = gateway_socket
+        self._socket_lock = shared_socket_lock
         self._decoder = Decoder()
 
-    def client_is_connected(self) -> bool:
+    def gateway_is_connected(self) -> bool:
         """
-        Check if the client is connected
+        Check if the gateway is connected
         """
-        return self._client_socket is not None and self._client_socket.fileno() != -1
-
-    def stop_client(self) -> None:
-        """
-        Close the client socket
-        """
-        try:
-            if self._client_socket:
-                logger.info("Closing client socket")
-                try:
-                    self._client_socket.shutdown(socket.SHUT_RDWR)
-                    logger.info("Client socket shut down")
-                except OSError as e:
-                    logger.error("Socket already shut down: %s", e)
-                finally:
-                    if self._client_socket:
-                        self._client_socket.close()
-                        logger.info("Client socket closed")
-                        self._client_socket = None
-
-        except Exception as e:
-            logger.error("Failed to close client socket: %s", e)
-            self._client_socket = None
-
-    def send_client_id(self, client_id: str):
-        """
-        Send the client ID to the connected client.
-        """
-        try:
-            encoded_client_id = client_id.encode("utf-8")
-            client_id_len = len(encoded_client_id)
-            if client_id_len != SIZE_OF_UUID:
-                logger.error("Client ID length is not %d bytes", SIZE_OF_UUID)
-                raise ValueError("Client ID length is not 36 bytes")
-
-            sender.send(self._client_socket, encoded_client_id)
-
-        except sender.SenderConnectionLostError as e:
-            logger.error("Connection error while sending client ID: %s", e)
-            self.stop_client()
-
-        except sender.SenderError as e:
-            logger.error("Connection error while sending client ID: %s", e)
-            self.stop_client()
-
-        except Exception as e:
-            logger.error("Unexpected error while sending client ID: %s", e)
-            self.stop_client()
+        return self._gateway_socket is not None and self._gateway_socket.fileno() != -1
 
     def receive_header(self) -> tuple | None:
         """
@@ -93,12 +50,11 @@ class ProtocolGateway:
         """
         try:
             header = receiver.receive_data(
-                self._client_socket, SIZE_OF_HEADER, timeout=TIMEOUT_HEADER
+                self._gateway_socket, SIZE_OF_HEADER, timeout=TIMEOUT_HEADER
             )
 
             if not header or len(header) != SIZE_OF_HEADER:
                 logger.error("Invalid or incomplete header received")
-                self.stop_client()
                 return None
 
             (
@@ -113,7 +69,6 @@ class ProtocolGateway:
 
             if message_code is None:
                 logger.error("Unknown message code: %s", type_of_batch)
-                self.stop_client()
                 return None
 
             return (
@@ -127,17 +82,14 @@ class ProtocolGateway:
 
         except TimeoutError as e:
             logger.error("Timeout waiting for receiving header: %s", e)
-            self.stop_client()
             return None
 
         except receiver.ReceiverError as e:
             logger.error("Connection error while receiving header: %s", e)
-            self.stop_client()
             return None
 
         except Exception as e:
             logger.error("Unexpected error while receiving header: %s", e)
-            self.stop_client()
             return None
 
     def receive_payload(self, payload_len: int) -> bytes | None:
@@ -150,36 +102,31 @@ class ProtocolGateway:
 
         try:
             data = receiver.receive_data(
-                self._client_socket, payload_len, timeout=TIMEOUT_PAYLOAD
+                self._gateway_socket, payload_len, timeout=TIMEOUT_PAYLOAD
             )
 
             if data is None:
                 logger.error("No data received. Client may have disconnected.")
-                self.stop_client()
                 return None
 
             if len(data) != payload_len:
                 logger.error(
                     "Expected %d bytes, but received %d bytes", payload_len, len(data)
                 )
-                self.stop_client()
                 return None
 
             return data
 
         except TimeoutError as e:
             logger.error("Timeout waiting for receiving payload: %s", e)
-            self.stop_client()
             return None
 
         except receiver.ReceiverError as e:
             logger.error("Connection error while receiving payload: %s", e)
-            self.stop_client()
             return None
 
         except Exception as e:
             logger.error("Unexpected error while receiving payload: %s", e)
-            self.stop_client()
             return None
 
     def process_payload(self, message_code: str, payload: bytes) -> list | None:
@@ -187,7 +134,7 @@ class ProtocolGateway:
         Process the payload
         """
         decoded_payload = payload.decode("utf-8")
-        if message_code == "BATCH_MOVIES":
+        if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
             movies_from_batch = self._decoder.decode_movies(decoded_payload)
             if not movies_from_batch:
                 logger.error("No movies received or invalid format")
@@ -197,7 +144,7 @@ class ProtocolGateway:
                 movie.log_movie_info()
             return movies_from_batch
 
-        elif message_code == "BATCH_CREDITS":
+        elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
             credits_from_batch = self._decoder.decode_credits(decoded_payload)
             if not credits_from_batch:
                 # logger.error("No credits received or incomplete data")
@@ -208,7 +155,7 @@ class ProtocolGateway:
                     credit.log_credit_info()
             return credits_from_batch
 
-        elif message_code == "BATCH_RATINGS":
+        elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
             ratings_from_batch = self._decoder.decode_ratings(decoded_payload)
             if not ratings_from_batch:
                 logger.error("No ratings received or incomplete data")
@@ -223,19 +170,15 @@ class ProtocolGateway:
             logger.error("Unknown message code: %s", message_code)
             return None
 
-    def _build_result_message(self, result_data):
+    def _build_result_message(self, result_data) -> tuple:
         tipo_mensaje = TIPO_MENSAJE["RESULTS"]
-
-        # client_id not needed
 
         query_id_str = result_data.get("query", "Q0")  # fallback for missing query
         # Extract number from query_id_str (Q1 -> 1)
         query_id = int(query_id_str[1:])
 
-        result_of_query = result_data.get("results", {})
-
         # Serialize payload
-        payload = json.dumps(result_of_query).encode()
+        payload = json.dumps(result_data).encode()
         payload_len = len(payload)
 
         # Header: tipo(1 byte), query_id(1 byte), payload_len(4 bytes)
@@ -248,11 +191,9 @@ class ProtocolGateway:
             )
             raise ValueError("Header length mismatch")
 
-        full_message = header + payload
+        return header, payload
 
-        return full_message
-
-    def send_result(self, result_data: dict) -> None:
+    def send_result(self, result_data: dict) -> bool:
         """
         Send the result message to the client.
         result_data should be a dictionary with the following structure:
@@ -262,20 +203,32 @@ class ProtocolGateway:
             "results": { ... }
         }
         """
-        message = self._build_result_message(result_data)
-
         try:
-            logger.debug("Sending result message: %s", message)
-            sender.send(self._client_socket, message)
+            header, payload = self._build_result_message(result_data)
+            if len(header) != SIZE_OF_HEADER_RESULTS:
+                logger.error(
+                    "Header length is not %d bytes, got %d bytes",
+                    SIZE_OF_HEADER_RESULTS,
+                    len(header),
+                )
+                return False
+
+            logger.debug(
+                "Sending result message:\t Header: %s\t Payload: %s", header, payload
+            )
+            with self._socket_lock:
+                sender.send(self._gateway_socket, header)
+                sender.send(self._gateway_socket, payload)
+            return True
 
         except sender.SenderConnectionLostError as e:
             logger.error("Connection error while sending result: %s", e)
-            self.stop_client()
+            return False
 
         except sender.SenderError as e:
             logger.error("Connection error while sending result: %s", e)
-            self.stop_client()
+            return False
 
         except Exception as e:
             logger.error("Unexpected error while sending result: %s", e)
-            self.stop_client()
+            return False

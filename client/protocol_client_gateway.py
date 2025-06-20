@@ -385,6 +385,7 @@ class ProtocolClient:
 
         try:
             result_of_query = json.loads(payload_bytes.decode())
+            results = result_of_query.get("results", {})
             logger.debug("Received JSON response: %s", result_of_query)
 
             # Armar la estructura respuesta:
@@ -394,7 +395,7 @@ class ProtocolClient:
             # }
             return {
                 "query_id": f"Q{query_id}",
-                "results": result_of_query,
+                "results": results,
             }
 
         except json.JSONDecodeError:

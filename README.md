@@ -151,7 +151,7 @@ pip install -r requirements.txt
 > Nota: Si ya tienes desacrgados los datasets, puedes correr el flag `-skip_download`para saltear la descarga de los datasets
 >
 >```bash
-> ./generate-compose.sh -skip_download
+> sudo ./generate-compose.sh -skip_download -cant_clientes 4
 >```
 
 ---

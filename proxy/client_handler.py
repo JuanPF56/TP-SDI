@@ -1,17 +1,15 @@
-# proxy/threads/client_handler.py
+"""ClientHandler class to manage communication between clients and gateways."""
 
-import socket
-import struct
 import threading
 import uuid
 import logging
+import traceback
 
 from common.protocol import (
     SIZE_OF_HEADER,
     TIPO_MENSAJE,
-    SIZE_OF_HEADER_RESULTS,
+    pack_header,
     unpack_header,
-    unpack_result_header,
 )
 import common.receiver as receiver
 import common.sender as sender
@@ -24,207 +22,121 @@ TIMEOUT_HEADER = 3600
 TIMEOUT_PAYLOAD = 3600
 
 
-def _forward_client_to_gateway(source: socket.socket, destination: socket.socket):
-    logger.debug(
-        "⬅️ FORWARD thread started: source=%s -> destination=%s",
-        source.getsockname(),
-        destination.getsockname(),
-    )
+class ClientHandler:
+    def __init__(self, proxy, client_socket, addr, gateway_id, client_id=None):
+        self.proxy = proxy
+        self.client_socket = client_socket
+        self.addr = addr
+        self.gateway_id = gateway_id
 
-    try:
+        self.client_id = client_id or str(uuid.uuid4())
+        self.gateway_socket = self.proxy._gateways_connected.get(gateway_id)
+        if not self.gateway_socket:
+            raise RuntimeError(
+                f"No gateway socket found for gateway ID {self.gateway_id}"
+            )
+
+    def start(self):
+        try:
+            self._register_client()
+
+            threading.Thread(
+                target=self._forward_client_to_gateway,
+                daemon=True,
+            ).start()
+
+        except Exception as e:
+            logger.error("Error in client handler: %s", e)
+            logger.debug("Exception traceback:\n%s", traceback.format_exc())
+            self.client_socket.close()
+
+    def _register_client(self):
+        logger.info(
+            "ClientHandler starting with client_id=%s gateway_id=%s",
+            self.client_id,
+            self.gateway_id,
+        )
+
+        logger.info(
+            "Connected client %s to gateway %s:%s",
+            self.client_id,
+            *self.gateway_socket.getsockname(),
+        )
+
+        encoded_id = self.client_id.encode("utf-8")
+        payload_length = len(encoded_id)
+
+        header = pack_header(
+            message_id=0,
+            tipo_de_mensaje=TIPO_MENSAJE["NEW_CLIENT"],
+            encoded_id=encoded_id,
+            batch_number=0,
+            is_last_batch=0,
+            payload_length=payload_length,
+        )
+        sender.send(self.client_socket, encoded_id)
+
+        # Registrar en estructuras del proxy
+        self.proxy._connected_clients[self.client_id] = (
+            self.client_socket,
+            self.gateway_socket,
+            self.addr,
+        )
+        self.proxy._clients_per_gateway[self.gateway_id].append(self.client_id)
+
+        # Asegurar longitud 36 bytes
+        if len(encoded_id) > 36:
+            logger.error("Client ID %s too long, truncating.", self.client_id)
+            encoded_id = encoded_id[:36]
+        elif len(encoded_id) < 36:
+            logger.warning("Client ID %s too short, padding.", self.client_id)
+            encoded_id = encoded_id.ljust(36, b"\x00")
+
+        with self.proxy._gateway_locks[self.gateway_id]:
+            sender.send(self.gateway_socket, header)
+
+        logger.info(
+            "Sent client ID %s to gateway and client %s", self.client_id, self.addr
+        )
+
+    def _forward_client_to_gateway(self):
+        logger.debug("FORWARD client ➡️ gateway")
+
         while True:
-            # logger.debug("Waiting from source...")
-            if source.fileno() == -1:
-                logger.debug("Source socket is closed, exiting forward thread.")
-                break
-            if destination.fileno() == -1:
-                logger.debug("Destination socket is closed, exiting forward thread.")
-                break
-            if not source or not destination:
-                logger.debug(
-                    "Source or destination socket is None, exiting forward thread."
+            try:
+
+                if (
+                    self.client_socket.fileno() == -1
+                    or self.gateway_socket.fileno() == -1
+                ):
+                    break
+
+                header = receiver.receive_data(
+                    self.client_socket, SIZE_OF_HEADER, timeout=TIMEOUT_HEADER
                 )
-                break
+                if not header or len(header) != SIZE_OF_HEADER:
+                    break
 
-            header = receiver.receive_data(
-                source, SIZE_OF_HEADER, timeout=TIMEOUT_HEADER
-            )
-            if not header:
-                logger.debug("Connection closed while reading header.")
-                break
-            if len(header) != SIZE_OF_HEADER:
-                logger.error(
-                    "Incomplete header received from source, expected %d bytes, got %d",
-                    SIZE_OF_HEADER,
-                    len(header),
-                )
-                logger.error("Header content: %s", header)
-                break
-
-            (
-                message_id,
-                tipo_mensaje,
-                encoded_id,
-                _current_batch,
-                is_last_batch_o_query_id,
-                payload_len,
-            ) = unpack_header(header)
-
-            if int(tipo_mensaje) not in TIPO_MENSAJE.values():
-                logger.warning("Received unknown message type: %r", tipo_mensaje)
-
-            payload = receiver.receive_data(
-                source, payload_len, timeout=TIMEOUT_PAYLOAD
-            )
-            if len(payload) != payload_len:
-                logger.error(
-                    "Incomplete payload received, expected %d bytes, got %d",
-                    payload_len,
-                    len(payload),
-                )
-                break
-            if not payload:
-                logger.debug("Connection closed while reading payload.")
-                break
-
-            sender.send(destination, header)
-            sender.send(destination, payload)
-
-    except Exception as e:
-        logger.error("Forwarding error: %s", e)
-
-
-def _forward_gateway_to_client(source: socket.socket, destination: socket.socket):
-    logger.debug(
-        "⬅️ FORWARD thread started: source=%s -> destination=%s",
-        source.getsockname(),
-        destination.getsockname(),
-    )
-
-    try:
-        while True:
-            logger.debug("Waiting from source...")
-            if source.fileno() == -1:
-                logger.error("Source socket is closed, exiting forward thread.")
-                break
-            if destination.fileno() == -1:
-                logger.error("Destination socket is closed, exiting forward thread.")
-                break
-            if not source or not destination:
-                logger.error(
-                    "Source or destination socket is None, exiting forward thread."
-                )
-                break
-
-            header = receiver.receive_data(
-                source, SIZE_OF_HEADER_RESULTS, timeout=TIMEOUT_HEADER
-            )
-            logger.debug("Received header: %s, en hexa: %s", header, header.hex())
-
-            if not header:
-                logger.error("Connection closed while reading header.")
-                break
-            if len(header) != SIZE_OF_HEADER_RESULTS:
-                logger.error(
-                    "Incomplete header received from source, expected %d bytes, got %d",
-                    SIZE_OF_HEADER_RESULTS,
-                    len(header),
-                )
-                break
-
-            tipo_mensaje, query_id, payload_len = unpack_result_header(header)
-
-            if int(tipo_mensaje) == int(TIPO_MENSAJE["RESULTS"]):
-                logger.debug(
-                    "Received results header: tipo_mensaje=%d, query_id=%d, payload_len=%d",
+                (
+                    message_id,
                     tipo_mensaje,
-                    query_id,
+                    encoded_id,
+                    _current_batch,
+                    is_last_batch_o_query_id,
                     payload_len,
+                ) = unpack_header(header)
+
+                payload = receiver.receive_data(
+                    self.client_socket, payload_len, timeout=TIMEOUT_PAYLOAD
                 )
+                if not payload or len(payload) != payload_len:
+                    break
 
-            if int(tipo_mensaje) not in TIPO_MENSAJE.values():
-                logger.warning("Received unknown message type: %r", tipo_mensaje)
+                lock = self.proxy._gateway_locks[self.gateway_id]
+                with lock:
+                    sender.send(self.gateway_socket, header)
+                    sender.send(self.gateway_socket, payload)
 
-            payload = receiver.receive_data(
-                source, payload_len, timeout=TIMEOUT_PAYLOAD
-            )
-            if not payload:
-                logger.error("Connection closed while reading payload.")
+            except Exception as e:
+                logger.error("Forward client -> gateway failed: %s", e)
                 break
-            if len(payload) != payload_len:
-                logger.error(
-                    "Incomplete payload received, expected %d bytes, got %d",
-                    payload_len,
-                    len(payload),
-                )
-                break
-
-            if int(tipo_mensaje) not in TIPO_MENSAJE.values() and payload:
-                logger.error(
-                    "Forwarding error PAYLOAD: %s",
-                    payload.decode("utf-8", errors="ignore"),
-                )
-
-            sender.send(destination, header)
-            sender.send(destination, payload)
-
-    except Exception as e:
-        logger.error("Forwarding error: %s", e)
-
-
-def client_handler(proxy, client_socket, addr, gateway):
-    client_id = str(uuid.uuid4())
-    host, port = gateway
-
-    try:
-        gateway_socket = socket.create_connection((host, port), timeout=None)
-        logger.info("Connected to %s:%s for client %s", host, port, client_id)
-
-        proxy._connected_clients[client_id] = (client_socket, gateway_socket)
-
-        encoded_client_id = client_id.encode("utf-8")
-        if len(encoded_client_id) > 36:
-            logger.error(
-                "Client ID %s exceeds maximum length of 36 bytes, truncating.",
-                client_id,
-            )
-            encoded_client_id = encoded_client_id[:36]
-        elif len(encoded_client_id) < 36:
-            logger.warning(
-                "Client ID %s is shorter than 36 bytes, padding with null bytes.",
-                client_id,
-            )
-            encoded_client_id = encoded_client_id.ljust(36, b"\x00")
-
-        sender.send(gateway_socket, encoded_client_id)
-        logger.info(
-            "Sent client ID %s as encoded %s to gateway %s:%s",
-            client_id,
-            encoded_client_id.decode("utf-8"),
-            host,
-            port,
-        )
-
-        sender.send(client_socket, encoded_client_id)
-        logger.info(
-            "Sent client ID %s as encoded %s to client %s",
-            encoded_client_id.decode("utf-8"),
-            client_id,
-            addr,
-        )
-
-        threading.Thread(
-            target=_forward_client_to_gateway,
-            args=(client_socket, gateway_socket),
-            daemon=True,
-        ).start()
-
-        threading.Thread(
-            target=_forward_gateway_to_client,
-            args=(gateway_socket, client_socket),
-            daemon=True,
-        ).start()
-
-    except Exception as e:
-        logger.error("Error in client handler: %s", e)
-        client_socket.close()

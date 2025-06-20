@@ -79,7 +79,8 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 depends[node] = {"condition": "service_started"}
 
         peer_list = [
-            f"filter_{subtype}_{j}:{election_port_start + j}" for j in range(1, count + 1)
+            f"filter_{subtype}_{j}:{election_port_start + j}"
+            for j in range(1, count + 1)
         ]
         peers_str = ",".join(peer_list)
 
@@ -113,7 +114,8 @@ def generate_system_compose(filename="docker-compose.system.yml"):
     # Sentiment analyzer nodes
     sentiment_node_names = []
     peer_list = [
-        f"sentiment_analyzer_{j}:{election_port_start + j}" for j in range(1, sentiment_analyzer + 1)
+        f"sentiment_analyzer_{j}:{election_port_start + j}"
+        for j in range(1, sentiment_analyzer + 1)
     ]
     peers_str = ",".join(peer_list)
 
@@ -135,8 +137,8 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": sentiment_analyzer,
                 "NODE_NAME": name,
-                "ELECTION_PORT": str(election_port_start + i),  
-                "PEERS": peers_str,                              
+                "ELECTION_PORT": str(election_port_start + i),
+                "PEERS": peers_str,
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
@@ -145,7 +147,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "networks": ["testing_net"],
         }
 
-    election_port_start += sentiment_analyzer  
+    election_port_start += sentiment_analyzer
 
     # Join nodes
     join_node_names = []
@@ -174,8 +176,8 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                     "NODES_OF_TYPE": count,
                     "YEAR_NODES_TO_AWAIT": str(year),
                     "NODE_NAME": name,
-                    "ELECTION_PORT": str(election_port_start + i),  
-                    "PEERS": peers_str,                              
+                    "ELECTION_PORT": str(election_port_start + i),
+                    "PEERS": peers_str,
                 },
                 "depends_on": {
                     "rabbitmq": {"condition": "service_healthy"},
@@ -219,6 +221,21 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "networks": ["testing_net"],
         }
 
+    # proxy node for gateways
+    services["proxy"] = {
+        "container_name": "proxy",
+        "image": "proxy:latest",
+        "volumes": [
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "./proxy/config.ini:/app/config.ini",
+        ],
+        "environment": {
+            "NODE_NAME": "proxy",
+        },
+        "networks": ["testing_net"],
+        "ports": ["8000:8000", "9000:9000"],
+    }
+
     # Gateway nodes
     full_dependencies = (
         filter_node_names + sentiment_node_names + join_node_names + query_node_names
@@ -240,6 +257,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
+                "proxy": {"condition": "service_started"},
             },
             "networks": ["testing_net"],
             "ports": [f"{9000+i}:{9000+i}"],
@@ -250,28 +268,6 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "retries": 10,
             },
         }
-
-    # proxy node for gateways
-    services["proxy"] = {
-        "container_name": "proxy",
-        "image": "proxy:latest",
-        "volumes": [
-            "/var/run/docker.sock:/var/run/docker.sock",
-            "./proxy/config.ini:/app/config.ini",
-        ],
-        "environment": {
-            "GATEWAYS": ",".join(
-                [
-                    f"{name}:{9000+i}"
-                    for i, name in enumerate(gateway_node_names, start=1)
-                ]
-            ),
-            "NODE_NAME": "proxy",
-        },
-        "depends_on": gateway_depends,
-        "networks": ["testing_net"],
-        "ports": ["9000:9000"],
-    }
 
     # Coordinator node
     monitored_nodes = (

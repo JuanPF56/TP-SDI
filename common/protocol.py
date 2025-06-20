@@ -6,8 +6,19 @@ SIZE_OF_UINT8 = 1
 SIZE_OF_UINT16 = 2
 SIZE_OF_UINT32 = 4
 
+TIPO_MENSAJE = {
+    "NEW_CLIENT": 0,
+    "BATCH_MOVIES": 1,
+    "BATCH_CREDITS": 2,
+    "BATCH_RATINGS": 3,
+    "RESULTS": 4,
+    "DISCONNECT_CLIENT": 5,
+}
+
+SIZE_OF_TIPO_MENSAJE = SIZE_OF_UINT8  # 1 byte for message type
+
 """
- Protocol for sending batches from client to server:
+Protocol for sending batches from client to server:
     Header:
         4 bytes: message_id
         1 byte: tipo_de_mensaje
@@ -17,22 +28,14 @@ SIZE_OF_UINT32 = 4
         4 bytes: payload_len
     Payload:
         payload_len bytes: data
- """
-
-TIPO_MENSAJE = {
-    "CLIENT_ID": 0,
-    "BATCH_MOVIES": 1,
-    "BATCH_CREDITS": 2,
-    "BATCH_RATINGS": 3,
-    "RESULTS": 4,
-    "DISCONNECT": 5,
-}
+"""
 
 SIZE_OF_UUID = 36  # El tamaño del UUID como string (36 caracteres)
 
 SIZE_OF_HEADER = (
     4 + 1 + SIZE_OF_UUID + 4 + 1 + 4
 )  # message_id (4 bytes) + tipo_de_mensaje (1 byte) + UUID (36 bytes) + nro_batch_actual (4 bytes) + es_el_ultimo_batch (1 byte) + payload_len (4 bytes)
+
 HEADER_FORMAT = ">IB36sIBI"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
@@ -85,6 +88,7 @@ IS_LAST_BATCH_FLAG = 1
 SIZE_OF_HEADER_RESULTS = (
     1 + 1 + 4
 )  # tipo_de_mensaje (1 byte) + query_id (1 byte) + payload_len (4 bytes)
+
 RESULT_HEADER_FORMAT = ">BBI"
 RESULT_HEADER_SIZE = struct.calcsize(RESULT_HEADER_FORMAT)
 

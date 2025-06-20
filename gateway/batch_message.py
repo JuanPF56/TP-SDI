@@ -6,7 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class BatchMessage:
     message_id: int
-    message_code: str
+    message_code: int
     client_id: str
     current_batch: int
     is_last_batch: bool

@@ -7,11 +7,12 @@ import json
 import socket
 import threading
 from dataclasses import asdict, is_dataclass
+import tempfile
 
 from protocol_gateway_client import ProtocolGateway
 from batch_message import BatchMessage
 
-from common.protocol import TIPO_MENSAJE, IS_LAST_BATCH_FLAG
+from common.protocol import IS_LAST_BATCH_FLAG, TIPO_MENSAJE
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
@@ -28,7 +29,11 @@ class ConnectedClient(threading.Thread):
     """
 
     def __init__(
-        self, client_id: str, client_socket: socket.socket, client_addr, config
+        self,
+        client_id: str,
+        gateway_socket: socket.socket,
+        config,
+        shared_socket_lock: threading.Lock,
     ):
         """
         Initialize the ConnectedClient instance.
@@ -39,10 +44,15 @@ class ConnectedClient(threading.Thread):
         super().__init__()
         self.config = config
         self._client_id = client_id
-        self._client_socket = client_socket
-        self._client_addr = client_addr
-        self._protocol_gateway = ProtocolGateway(client_socket, client_id)
+        self._gateway_socket = gateway_socket
+        self._protocol_gateway = ProtocolGateway(
+            gateway_socket, client_id, shared_socket_lock
+        )
         self.was_closed = False
+
+        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
+        self.accumulated_batches = 0
+        self.batches_stored = []
 
         self.recovery_mode = self.config.getboolean(
             "DEFAULT", "RECOVERY_MODE", fallback=True
@@ -52,10 +62,6 @@ class ConnectedClient(threading.Thread):
             self._load_batches_from_disk()
         else:
             logger.info("Recovery mode is disabled for client %s", self._client_id)
-
-        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
-        self.accumulated_batches = 0
-        self.batches_stored = []
 
         self._expected_datasets_to_receive_per_request = DATASETS_PER_REQUEST
         self._received_datasets = 0
@@ -73,6 +79,20 @@ class ConnectedClient(threading.Thread):
         self._stop_flag = threading.Event()
 
         self._condition = threading.Condition()
+
+        self.broker = RabbitMQProcessor(
+            config=self.config,
+            source_queues=[],  # Connected client does not consume messages, so empty list
+            target_queues=[
+                self.config["DEFAULT"]["movies_raw_queue"],
+                self.config["DEFAULT"]["credits_raw_queue"],
+                self.config["DEFAULT"]["ratings_raw_queue"],
+            ],
+            rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"],
+        )
+        connected = self.broker.connect()
+        if not connected:
+            raise RuntimeError("Failed to connect to RabbitMQ.")
 
     def add_sent_answer(self):
         """
@@ -103,12 +123,6 @@ class ConnectedClient(threading.Thread):
         """
         return self._client_id
 
-    def client_is_connected(self) -> bool:
-        """
-        Check if the client is connected
-        """
-        return self._protocol_gateway.client_is_connected()
-
     def _stop_client(self) -> None:
         """
         Close the client socket
@@ -126,45 +140,16 @@ class ConnectedClient(threading.Thread):
             except Exception as e:
                 logger.warning("Error al cerrar broker: %s", e)
 
-        try:
-            self._protocol_gateway.stop_client()
-        except Exception as e:
-            logger.warning("Error al detener protocolo gateway: %s", e)
-
         self.was_closed = True
 
     def run(self):
         """
         Run the connected client thread.
         """
-        logger.info("Connected client %s started.", self._client_id)
         try:
-            self.broker = RabbitMQProcessor(
-                config=self.config,
-                source_queues=[],  # Connected client does not consume messages, so empty list
-                target_queues=[
-                    self.config["DEFAULT"]["movies_raw_queue"],
-                    self.config["DEFAULT"]["credits_raw_queue"],
-                    self.config["DEFAULT"]["ratings_raw_queue"],
-                ],
-                rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"],
-            )
-            connected = self.broker.connect()
-            if not connected:
-                raise RuntimeError("Failed to connect to RabbitMQ.")
-
             while (
                 self._running and not self._stop_flag.is_set() and not self.was_closed
             ):
-                while (
-                    self._processed_datasets_from_request
-                    < self._expected_datasets_to_receive_per_request
-                ):
-                    if self._process_request() is False:
-                        logger.error("Failed to process request")
-                        self._protocol_gateway.stop_client()
-                        return
-
                 # Wait for all responses to be sent
                 with self._condition:
                     while (
@@ -177,56 +162,18 @@ class ConnectedClient(threading.Thread):
                 logger.info("All answers have been sent, closing client.")
                 self._stop_client()
 
-        except OSError as e:
-            if not self._protocol_gateway.client_is_connected():
-                logger.info("Client %s disconnected: %s", self._client_id, e)
-                return
-
         except Exception as e:
             logger.error("Unexpected error in client %s: %s", self._client_id, e)
-            self._protocol_gateway.stop_client()
             return
 
-    def _process_request(self) -> bool:
+    def process_batch(
+        self, message_id, message_code, current_batch, is_last_batch, payload_len
+    ) -> bool:
         try:
-            header = self._protocol_gateway.receive_header()
-            if header is None:
-                logger.error("Header is None")
-                self._protocol_gateway.stop_client()
-                return False
-
-            (
-                message_id,
-                message_code,
-                encoded_id,
-                current_batch,
-                is_last_batch,
-                payload_len,
-            ) = header
-            logger.debug("Message code: %s", message_code)
-
-            if message_code not in TIPO_MENSAJE:
-                logger.error("Invalid message code: %s", message_code)
-                self._protocol_gateway.stop_client()
-                return False
-
-            if message_code == "DISCONNECT":
-                logger.info("Client requested disconnection.")
-                self._protocol_gateway.stop_client()
-                return True
-
-            client_id = encoded_id.decode("utf-8")
-            logger.debug(
-                "client %s - %s - Receiving batch %s",
-                client_id,
-                message_code,
-                current_batch,
-            )
-
             payload = self._protocol_gateway.receive_payload(payload_len)
             if not payload or len(payload) != payload_len:
                 logger.error("Failed to receive full payload")
-                self._protocol_gateway.stop_client()
+                self._stop_client()
                 return False
 
             logger.debug("Received payload of length %d", len(payload))
@@ -235,7 +182,7 @@ class ConnectedClient(threading.Thread):
                 message_code, payload
             )
             if processed_data is None:
-                if message_code == "BATCH_CREDITS":
+                if message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
                     # May be a partial batch
                     logger.warning(
                         "Received partial batch for credits, skipping processing."
@@ -249,7 +196,7 @@ class ConnectedClient(threading.Thread):
                 new_batch = BatchMessage(
                     message_id=message_id,
                     message_code=message_code,
-                    client_id=client_id,
+                    client_id=self._client_id,
                     current_batch=current_batch,
                     is_last_batch=is_last_batch,
                     processed_data=processed_data,
@@ -275,7 +222,7 @@ class ConnectedClient(threading.Thread):
                 self._publish_message(
                     message_id,
                     message_code,
-                    client_id,
+                    self._client_id,
                     current_batch,
                     is_last_batch,
                     processed_data,
@@ -285,7 +232,7 @@ class ConnectedClient(threading.Thread):
 
         except (socket.error, socket.timeout) as e:
             logger.error("Socket error raised: %s, from client %s", e, self._client_id)
-            self._protocol_gateway.stop_client()
+            self._stop_client()
             return False
 
         except Exception as e:
@@ -294,12 +241,13 @@ class ConnectedClient(threading.Thread):
                 e,
                 self._client_id,
             )
-            self._protocol_gateway.stop_client()
+            self._stop_client()
             return False
 
     def _publish_batch(self, batch_message: BatchMessage):
         try:
             queue_key = self._get_queue_key(batch_message.message_code)
+            message_type = self._get_message_type(batch_message.message_code)
 
             if queue_key:
                 headers = {
@@ -321,13 +269,13 @@ class ConnectedClient(threading.Thread):
                 success = self.broker.publish(
                     target=queue_key,
                     message=batch_payload,
-                    msg_type=batch_message.message_code,
+                    msg_type=message_type,
                     headers=headers,
                 )
 
                 if success:
                     try:
-                        filename = f"{batch_message.message_code}_{batch_message.current_batch}.json"
+                        filename = f"batch_{batch_message.current_batch}.json"
                         path = os.path.join(
                             "storage", batch_message.client_id, filename
                         )
@@ -360,7 +308,7 @@ class ConnectedClient(threading.Thread):
                 e,
                 self._client_id,
             )
-            self._protocol_gateway.stop_client()
+            self._stop_client()
             return
 
     def _publish_message(
@@ -409,16 +357,25 @@ class ConnectedClient(threading.Thread):
                 e,
                 self._client_id,
             )
-            self._protocol_gateway.stop_client()
+            self._stop_client()
             return
 
     def _get_queue_key(self, message_code):
-        if message_code == "BATCH_MOVIES":
+        if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
             return self.config["DEFAULT"]["movies_raw_queue"]
-        elif message_code == "BATCH_CREDITS":
+        elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
             return self.config["DEFAULT"]["credits_raw_queue"]
-        elif message_code == "BATCH_RATINGS":
+        elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
             return self.config["DEFAULT"]["ratings_raw_queue"]
+        return None
+
+    def _get_message_type(self, message_code) -> str | None:
+        if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
+            return "BATCH_MOVIES"
+        elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
+            return "BATCH_CREDITS"
+        elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
+            return "BATCH_RATINGS"
         return None
 
     def send_result(self, result_data):
@@ -432,17 +389,28 @@ class ConnectedClient(threading.Thread):
 
         except Exception as e:
             logger.error("Error sending result to client %s: %s", self._client_id, e)
-            self._protocol_gateway.stop_client()
+            self._stop_client()
 
     def _save_batch_to_disk(self, batch: BatchMessage):
         try:
             client_dir = os.path.join("storage", batch.client_id)
             os.makedirs(client_dir, exist_ok=True)
-            filename = os.path.join(
+            final_path = os.path.join(
                 client_dir, f"{batch.message_code}_{batch.current_batch}.json"
             )
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(asdict(batch), f, ensure_ascii=False, indent=2)
+
+            # Write to a temporary file first
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", dir=client_dir, delete=False
+            ) as tmp_file:
+                json.dump(asdict(batch), tmp_file, ensure_ascii=False, indent=2)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+                temp_path = tmp_file.name
+
+            # Atomically replace the final file with the temp file
+            os.replace(temp_path, final_path)
+
         except Exception as e:
             logger.error(
                 "Error saving batch to disk for client %s: %s", batch.client_id, e

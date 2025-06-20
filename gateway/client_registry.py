@@ -3,7 +3,9 @@ from typing import Dict, Optional
 from connected_client import ConnectedClient
 
 from common.logger import get_logger
+
 logger = get_logger("ClientRegistry")
+
 
 class ClientRegistry:
     def __init__(self):

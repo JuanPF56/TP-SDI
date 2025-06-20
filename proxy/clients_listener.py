@@ -3,7 +3,7 @@
 import threading
 import socket
 
-from client_handler import client_handler
+from client_handler import ClientHandler
 from common.logger import get_logger
 
 logger = get_logger("clients_listener")
@@ -12,15 +12,31 @@ logger = get_logger("clients_listener")
 class ClientsListener(threading.Thread):
     def __init__(self, proxy):
         super().__init__(daemon=True)
+        self.proxy = proxy
         self._stop_flag = threading.Event()
 
-        self.proxy = proxy
+        self.clients_port = int(
+            proxy.config["DEFAULT"].get("CLIENTS_ACCEPT_PORT", 8000)
+        )
+        self.clients_listener_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.clients_listener_socket.bind(("", self.clients_port))
+        self.clients_listener_socket.listen(
+            int(self.proxy.config["DEFAULT"].get("LISTEN_BACKLOG", 5))
+        )
+        self.clients_listener_socket.settimeout(
+            1
+        )  # Para chequear la bandera de stop periódicamente
+
         self.current_index = 0
 
     def run(self):
+        logger.info(
+            "ClientsListener listening for client connections on port %d",
+            self.clients_port,
+        )
         while not self._stop_flag.is_set():
             try:
-                client_socket, addr = self.proxy.proxy_socket.accept()
+                client_socket, addr = self.clients_listener_socket.accept()
                 logger.info("Accepted client %s", addr)
 
                 # Round-robin gateway selection
@@ -48,11 +64,7 @@ class ClientsListener(threading.Thread):
                 )
                 self.current_index += 1
 
-                threading.Thread(
-                    target=client_handler,
-                    args=(self.proxy, client_socket, addr, gateway),
-                    daemon=True,
-                ).start()
+                ClientHandler(self.proxy, client_socket, addr, gateway).start()
 
             except socket.timeout:
                 continue  # volver al loop para chequear el _stop_flag
