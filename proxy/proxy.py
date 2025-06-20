@@ -16,7 +16,7 @@ import common.sender as sender
 from common.logger import get_logger
 
 logger = get_logger("proxy")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 TIMEOUT_HEADER = 3600
 TIMEOUT_PAYLOAD = 3600

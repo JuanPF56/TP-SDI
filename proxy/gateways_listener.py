@@ -76,8 +76,7 @@ class GatewaysListener(threading.Thread):
                 for client_id in clients:
                     client_info = self.proxy._connected_clients.get(client_id)
                     if client_info:
-                        client_socket = client_info["client_socket"]
-                        addr = client_info["addr"]
+                        client_socket, _, addr = client_info
 
                         logger.info(
                             "Reconnecting client %s to gateway %s",

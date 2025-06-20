@@ -30,12 +30,10 @@ def receive_data(socket_sender: socket.socket, num_bytes: int, timeout: int) -> 
                 logger.debug("Received chunk of size %d bytes.", len(chunk))
 
                 if not chunk:
-                    logger.warning(
-                        "Connection closed by sender while expecting %d bytes, received %d bytes.",
-                        num_bytes,
-                        len(data),
-                    )
-                    break
+                    if len(data) == 0:
+                        raise ReceiverError(
+                            "Connection closed by sender before any data was send."
+                        )
 
                 data += chunk
                 empty_reads = 0  # reset empty read counter
@@ -52,6 +50,9 @@ def receive_data(socket_sender: socket.socket, num_bytes: int, timeout: int) -> 
                     raise TimeoutError(
                         "Max empty reads reached, sender may have disconnected."
                     )
+
+    except ReceiverError:
+        raise
 
     except (OSError, socket.error) as e:
         logger.error("Socket receive error: %s", e)

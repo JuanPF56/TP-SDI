@@ -47,7 +47,6 @@ class ClientHandler:
 
         except Exception as e:
             logger.error("Error in client handler: %s", e)
-            logger.debug("Exception traceback:\n%s", traceback.format_exc())
             self.client_socket.close()
 
     def _register_client(self):
@@ -136,6 +135,13 @@ class ClientHandler:
                 with lock:
                     sender.send(self.gateway_socket, header)
                     sender.send(self.gateway_socket, payload)
+
+            except receiver.ReceiverError:
+                logger.warning(
+                    "Client socket closed the sending connection, closing proxy side"
+                )
+                self.client_socket.close()
+                break
 
             except Exception as e:
                 logger.error("Forward client -> gateway failed: %s", e)
