@@ -1,6 +1,7 @@
 import configparser
 from collections import defaultdict
 
+from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.client_state_manager import ClientManager
 from common.client_state import ClientState
@@ -179,6 +180,7 @@ class ProductionFilter(FilterBase):
         """
         logger.info("ProductionFilter is starting up")
         self.elector.start_election()
+        recover_node(self, self.main_source_queues)
         self.run_consumer()
 
 

@@ -16,8 +16,8 @@ REC_TYPE = "RECOVERY"
 class MasterLogic(multiprocessing.Process):
     def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, 
                  client_manager,
-                 extra_recovery=None,
-                 started_event=None):
+                 started_event=None,
+                 movies_handler=None):
         """
         Initialize the MasterLogic class with the given configuration and manager.
         """
@@ -39,7 +39,7 @@ class MasterLogic(multiprocessing.Process):
         self.target_index = 1
         self.leader = multiprocessing.Event()
         self.client_manager = client_manager
-        self.extra_recovery = extra_recovery
+        self.movies_handler = movies_handler
         self.started_event = started_event
 
         self.duplicate_handler = DuplicateHandler()
@@ -86,7 +86,9 @@ class MasterLogic(multiprocessing.Process):
                     )
             elif msg_type == REC_TYPE:
                 self._handle_node_recovery(decoded, queue_name)
-                self.extra_recovery(decoded, queue_name) if self.extra_recovery else None                
+                logger.info(f"Recovery message processed for node {self.node_id} on queue {queue_name}.")
+                if self.movies_handler is not None:
+                    self.movies_handler.recover_movies_table(self.node_id)
             else:
                 if client_id is None:
                     logger.error("Missing client_id in headers")
@@ -160,7 +162,8 @@ class MasterLogic(multiprocessing.Process):
                             target=f"{queue_name}_node_{node_id}",
                             message={"node_id": target_node},
                             msg_type=EOS_TYPE,
-                            headers={"client_id": client_id}
+                            headers={"client_id": client_id},
+                            priority=1                            
                         )
         
         logger.info(f"EOS messages sent to node {node_id} for queue {queue_name}.")

@@ -25,19 +25,23 @@ def election_logic(self, leader_id: int, leader_queues=None):
     if not was_leader and is_now_leader:
         logger.info(f"[Node {self.node_id}] I am the leader. Reading from storage...")
         self.read_storage()
-    elif self.first_run and not was_leader and not is_now_leader:
+
+def recover_node(self, leader_queues):
+    if self.master_logic_started_event:
+        self.master_logic_started_event.wait()
+    if self.first_run and not self.master_logic.is_leader():
         self.first_run = False
         if not isinstance(leader_queues, list):
             leader_queues = [leader_queues]
         rabbit = RabbitMQProcessor(
             config=self.config,
             source_queues=leader_queues,
-            target_queues=[queue + "_node_" + str(self.node_id) for queue in leader_queues]
+            target_queues=leader_queues,
         )
         if not rabbit.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
             return
-        logger.info(f"[Node {self.node_id}] Asking leader {leader_id} for recovery...")
+        logger.info(f"[Node {self.node_id}] Asking leader for recovery...")
         for queue in leader_queues:
             rabbit.publish(
                 target=queue,

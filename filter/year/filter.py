@@ -4,6 +4,7 @@ from datetime import datetime
 
 from common.client_state_manager import ClientManager
 from common.client_state_manager import ClientState
+from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.eos_handling import handle_eos
 from common.mom import RabbitMQProcessor
@@ -191,6 +192,7 @@ class YearFilter(FilterBase):
         """
         logger.info("YearFilter is starting up")
         self.elector.start_election()
+        recover_node(self, self.main_source_queues)
         self.run_consumer()
 
     def extract_year(self, date_str):
