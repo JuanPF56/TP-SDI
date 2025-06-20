@@ -98,7 +98,7 @@ class MasterLogic(multiprocessing.Process):
                     logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
                     return
                 
-                self.target_index = (hash(message_id) % self.nodes_of_type) + 1
+                self.target_index = (message_id % self.nodes_of_type) + 1
                 target_node = f"{queue_name}_node_{self.target_index}"
                 self.rabbitmq_processor.publish(
                     target=target_node,
