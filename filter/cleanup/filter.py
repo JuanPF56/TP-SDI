@@ -115,7 +115,7 @@ class CleanupFilter(FilterBase):
             headers,
             self.rabbitmq_processor,
             client_state,
-            self.master_logic.is_leader()
+            self.master_logic.is_leader(),
             target_queues=self.target_queues.get(queue_name),
         )
 
