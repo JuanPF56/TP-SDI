@@ -31,9 +31,14 @@ class BatchMessage:
         if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
             processed = [parse_movie(m) for m in raw_data]
         elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
-            cast = [CastMember(**c) for c in raw_data["cast"]]
-            crew = [CrewMember(**c) for c in raw_data["crew"]]
-            processed = Credit(cast=cast, crew=crew, id=raw_data["id"])
+            processed = [
+                Credit(
+                    cast=[CastMember(**c) for c in entry["cast"]],
+                    crew=[CrewMember(**c) for c in entry["crew"]],
+                    id=entry["id"],
+                )
+                for entry in raw_data
+            ]
         elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
             if isinstance(raw_data, list):
                 processed = [Rating(**r) for r in raw_data]

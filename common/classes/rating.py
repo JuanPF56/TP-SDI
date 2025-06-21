@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 
 from common.logger import get_logger
+
 logger = get_logger("Rating")
 
 RATING_LINE_FIELDS = 4
+
 
 @dataclass
 class Rating:
