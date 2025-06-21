@@ -32,7 +32,7 @@ current_type_index=0
 kill_nodes() {
   if [ "${#TARGET_CONTAINERS[@]}" -gt 0 ]; then
 
-    # 🔥 Modo dirigidoo: matar un contenedor aleatorio de TARGET_CONTAINERS
+    # 🔥 Modo dirigido: matar un contenedor aleatorio de TARGET_CONTAINERS
     valid_targets=()
     for c in "${TARGET_CONTAINERS[@]}"; do
       if ! [[ "${IMMUNE_CONTAINERS[*]}" =~ "$c" ]]; then
@@ -72,10 +72,10 @@ kill_nodes() {
 
 echo "🚀 Iniciando fault injector. Presioná Ctrl+C para frenar."
 
-# En la primera ronda, matar 4 contenedores
-for i in {1..4}; do
-  kill_nodes
-done
+# # En la primera ronda, matar 4 contenedores
+# for i in {1..4}; do
+#   kill_nodes
+# done
 
 # Luego, continuar con el ciclo infinito matando 1 contenedor por vez
 while true; do
