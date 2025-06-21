@@ -5,12 +5,19 @@ import time
 import random
 import multiprocessing
 
-#logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LeaderElector")
 
+
 class LeaderElector(multiprocessing.Process):
-    def __init__(self, node_id, peers, done_recovering, election_port=9000,
-                 election_logic: callable = None):
+    def __init__(
+        self,
+        node_id,
+        peers,
+        done_recovering,
+        election_port=9000,
+        election_logic: callable = None,
+    ):
         """
         node_id: int, unique id of this node (higher wins)
         peers: dict of {node_id: (ip, port)} for all other nodes
@@ -30,7 +37,6 @@ class LeaderElector(multiprocessing.Process):
         )  # track highest ID seen in election messages
         self.leader_id = None
         self.alive_received = False  # Track if we received ALIVE responses
-        self.coordinator_announced = False  # Prevent duplicate announcements
 
         # Heartbeat mechanism
         self.heartbeat_interval = 3  # Send heartbeat every 3 seconds
@@ -394,7 +400,9 @@ class LeaderElector(multiprocessing.Process):
 
         except Exception as e:
             if cmd != "HEARTBEAT":  # Don't log heartbeat failures as errors
-                logger.error(f"[Node {self.node_id}] Failed to send {cmd} to {target_id}: {e}")
+                logger.error(
+                    f"[Node {self.node_id}] Failed to send {cmd} to {target_id}: {e}"
+                )
 
     def run(self):
         """
@@ -402,7 +410,7 @@ class LeaderElector(multiprocessing.Process):
         This method can be called to initiate the election process.
         """
         self.done_recovering.wait()  # Wait for recovery to complete
-        
+
         logger.info(f"[Node {self.node_id}] Running leader election")
         self.start_election()
 
@@ -418,7 +426,6 @@ class LeaderElector(multiprocessing.Process):
         self.election_in_progress = True
         self.alive_received = False
         self.highest_seen_id = self.node_id
-        self.coordinator_announced = False
 
         # FIXED: Only consider reachable higher peers (exclude failed nodes)
         higher_peers = []
@@ -527,8 +534,6 @@ class LeaderElector(multiprocessing.Process):
         self.leader_id = self.node_id
         self.election_in_progress = False
         self.highest_seen_id = self.node_id
-        self.coordinator_announced = True
-        self.election_backoff_attempts = 0
 
         all_peers = list(self.peers.keys())
 
