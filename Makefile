@@ -74,6 +74,7 @@ down:
 	rm -rf ./query/q3/storage/*
 	rm -rf ./query/q4/storage/*
 	rm -rf ./query/q5/storage/*
+	sudo rm -rf ./gateway/storage/*
 
 # Muestra los contenedores activos relacionados
 ps:
