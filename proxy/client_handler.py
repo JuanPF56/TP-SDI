@@ -3,7 +3,7 @@
 import threading
 import uuid
 import logging
-import traceback
+import time
 
 from common.protocol import (
     SIZE_OF_HEADER,
@@ -21,6 +21,8 @@ logger.setLevel(logging.INFO)
 TIMEOUT_HEADER = 3600
 TIMEOUT_PAYLOAD = 3600
 
+RETRY_INTERVAL = 2
+
 
 class ClientHandler:
     def __init__(self, proxy, client_socket, addr, gateway_id, client_id=None):
@@ -28,6 +30,7 @@ class ClientHandler:
         self.client_socket = client_socket
         self.addr = addr
         self.gateway_id = gateway_id
+        self._stop_flag = threading.Event()
 
         self.client_id = client_id or str(uuid.uuid4())
         self.gateway_socket = self.proxy._gateways_connected.get(gateway_id)
@@ -101,14 +104,31 @@ class ClientHandler:
     def _forward_client_to_gateway(self):
         logger.debug("FORWARD client ➡️ gateway")
 
-        while True:
+        while not self._stop_flag.is_set():
+            # 🔁 Reintenta hasta que haya un gateway conectado
             try:
+                # Get the current gateway socket (it might change due to reconnection)
+                current_client_info = self.proxy._connected_clients.get(self.client_id)
+                if not current_client_info:
+                    logger.warning(
+                        "Client %s no longer in connected clients or suspended",
+                        self.client_id,
+                    )
+                    time.sleep(RETRY_INTERVAL)
+                    continue
 
-                if (
-                    self.client_socket.fileno() == -1
-                    or self.gateway_socket.fileno() == -1
-                ):
+                self.client_socket, self.gateway_socket, _ = current_client_info
+
+                if self.client_socket.fileno() == -1:
+                    logger.info("Client %s socket is closed", self.client_id)
                     break
+
+                if self.gateway_socket.fileno() == -1:
+                    logger.warning(
+                        "Gateway for client %s is down, waiting...", self.client_id
+                    )
+                    time.sleep(RETRY_INTERVAL)
+                    continue
 
                 header = receiver.receive_data(
                     self.client_socket, SIZE_OF_HEADER, timeout=TIMEOUT_HEADER
@@ -131,6 +151,7 @@ class ClientHandler:
                 if not payload or len(payload) != payload_len:
                     break
 
+                # Use current gateway socket and lock
                 lock = self.proxy._gateway_locks[self.gateway_id]
                 with lock:
                     sender.send(self.gateway_socket, header)
@@ -140,9 +161,11 @@ class ClientHandler:
                 logger.warning(
                     "Client socket closed the sending connection, closing proxy side"
                 )
+                self._stop_flag.set()
                 self.client_socket.close()
                 break
 
             except Exception as e:
                 logger.error("Forward client -> gateway failed: %s", e)
+                self._stop_flag.set()
                 break
