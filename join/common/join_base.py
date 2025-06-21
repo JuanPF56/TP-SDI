@@ -108,6 +108,9 @@ class JoinBase:
     def read_storage(self):
         self.movies_handler.read_storage()
         self.client_manager.read_storage()
+        self.client_manager.check_all_eos_received(
+            self.config, self.node_id, self.clean_batch_queue, self.output_queue
+        )
 
     def process(self):
         # Start the process to receive the movies table
@@ -158,17 +161,17 @@ class JoinBase:
 
     def _handle_eos(self, queue_name, body, method, headers, client_state):
         self.log_debug(f"Received EOS from {queue_name}")
+        queue = queue_name.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            queue_name,
-            self.input_queue,
+            queue,
+            queue,
             headers,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.output_queue,
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.input_queue):
@@ -206,7 +209,8 @@ class JoinBase:
                 return
 
             if self.duplicate_handler.is_duplicate(current_client_id, input_queue, message_id):
-                self.log_info(f"Duplicate message detected: {message_id}. Acknowledging without processing.")
+                self.log_info(f"Current LRU cache: {self.duplicate_handler.get_caches()}")
+                self.log_info(f"Duplicate message detected: {message_id} for client {current_client_id}. Acknowledging without processing.")
                 return
 
             # Load the data from the incoming message
@@ -265,8 +269,7 @@ class JoinBase:
                         msg_type=msg_type,
                         headers=headers,
                     )
-
-            self.duplicate_handler.add(current_client_id, input_queue, message_id)
+                self.duplicate_handler.add(current_client_id, input_queue, message_id)
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.reconnect_and_restart(self.process_batch)

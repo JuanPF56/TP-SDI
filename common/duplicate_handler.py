@@ -33,3 +33,17 @@ class DuplicateHandler:
             queue_name in self.cache[client_id] and
             message_id in self.cache[client_id][queue_name]
         )
+    
+    def get_cache(self, client_id, queue_name):
+        """
+        Get the cache for a specific client and queue.
+        Returns an OrderedDict of message IDs.
+        """
+        return self.cache.get(client_id, {}).get(queue_name, OrderedDict())
+    
+    def get_caches(self):
+        """
+        Get the entire cache.
+        Returns a dictionary of client_id -> queue_name -> OrderedDict of message IDs.
+        """
+        return self.cache

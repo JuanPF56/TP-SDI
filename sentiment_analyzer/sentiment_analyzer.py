@@ -98,6 +98,9 @@ class SentimentAnalyzer:
 
     def read_storage(self):
         self.client_manager.read_storage()
+        self.client_manager.check_all_eos_received(
+            self.config, self.node_id, self.clean_batch_queue, self.target_queues
+        )
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
@@ -125,18 +128,17 @@ class SentimentAnalyzer:
     def _handle_eos(
         self, input_queue, body, method, headers, client_state: ClientState
     ):
-        # No batch clearing needed here, just handle eos and free client resources
+        queue = input_queue.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            input_queue,
-            self.source_queue,
+            queue,
+            queue,
             headers,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.target_queues,
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queue):

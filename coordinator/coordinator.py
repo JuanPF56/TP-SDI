@@ -7,7 +7,7 @@ from common.logger import get_logger
 
 logger = get_logger("Coordinator")
 
-SLEEP = 1
+SLEEP = 5
 
 MONITORED_NODES = os.getenv("MONITORED_NODES", "")
 nodos = MONITORED_NODES.split(",") if MONITORED_NODES else []

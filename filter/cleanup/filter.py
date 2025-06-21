@@ -106,17 +106,17 @@ class CleanupFilter(FilterBase):
         }
 
     def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
+        queue = queue_name.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            queue_name,
-            queue_name,
+            queue,
+            queue,
             headers,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.target_queues.get(queue_name),
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         try:
@@ -194,6 +194,15 @@ class CleanupFilter(FilterBase):
             logger.error("Error processing message from %s: %s", queue_name, e)
         finally:
             self.rabbitmq_processor.acknowledge(method)
+
+    def read_storage(self):
+        self.client_manager.read_storage()
+        self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[0],
+                                                    self.target_queues.get(self.source_queues[0], []))
+        self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[1],
+                                                    self.target_queues.get(self.source_queues[1], []))
+        self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[2],
+                                                    self.target_queues.get(self.source_queues[2], []))
 
     def process(self):
         """

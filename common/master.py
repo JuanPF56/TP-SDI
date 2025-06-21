@@ -100,6 +100,7 @@ class MasterLogic(multiprocessing.Process):
                     return
                 
                 self.target_index = (message_id % self.nodes_of_type) + 1
+                logger.debug(f"Distributing message {message_id} from client {client_id} to node {self.target_index} for queue {queue_name}")
                 target_node = f"{queue_name}_node_{self.target_index}"
                 self.rabbitmq_processor.publish(
                     target=target_node,

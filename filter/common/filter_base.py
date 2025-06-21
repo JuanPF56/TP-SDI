@@ -61,7 +61,7 @@ class FilterBase:
         )
 
     def read_storage(self):
-        self.client_manager.read_storage()
+        pass
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")

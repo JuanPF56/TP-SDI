@@ -5,6 +5,9 @@ from common.client_state import ClientState
 import json
 import tempfile
 
+from common.eos_handling import check_eos_flags
+from common.mom import RabbitMQProcessor
+
 logger = logger.get_logger("Client-Manager")
 
 class ClientManager:
@@ -101,4 +104,33 @@ class ClientManager:
                 existing_flags[queue_name][node_id] = flag
                 
         return existing_flags, updated
-                
+    
+    def check_all_eos_received(self, config, node_id, queues, target_queues=None, target_exchanges=None):
+        """
+        Check if all EOS messages have been received for a specific client and queue.
+        Returns True if all EOS messages have been received, False otherwise.
+        """
+        rabbit = RabbitMQProcessor(
+            config=config,
+            source_queues=queues,
+            target_queues=target_queues,
+            target_exchanges=target_exchanges            
+        )
+        if not rabbit.connect():
+            logger.error("Error connecting to RabbitMQ. Exiting...")
+            return
+        if not isinstance(queues, list):
+            queues = [queues]
+        for client_id, client_state in self.clients.items():
+            check_eos_flags(
+                headers={"client_id": client_id},
+                node_id=node_id,
+                source_queues=queues,
+                rabbitmq_processor=rabbit,
+                client_state=client_state,
+                target_queues=target_queues,
+                target_exchanges=target_exchanges
+            )
+        rabbit.close()
+
+

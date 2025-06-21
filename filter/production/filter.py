@@ -49,17 +49,17 @@ class ProductionFilter(FilterBase):
 
     def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
         logger.debug("Received EOS from %s", queue_name)
+        queue = queue_name.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            queue_name,
-            self.source_queues,
+            queue,
+            self.main_source_queues,
             headers,
             self.rabbitmq_processor,
             client_state,
             target_queues=self.target_queues.get(queue_name),
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queues):
@@ -171,7 +171,12 @@ class ProductionFilter(FilterBase):
 
         finally:
             self.rabbitmq_processor.acknowledge(method)
-    
+
+    def read_storage(self):
+        self.client_manager.read_storage()
+        self.client_manager.check_all_eos_received(
+            self.config, self.node_id, self.main_source_queues, self.target_queues)
+        
     def process(self):
         """
         Main processing function for the ProductionFilter.
