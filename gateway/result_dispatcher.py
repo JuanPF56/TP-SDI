@@ -1,8 +1,8 @@
 import threading
-import time
 import json
 
 from client_registry import ClientRegistry
+from result_message import ResultMessage
 
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
@@ -49,7 +49,8 @@ class ResultDispatcher(threading.Thread):
 
             client = self._clients_connected.get_by_uuid(client_id)
             if client:
-                client.send_result(result_data)
+                result_message = ResultMessage.from_json_with_casting(result_data)
+                client.send_result(result_message)
                 logger.info("Dispatched result to client %s", client_id)
                 channel.basic_ack(delivery_tag=method.delivery_tag)
             else:

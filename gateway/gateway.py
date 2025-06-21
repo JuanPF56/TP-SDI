@@ -99,6 +99,7 @@ class Gateway:
                 existing_client._running = True
                 existing_client.was_closed = False
                 existing_client.start()
+                existing_client.send_all_stored_results()
             else:
                 new_connected_client = ConnectedClient(
                     client_id=client_id,
@@ -161,7 +162,8 @@ class Gateway:
         logger.info("Gateway running...")
         while not self._was_closed:
             try:
-                # self._reap_disconnected_clients()
+                # self._reap_completed_clients()
+
                 if self._gateway_socket.fileno() == -1:
                     logger.info("Socket already closed, stopping gateway loop.")
                     break
@@ -189,14 +191,24 @@ class Gateway:
                     or tipo_mensaje == TIPO_MENSAJE["BATCH_CREDITS"]
                     or tipo_mensaje == TIPO_MENSAJE["BATCH_RATINGS"]
                 ):
-                    self._handle_batch_messages(
-                        message_id,
-                        tipo_mensaje,
-                        encoded_id,
-                        batch_number,
-                        is_last_batch,
-                        payload_length,
-                    )
+                    try:
+                        self._handle_batch_messages(
+                            message_id,
+                            tipo_mensaje,
+                            encoded_id,
+                            batch_number,
+                            is_last_batch,
+                            payload_length,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Error in batch with: message_id=%s, tipo_mensaje=%s, batch_number=%s: %s",
+                            message_id,
+                            tipo_mensaje,
+                            batch_number,
+                            e,
+                        )
+                        continue
 
                 else:
                     logger.warning("Unknown message type received: %s", tipo_mensaje)
@@ -211,13 +223,14 @@ class Gateway:
                 logger.error("Unexpected error: %s", e)
                 return
 
-    def _reap_disconnected_clients(self):
+    def _reap_completed_clients(self):
         try:
-            logger.info("Checking for any disconnected clients...")
+            logger.info("Checking for any completed clients...")
             for client in list(self._clients_connected.get_all().values()):
-                if not client.client_is_connected():
+                if client.all_answers_sent:
                     logger.info(
-                        "Removing disconnected client %s", client.get_client_id()
+                        "Removing completed client %s",
+                        client.get_client_id(),
                     )
                     self._clients_connected.remove(client)
             logger.info("Done checking.")

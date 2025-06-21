@@ -3,11 +3,11 @@
 import socket
 import threading
 
-from client_handler import ClientHandler
-
 from common.protocol import SIZE_OF_UINT8
 import common.receiver as receiver
 from common.logger import get_logger
+
+from client_handler import ClientHandler
 
 logger = get_logger("gateways_listener")
 
@@ -53,49 +53,127 @@ class GatewaysListener(threading.Thread):
 
                 logger.info("Identified gateway as '%s'", gateway_id)
 
-                # Si ya había un socket previo para este gateway, cerrarlo
-                previous_socket = self.proxy._gateways_connected.get(gateway_id)
-                if previous_socket:
-                    logger.info(
-                        "Replacing existing connection for gateway %s", gateway_id
-                    )
-                    try:
-                        previous_socket.shutdown(socket.SHUT_RDWR)
-                    except Exception:
-                        pass
-                    previous_socket.close()
-
-                self.proxy._gateways_connected[gateway_id] = gateway_socket
-                self.proxy._gateway_locks[gateway_id] = threading.Lock()
-                logger.info("Gateway '%s' connected and registered.", gateway_id)
-
-                self.proxy.start_gateway_response_handler(gateway_id, gateway_socket)
-
-                # Si hay clientes esperando por este gateway, reconectarlos
-                clients = self.proxy._clients_per_gateway.get(gateway_id, [])
-                for client_id in clients:
-                    client_info = self.proxy._connected_clients.get(client_id)
-                    if client_info:
-                        client_socket, _, addr = client_info
-
-                        logger.info(
-                            "Reconnecting client %s to gateway %s",
-                            client_id,
-                            gateway_id,
-                        )
-
-                        ClientHandler(
-                            proxy=self.proxy,
-                            client_socket=client_socket,
-                            addr=addr,
-                            gateway_id=gateway_id,
-                            client_id=client_id,
-                        ).start()
+                # Handle gateway reconnection properly
+                self._handle_gateway_reconnection(gateway_id, gateway_socket)
 
             except socket.timeout:
                 continue
             except Exception as e:
                 logger.error("Error accepting gateway connection: %s", e)
+
+    def _handle_gateway_reconnection(self, gateway_id, new_gateway_socket):
+        """Handle gateway reconnection with proper cleanup"""
+        is_reconnection = gateway_id in self.proxy._gateways_connected
+
+        if is_reconnection:
+            logger.info("Gateway %s is reconnecting, handling cleanup", gateway_id)
+
+            # First, handle the reconnection cleanup in proxy
+            self.proxy.handle_gateway_reconnection(gateway_id)
+
+            # Close the old gateway connection
+            old_socket = self.proxy._gateways_connected.get(gateway_id)
+            if old_socket and old_socket.fileno() != -1:
+                try:
+                    old_socket.shutdown(socket.SHUT_RDWR)
+                    old_socket.close()
+                    logger.info("Closed old connection for gateway %s", gateway_id)
+                except Exception as e:
+                    logger.debug("Error closing old gateway socket: %s", e)
+
+        # Register the new gateway connection
+        self.proxy._gateways_connected[gateway_id] = new_gateway_socket
+        if gateway_id not in self.proxy._gateway_locks:
+            self.proxy._gateway_locks[gateway_id] = threading.Lock()
+
+        # Start the response handler for the new connection
+        self.proxy.start_gateway_response_handler(gateway_id, new_gateway_socket)
+
+        logger.info("Gateway '%s' connected and registered.", gateway_id)
+
+        # Handle client reconnections if this is a reconnection
+        if is_reconnection:
+            self._handle_client_reconnections(gateway_id, new_gateway_socket)
+
+    def _handle_client_reconnections(self, gateway_id, new_gateway_socket):
+        """Handle reconnecting clients to the new gateway socket"""
+        logger.info("Handling client reconnections for gateway %s", gateway_id)
+
+        # Get clients that were associated with this gateway
+        clients_to_reconnect = list(self.proxy._clients_per_gateway.get(gateway_id, []))
+
+        # Track successful reconnections
+        successfully_reconnected = []
+
+        for client_id in clients_to_reconnect:
+            try:
+                # Get client info
+                client_info = self.proxy.get_client_info(client_id)
+                if not client_info:
+                    logger.warning(
+                        "Client %s not found in connected clients", client_id
+                    )
+                    continue
+
+                client_socket, old_gateway_socket, addr = client_info
+
+                # Check if client socket is still valid
+                if client_socket.fileno() == -1:
+                    logger.info(
+                        "Client %s socket is closed, removing from tracking",
+                        client_id,
+                    )
+                    self._cleanup_client(client_id, gateway_id)
+                    continue
+
+                # Update the client's gateway socket
+                success = self.proxy.update_client_gateway_socket(
+                    client_id, new_gateway_socket, gateway_id
+                )
+
+                if success:
+                    successfully_reconnected.append(client_id)
+                    logger.info(
+                        "Successfully reconnected client %s to gateway %s",
+                        client_id,
+                        gateway_id,
+                    )
+
+                    # Reiniciar el handler si está detenido
+                    if client_id in self.proxy._client_handlers:
+                        handler = self.proxy._client_handlers[client_id]
+                        if not handler.is_alive():
+                            logger.info("Restarting ClientHandler for %s", client_id)
+                            new_handler = ClientHandler(
+                                self.proxy, client_socket, addr, gateway_id, client_id
+                            )
+                            self.proxy._client_handlers[client_id] = new_handler
+                            new_handler.start()
+                else:
+                    logger.error(
+                        "Failed to reconnect client %s to gateway %s",
+                        client_id,
+                        gateway_id,
+                    )
+                    # Clean up failed reconnection
+                    self._cleanup_client(client_id, gateway_id)
+
+            except Exception as e:
+                logger.error(
+                    "Error reconnecting client %s to gateway %s: %s",
+                    client_id,
+                    gateway_id,
+                    e,
+                )
+                # Clean up on error
+                self._cleanup_client(client_id, gateway_id)
+
+        logger.info(
+            "Reconnected %d/%d clients to gateway %s",
+            len(successfully_reconnected),
+            len(clients_to_reconnect),
+            gateway_id,
+        )
 
     def _receive_identifier(self, sock):
         try:
@@ -108,6 +186,20 @@ class GatewaysListener(threading.Thread):
         except Exception as e:
             logger.error("Failed to read gateway number: %s", e)
             return None
+
+    def _cleanup_client(self, client_id, gateway_id):
+        """Clean up a disconnected client"""
+        logger.info("Cleaning up client %s from gateway %s", client_id, gateway_id)
+
+        # Use the proxy's cleanup method for comprehensive cleanup
+        self.proxy.cleanup_client(client_id)
+
+        # Also remove from this gateway's client list (if proxy cleanup didn't)
+        if client_id in self.proxy._clients_per_gateway[gateway_id]:
+            self.proxy._clients_per_gateway[gateway_id].remove(client_id)
+            logger.debug(
+                "Removed client %s from gateway %s client list", client_id, gateway_id
+            )
 
     def stop(self):
         logger.info("Stopping gateways listener...")

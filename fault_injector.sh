@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Contenedores inmunes: no se matan nunca
-IMMUNE_CONTAINERS=("proxy" "q1" "q2" "q3" "q4" "q5" "coordinator" "gateway" "rabbitmq")
+IMMUNE_CONTAINERS=("proxy" "q1" "q2" "q3" "q4" "q5" "coordinator" "rabbitmq" "client")
 
 # Prefijos por tipo de nodo
 declare -A NODE_PREFIXES=(
