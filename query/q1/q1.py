@@ -16,10 +16,10 @@ class ArgSpainGenreQuery(QueryBase):
     """
 
     def __init__(self, config):
-        source_queue = config["DEFAULT"].get(
+        self.source_queue = config["DEFAULT"].get(
             "movies_arg_spain_2000s_queue", "movies_arg_spain_2000s"
         )
-        super().__init__(config, source_queue, logger_name="q1")
+        super().__init__(config, self.source_queue, logger_name="q1")
 
         self.duplicate_handler = DuplicateHandler()
 
@@ -42,6 +42,8 @@ class ArgSpainGenreQuery(QueryBase):
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"], message=results
         )
+
+        logger.debug("LRU: Results published for client %s, %s", client_id, self.duplicate_handler.get_cache(client_id, self.source_queue))
 
         # Limpieza de datos para liberar memoria
         del self.results_by_request[key]

@@ -16,11 +16,11 @@ class SentimentStats(QueryBase):
     """
 
     def __init__(self, config):
-        source_queues = [
+        self.source_queues = [
             config["DEFAULT"].get("movies_positive_queue", "positive_movies"),
             config["DEFAULT"].get("movies_negative_queue", "negative_movies"),
         ]
-        super().__init__(config, source_queues, logger_name="q5")
+        super().__init__(config, self.source_queues, logger_name="q5")
 
         self.duplicate_handler = DuplicateHandler()
 
@@ -51,6 +51,12 @@ class SentimentStats(QueryBase):
             self.rabbitmq_processor.publish(
                 target=self.config["DEFAULT"]["results_queue"], message=results
             )
+
+            logger.debug("LRU: Results published for client %s in positive queue: %s",
+                        client_id, self.duplicate_handler.get_cache(client_id, self.source_queues[0]))
+            logger.debug("LRU: Results published for client %s in negative queue: %s",
+                        client_id, self.duplicate_handler.get_cache(client_id, self.source_queues[1]))
+
             del self.positive_rates[client_id]
             del self.negative_rates[client_id]
             self.client_manager.remove_client(client_id)

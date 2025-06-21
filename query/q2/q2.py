@@ -16,8 +16,8 @@ class SoloCountryBudgetQuery(QueryBase):
     """
 
     def __init__(self, config):
-        source_queue = config["DEFAULT"].get("movies_solo_queue", "movies_solo")
-        super().__init__(config, source_queue, logger_name="q2")
+        self.source_queue = config["DEFAULT"].get("movies_solo_queue", "movies_solo")
+        super().__init__(config, self.source_queue, logger_name="q2")
 
         self.duplicate_handler = DuplicateHandler()
 
@@ -44,6 +44,8 @@ class SoloCountryBudgetQuery(QueryBase):
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"], message=results
         )
+
+        logger.debug("LRU: Results published for client %s, %s", client_id, self.duplicate_handler.get_cache(client_id, self.source_queue))
 
         # Limpieza de memoria
         del self.budget_by_country_by_request[key]
