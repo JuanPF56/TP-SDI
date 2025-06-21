@@ -75,7 +75,7 @@ down:
 	rm -rf ./query/q4/storage/*
 	rm -rf ./query/q5/storage/*
 	rm -rf ./resultados/*
-	rm -rf ./gateway/storage/*
+	sudo rm -rf ./gateway/storage/*
 
 # Muestra los contenedores activos relacionados
 ps:
@@ -98,7 +98,7 @@ clean:
 	rm -rf ./query/q4/storage/*
 	rm -rf ./query/q5/storage/*
 	rm -rf ./resultados/*
-	rm -rf ./gateway/storage/*
+	sudo rm -rf ./gateway/storage/*
 	docker network rm $(NETWORK) 2>/dev/null || true
 
 # Detiene solo los contenedores definidos en el sistema
