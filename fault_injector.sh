@@ -11,7 +11,7 @@ declare -A NODE_PREFIXES=(
   ["sentiment_analyzer"]="sentiment_analyzer"
   ["join_credits"]="join_credits"
   ["join_ratings"]="join_ratings"
-  ["gateway"]="gateway"
+  #["gateway"]="gateway"
 )
 
 # # ✅ OPCIONAL: Lista de contenedores específicos para matar (modo dirigido)
@@ -72,8 +72,13 @@ kill_nodes() {
 
 echo "🚀 Iniciando fault injector. Presioná Ctrl+C para frenar."
 
-# Loop infinito
+# En la primera ronda, matar 4 contenedores
+for i in {1..4}; do
+  kill_nodes
+done
+
+# Luego, continuar con el ciclo infinito matando 1 contenedor por vez
 while true; do
   kill_nodes
-  sleep 20
+  sleep 15
 done

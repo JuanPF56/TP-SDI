@@ -8,6 +8,7 @@ from common.eos_handling import handle_eos
 from common.filter_base import FilterBase, EOS_TYPE
 
 from common.logger import get_logger
+from common.master import REC_TYPE
 
 logger = get_logger("Filter-Cleanup")
 
@@ -106,17 +107,18 @@ class CleanupFilter(FilterBase):
         }
 
     def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
+        queue = queue_name.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            queue_name,
-            queue_name,
+            queue,
+            queue,
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=self.target_queues.get(queue_name),
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         try:
@@ -139,6 +141,10 @@ class CleanupFilter(FilterBase):
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(queue_name, body, method, headers, client_state)
+                return
+            
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
                 return
             
             if message_id is None:
@@ -195,12 +201,21 @@ class CleanupFilter(FilterBase):
         finally:
             self.rabbitmq_processor.acknowledge(method)
 
+    #def read_storage(self):
+        #self.client_manager.read_storage()
+        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[0],
+                                                    #self.target_queues.get(self.source_queues[0], []))
+        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[1],
+                                                    #self.target_queues.get(self.source_queues[1], []))
+        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[2],
+                                                    #self.target_queues.get(self.source_queues[2], []))
+
     def process(self):
         """
         Main processing function for the CleanupFilter.
         """
         logger.info("CleanupFilter is starting up")
-        self.elector.start_election()
+        self.elector.start()
         recover_node(self, self.main_source_queues)
         self.run_consumer()
 

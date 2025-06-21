@@ -18,8 +18,8 @@ class ArgProdActorsQuery(QueryBase):
     """
 
     def __init__(self, config):
-        source_queue = config["DEFAULT"].get("movies_credits_queue", "movies_credits")
-        super().__init__(config, source_queue, logger_name="q4")
+        self.source_queue = config["DEFAULT"].get("movies_credits_queue", "movies_credits")
+        super().__init__(config, self.source_queue, logger_name="q4")
 
         self.duplicate_handler = DuplicateHandler()
 
@@ -57,8 +57,10 @@ class ArgProdActorsQuery(QueryBase):
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"], message=results_msg
         )
-        del self.actor_participations[key]
-        self.client_manager.remove_client(client_state.client_id)
+        logger.debug("LRU: Results published for client %s, %s", client_state.client_id, 
+                    self.duplicate_handler.get_cache(client_state.client_id, self.source_queue))
+        #del self.actor_participations[key]
+        #self.client_manager.remove_client(client_state.client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"

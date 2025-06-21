@@ -10,7 +10,7 @@ logger = get_logger("Client-State")
 class ClientState:
     def __init__(self, client_id, nodes_to_await=1):
         self.client_id = client_id
-        self.eos_flags = {}  # key: queue_name, value: dict(node_id: bool)
+        self.eos_flags = {}  # Dictionary to hold EOS flags for each queue
         self.amount_of_eos = nodes_to_await
 
     def get_eos_flags(self):
@@ -23,7 +23,7 @@ class ClientState:
         """
         Mark that an EOS message has been received for a specific queue and node
         """
-        if queue_name not in self.eos_flags:
+        if queue_name not in self.eos_flags.keys():
             self.eos_flags[queue_name] = {}
         self.eos_flags[queue_name][node_id] = True
         logger.debug(

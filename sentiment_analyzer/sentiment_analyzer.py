@@ -14,7 +14,7 @@ from common.leader_election import LeaderElector
 from common.election_logic import election_logic, recover_node
 from common.eos_handling import handle_eos
 from common.logger import get_logger
-from common.master import MasterLogic
+from common.master import REC_TYPE, MasterLogic
 from common.mom import RabbitMQProcessor
 from common.client_state_manager import ClientState, ClientManager
 
@@ -49,13 +49,16 @@ class SentimentAnalyzer:
             target_queues=self.target_queues,
         )
 
+        self.manager = multiprocessing.Manager()
+        self.master_logic_started_event = self.manager.Event()
+        self.done_recovering = multiprocessing.Event()
+        #self.done_recovering.set() # Set by default, will be cleared when the node is elected as leader
+
         self.client_manager = ClientManager(
-            expected_queues=self.source_queue,
+            self.source_queue,
             nodes_to_await=self.eos_to_await,
         )
         
-        self.manager = multiprocessing.Manager()
-        self.master_logic_started_event = self.manager.Event()
         self.master_logic = MasterLogic(
             config=self.config,
             manager=self.manager,
@@ -71,7 +74,8 @@ class SentimentAnalyzer:
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+        self.elector = LeaderElector(self.node_id, self.peers, self.done_recovering,
+                                      self.election_port, self._election_logic)
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -85,6 +89,8 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.close()
             os.kill(self.master_logic.pid, signal.SIGINT)
             self.master_logic.join()
+            os.kill(self.elector.pid, signal.SIGINT)
+            self.elector.join()
             self.manager.shutdown()            
         except Exception as e:
             logger.error("Error closing connection: %s", e)
@@ -93,11 +99,13 @@ class SentimentAnalyzer:
         election_logic(
             self,
             leader_id=leader_id,
-            leader_queues=self.clean_batch_queue,
         )
 
     def read_storage(self):
         self.client_manager.read_storage()
+        #self.client_manager.check_all_eos_received(
+        #    self.config, self.node_id, self.clean_batch_queue, self.target_queues
+        #)
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
@@ -125,18 +133,18 @@ class SentimentAnalyzer:
     def _handle_eos(
         self, input_queue, body, method, headers, client_state: ClientState
     ):
-        # No batch clearing needed here, just handle eos and free client resources
+        queue = input_queue.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            input_queue,
-            self.source_queue,
+            queue,
+            queue,
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=self.target_queues,
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queue):
@@ -158,6 +166,10 @@ class SentimentAnalyzer:
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(input_queue, body, method, headers, client_state)
+                return
+            
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
                 return
             
             if message_id is None:

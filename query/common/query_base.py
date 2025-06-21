@@ -30,7 +30,7 @@ class QueryBase:
         )
 
         self.client_manager = ClientManager(
-            expected_queues=self.source_queues,
+            self.source_queues,
             nodes_to_await=self.eos_to_await,
         )
 

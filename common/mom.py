@@ -150,7 +150,7 @@ class RabbitMQProcessor:
         Starts consuming messages from the specified source queues.
         """
         logger.info("Iniciando el consumo de mensajes...")
-        self.channel.basic_qos(prefetch_count=5)
+        self.channel.basic_qos()
         for queue in self.source_queues:
             # Create a closure that properly captures the queue variable
             def create_callback_wrapper(queue):

@@ -3,26 +3,26 @@ import socket
 import threading
 import time
 import random
+import multiprocessing
 
-from common.logger import get_logger
+#logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("LeaderElector")
 
-# logging.basicConfig(level=logging.INFO)
-logger = get_logger("Leader_election")
-
-
-class LeaderElector:
-    def __init__(
-        self, node_id, peers, election_port=9000, election_logic: callable = None
-    ):
+class LeaderElector(multiprocessing.Process):
+    def __init__(self, node_id, peers, done_recovering, election_port=9000,
+                 election_logic: callable = None):
         """
         node_id: int, unique id of this node (higher wins)
         peers: dict of {node_id: (ip, port)} for all other nodes
         election_port: port number to listen/send election messages
         """
+        super().__init__()
         self.node_id = node_id
         self.peers = self._parse_peers(peers)
         self.election_port = election_port
         self.election_logic = election_logic
+
+        self.done_recovering = done_recovering  # Event to signal recovery completion
 
         self.election_in_progress = False
         self.highest_seen_id = (
@@ -394,9 +394,17 @@ class LeaderElector:
 
         except Exception as e:
             if cmd != "HEARTBEAT":  # Don't log heartbeat failures as errors
-                logger.error(
-                    f"[Node {self.node_id}] Failed to send {cmd} to {target_id}: {e}"
-                )
+                logger.error(f"[Node {self.node_id}] Failed to send {cmd} to {target_id}: {e}")
+
+    def run(self):
+        """
+        Start the leader election process.
+        This method can be called to initiate the election process.
+        """
+        self.done_recovering.wait()  # Wait for recovery to complete
+        
+        logger.info(f"[Node {self.node_id}] Running leader election")
+        self.start_election()
 
     def start_election(self):
         # Prevent starting election if we already have a stable leader

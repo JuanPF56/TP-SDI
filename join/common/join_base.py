@@ -42,11 +42,6 @@ class JoinBase:
         )
         self.output_queue = self.config["DEFAULT"].get("output_queue", "output_queue")
 
-        self.client_manager = ClientManager(
-            expected_queues=self.input_queue,
-            nodes_to_await=self.eos_to_await,
-        )
-
         # Initialize the RabbitMQProcessor
         self.rabbitmq_processor = RabbitMQProcessor(
             config, self.input_queue, self.output_queue
@@ -59,7 +54,15 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
+        
+        self.done_recovering = multiprocessing.Event()
+        #self.done_recovering.set() # Set by default, will be cleared when the node is elected as leader
 
+        self.client_manager = ClientManager(
+            self.input_queue,
+            nodes_to_await=self.eos_to_await,
+        )
+        
         self.movies_handler = MoviesHandler(
             config=self.config,
             manager=self.manager,
@@ -67,6 +70,7 @@ class JoinBase:
             node_id=self.node_id,
             node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
+            is_leader=self.is_leader,
         )
 
         self.master_logic = MasterLogic(
@@ -85,7 +89,7 @@ class JoinBase:
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 
+        self.elector = LeaderElector(self.node_id, self.peers, self.done_recovering, self.election_port, 
                                      self._election_logic)
 
         # Register signal handler for SIGTERM signal
@@ -101,22 +105,32 @@ class JoinBase:
     def _election_logic(self, leader_id):
         election_logic(
             self,
-            leader_id=leader_id,
-            leader_queues=self.clean_batch_queue,
+            leader_id=leader_id
         )
 
+    def is_leader(self):
+        """
+        Check if the current node is the leader.
+        """
+        return self.master_logic.is_leader()
+
     def read_storage(self):
-        self.movies_handler.read_storage()
-        self.client_manager.read_storage()
+        pass
+        #self.movies_handler.read_storage()
+        #self.client_manager.read_storage()
+        #self.client_manager.check_all_eos_received(
+        #    self.config, self.node_id, self.clean_batch_queue, self.output_queue
+        #)
 
     def process(self):
         # Start the process to receive the movies table
         self.movies_handler.start()
 
+        recover_node(self, self.clean_batch_queue)
+
         # Start the master logic process
         self.master_logic.start()
-        self.elector.start_election()
-        recover_node(self, self.clean_batch_queue)
+        self.elector.start()
 
         # Start the loop to receive the batches
         self.receive_batch()
@@ -153,22 +167,25 @@ class JoinBase:
             self.movies_handler.join()
             os.kill(self.master_logic.pid, signal.SIGINT)
             self.master_logic.join()
+            os.kill(self.elector.pid, signal.SIGINT)
+            self.elector.join()
             self.manager.shutdown()
             self.stopped = True
 
     def _handle_eos(self, queue_name, body, method, headers, client_state):
         self.log_debug(f"Received EOS from {queue_name}")
+        queue = queue_name.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            queue_name,
-            self.input_queue,
+            queue,
+            queue,
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=self.output_queue,
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.input_queue):
@@ -201,12 +218,17 @@ class JoinBase:
                 self._handle_eos(input_queue, body, method, headers, client_state)
                 return
             
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
+                return
+            
             if message_id is None:
                 self.log_error("Missing message_id in headers")
                 return
 
             if self.duplicate_handler.is_duplicate(current_client_id, input_queue, message_id):
-                self.log_info(f"Duplicate message detected: {message_id}. Acknowledging without processing.")
+                self.log_info(f"Current LRU cache: {self.duplicate_handler.get_caches()}")
+                self.log_info(f"Duplicate message detected: {message_id} for client {current_client_id}. Acknowledging without processing.")
                 return
 
             # Load the data from the incoming message
@@ -265,8 +287,7 @@ class JoinBase:
                         msg_type=msg_type,
                         headers=headers,
                     )
-
-            self.duplicate_handler.add(current_client_id, input_queue, message_id)
+                self.duplicate_handler.add(current_client_id, input_queue, message_id)
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.reconnect_and_restart(self.process_batch)

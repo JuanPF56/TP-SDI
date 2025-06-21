@@ -15,8 +15,7 @@ REC_TYPE = "RECOVERY"
 
 class MasterLogic(multiprocessing.Process):
     def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, 
-                 client_manager,
-                 started_event=None,
+                 client_manager, started_event=None,
                  movies_handler=None):
         """
         Initialize the MasterLogic class with the given configuration and manager.
@@ -100,6 +99,7 @@ class MasterLogic(multiprocessing.Process):
                     return
                 
                 self.target_index = (message_id % self.nodes_of_type) + 1
+                logger.debug(f"Distributing message {message_id} from client {client_id} to node {self.target_index} for queue {queue_name}")
                 target_node = f"{queue_name}_node_{self.target_index}"
                 self.rabbitmq_processor.publish(
                     target=target_node,
@@ -162,9 +162,17 @@ class MasterLogic(multiprocessing.Process):
                             message={"node_id": target_node},
                             msg_type=EOS_TYPE,
                             headers={"client_id": client_id},
-                            priority=1                            
+                            priority=1                           
                         )
         
+        # Acknowledge the recovery request
+        self.rabbitmq_processor.publish(
+            target=f"{queue_name}_node_{node_id}",
+            message={"status": "recovery_complete"},
+            msg_type=REC_TYPE,
+            headers={"node_id": node_id, "queue_name": queue_name},
+            priority=1
+        )
         logger.info(f"EOS messages sent to node {node_id} for queue {queue_name}.")
 
     def _close_connection(self):
@@ -183,7 +191,11 @@ class MasterLogic(multiprocessing.Process):
         """
         Toggle the leader status.
         """
-        self.leader.set() if not self.leader.is_set() else self.leader.clear()
+        if not self.leader.is_set():
+            self.leader.set()
+        else:
+            self.leader.clear()
+
         logger.info(f"Leader status toggled to: {self.leader.is_set()}")
 
     def is_leader(self):

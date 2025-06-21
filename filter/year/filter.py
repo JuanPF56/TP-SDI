@@ -7,6 +7,7 @@ from common.client_state_manager import ClientState
 from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.eos_handling import handle_eos
+from common.master import REC_TYPE
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
@@ -20,7 +21,7 @@ class YearFilter(FilterBase):
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
         self.client_manager = ClientManager(
-            expected_queues=self.source_queues,
+            self.source_queues,
             nodes_to_await=self.eos_to_await,
         )
 
@@ -61,14 +62,17 @@ class YearFilter(FilterBase):
     ):
         if client_state:
             logger.debug("Received EOS from %s", input_queue)
+
+        queue = input_queue.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            input_queue,
-            input_queue,
+            queue,
+            queue,
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=(
                 self.target_queue if input_queue == self.source_queues[1] else None
             ),
@@ -76,7 +80,6 @@ class YearFilter(FilterBase):
                 self.target_exchange if input_queue == self.source_queues[0] else None
             ),
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queues):
@@ -92,6 +95,10 @@ class YearFilter(FilterBase):
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(input_queue, body, method, headers, client_state)
+                return
+            
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
                 return
             
             if message_id is None:
@@ -179,6 +186,15 @@ class YearFilter(FilterBase):
                 headers=headers,
                 priority=1,
             )
+
+    def read_storage(self):
+        self.client_manager.read_storage()
+        #self.client_manager.check_all_eos_received(
+            #self.config, self.node_id, self.main_source_queues[0],
+            #target_exchange=self.target_exchange)
+        #self.client_manager.check_all_eos_received(
+            #self.config, self.node_id, self.main_source_queues[1],
+            #self.target_queue)
 
     def process(self):
         """

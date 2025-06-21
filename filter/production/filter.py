@@ -7,6 +7,7 @@ from common.client_state_manager import ClientManager
 from common.client_state import ClientState
 from common.eos_handling import handle_eos
 from common.logger import get_logger
+from common.master import REC_TYPE
 
 logger = get_logger("Filter-Production")
 
@@ -19,7 +20,7 @@ class ProductionFilter(FilterBase):
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
         self.client_manager = ClientManager(
-            expected_queues=self.source_queues,
+            self.source_queues,
             nodes_to_await=self.eos_to_await,
         )
 
@@ -49,17 +50,18 @@ class ProductionFilter(FilterBase):
 
     def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
         logger.debug("Received EOS from %s", queue_name)
+        queue = queue_name.split("_node_")[0]
         handle_eos(
             body,
             self.node_id,
-            queue_name,
-            self.source_queues,
+            queue,
+            self.main_source_queues,
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=self.target_queues.get(queue_name),
         )
-        #self._free_resources(client_state)
 
     def _free_resources(self, client_state: ClientState):
         if client_state and client_state.has_received_all_eos(self.source_queues):
@@ -125,6 +127,10 @@ class ProductionFilter(FilterBase):
                 self._handle_eos(queue_name, body, method, headers, client_state)
                 return
             
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
+                return
+            
             if message_id is None:
                 logger.error("Missing message_id in headers")
                 return
@@ -171,7 +177,12 @@ class ProductionFilter(FilterBase):
 
         finally:
             self.rabbitmq_processor.acknowledge(method)
-    
+
+    def read_storage(self):
+        self.client_manager.read_storage()
+        #self.client_manager.check_all_eos_received(
+            #self.config, self.node_id, self.main_source_queues, self.target_queues[self.source_queues[0]])
+        
     def process(self):
         """
         Main processing function for the ProductionFilter.
@@ -179,7 +190,7 @@ class ProductionFilter(FilterBase):
         to the respective queues.
         """
         logger.info("ProductionFilter is starting up")
-        self.elector.start_election()
+        self.elector.start()
         recover_node(self, self.main_source_queues)
         self.run_consumer()
 

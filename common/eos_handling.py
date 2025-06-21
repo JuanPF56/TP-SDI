@@ -1,7 +1,6 @@
 import json
 from typing import Dict, Any
 from common.client_state import ClientState
-from common.client_state_manager import ClientManager
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
@@ -17,7 +16,7 @@ have sent EOS, and propagate the EOS to output queues and exchanges.
 
 def handle_eos(body, node_id, input_queue, source_queues, headers,
                       rabbitmq_processor: RabbitMQProcessor, client_state: ClientState,
-                      target_queues=None, target_exchanges=None):
+                      is_leader=False, target_queues=None, target_exchanges=None):
     """
     Mark the end of stream (EOS) for the given input queue for the given node 
     if it hasn't been marked yet. 
@@ -43,16 +42,27 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
 
     if client_state and not client_state.has_queue_received_eos_from_node(input_queue, n_id):
         client_state.mark_eos(input_queue, n_id)
-        client_state.write_storage()
+        #if is_leader:
+            #done_reading.wait()
+            #client_state.write_storage()
         check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                         client_state, target_queues, target_exchanges)
 
-    logger.debug(f"EOS received for node {n_id} from input queue {input_queue}")
+    logger.info(f"EOS received for node {n_id} from input queue {input_queue}")
 
 def check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                     client_state: ClientState, target_queues=None, target_exchanges=None):
     """
     Check if all nodes have sent EOS and propagate to output queues.
+
+    Parameters:
+    - headers: The headers of the message.
+    - node_id: The ID of the current node.
+    - source_queues: The list of source queues to check for EOS.
+    - rabbitmq_processor: The RabbitMQ processor instance.
+    - client_state: The client state instance.
+    - target_queues: The target queues to send the EOS message to.
+    - target_exchanges: The target exchanges to send the EOS message to.
     """
     if client_state.has_received_all_eos(source_queues):
         logger.info("All nodes have sent EOS. Sending EOS to output queues.")

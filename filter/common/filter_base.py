@@ -34,8 +34,11 @@ class FilterBase:
         self.manager = multiprocessing.Manager()
         self.master_logic = None
         self.master_logic_started_event = multiprocessing.Event()
+        self.done_recovering = multiprocessing.Event()
+        #self.done_recovering.set() # Set by default, will be cleared when the node is elected as leader
 
-        self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+        self.elector = LeaderElector(self.node_id, self.peers, self.done_recovering,
+                                      self.election_port, self._election_logic)
 
         self.duplicate_handler = DuplicateHandler()
 
@@ -57,11 +60,10 @@ class FilterBase:
         election_logic(
             self,
             leader_id=leader_id,
-            leader_queues=self.main_source_queues,
         )
 
     def read_storage(self):
-        self.client_manager.read_storage()
+        pass
 
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
@@ -141,4 +143,6 @@ class FilterBase:
     def terminate_subprocesses(self):
         os.kill(self.master_logic.pid, signal.SIGINT)
         self.master_logic.join()
+        os.kill(self.elector.pid, signal.SIGINT)
+        self.elector.join()
         self.manager.shutdown()
