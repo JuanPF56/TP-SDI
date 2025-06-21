@@ -99,6 +99,7 @@ class Gateway:
                 existing_client._running = True
                 existing_client.was_closed = False
                 existing_client.start()
+                existing_client.send_all_stored_results()
             else:
                 new_connected_client = ConnectedClient(
                     client_id=client_id,
@@ -161,7 +162,8 @@ class Gateway:
         logger.info("Gateway running...")
         while not self._was_closed:
             try:
-                # self._reap_disconnected_clients()
+                # self._reap_completed_clients()
+
                 if self._gateway_socket.fileno() == -1:
                     logger.info("Socket already closed, stopping gateway loop.")
                     break
@@ -221,13 +223,14 @@ class Gateway:
                 logger.error("Unexpected error: %s", e)
                 return
 
-    def _reap_disconnected_clients(self):
+    def _reap_completed_clients(self):
         try:
-            logger.info("Checking for any disconnected clients...")
+            logger.info("Checking for any completed clients...")
             for client in list(self._clients_connected.get_all().values()):
-                if not client.client_is_connected():
+                if client.all_answers_sent:
                     logger.info(
-                        "Removing disconnected client %s", client.get_client_id()
+                        "Removing completed client %s",
+                        client.get_client_id(),
                     )
                     self._clients_connected.remove(client)
             logger.info("Done checking.")

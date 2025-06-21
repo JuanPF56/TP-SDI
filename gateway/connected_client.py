@@ -2,17 +2,22 @@
 This module defines the ConnectedClient class, which represents a client connected to the protocol gateway.
 """
 
-import os
-import json
 import socket
 import threading
 from dataclasses import asdict, is_dataclass
-import fcntl  # For file locking on Unix systems
-import time
-from pathlib import Path
 
 from protocol_gateway_client import ProtocolGateway
 from batch_message import BatchMessage
+from result_message import ResultMessage
+from storage import (
+    save_batch_to_disk,
+    safe_delete_batch_file,
+    load_batches_from_disk,
+    load_results_from_disk,
+    save_result_to_disk,
+    delete_result_file,
+)
+
 
 from common.protocol import IS_LAST_BATCH_FLAG, TIPO_MENSAJE
 from common.mom import RabbitMQProcessor
@@ -61,7 +66,7 @@ class ConnectedClient(threading.Thread):
         )
         if self.recovery_mode:
             logger.info("Recovery mode is enabled for client %s", self._client_id)
-            self._load_batches_from_disk()
+            load_batches_from_disk(self._client_id)
         else:
             logger.info("Recovery mode is disabled for client %s", self._client_id)
 
@@ -72,7 +77,9 @@ class ConnectedClient(threading.Thread):
 
         self._processed_datasets_from_request = 0
 
-        self._sent_answers = 0
+        self.sent_results = load_results_from_disk(self._client_id)
+        self._sent_answers = len(self.sent_results)
+
         self._sent_answers_lock = threading.Lock()
 
         self.broker = None
@@ -95,6 +102,22 @@ class ConnectedClient(threading.Thread):
         connected = self.broker.connect()
         if not connected:
             raise RuntimeError("Failed to connect to RabbitMQ.")
+
+    def all_answers_sent(self) -> bool:
+        """
+        Check if all expected answers have been sent.
+
+        :return: True if all expected answers have been sent, False otherwise.
+        """
+        with self._sent_answers_lock:
+            all_sent = self._sent_answers == self._expected_answers_to_send_per_request
+            logger.debug(
+                "All answers sent: %s (Sent: %d, Expected: %d)",
+                all_sent,
+                self._sent_answers,
+                self._expected_answers_to_send_per_request,
+            )
+            return all_sent
 
     def add_sent_answer(self):
         """
@@ -204,7 +227,7 @@ class ConnectedClient(threading.Thread):
                     processed_data=processed_data,
                 )
                 self.batches_stored.append(new_batch)
-                self._save_batch_to_disk(new_batch)
+                save_batch_to_disk(new_batch)
                 self.accumulated_batches += 1
 
                 if (
@@ -276,7 +299,7 @@ class ConnectedClient(threading.Thread):
                 )
 
                 if success:
-                    self._safe_delete_batch_file(batch_message)
+                    safe_delete_batch_file(batch_message)
 
                 if batch_message.is_last_batch == IS_LAST_BATCH_FLAG:
                     success = self.broker.publish(
@@ -372,277 +395,40 @@ class ConnectedClient(threading.Thread):
             return "BATCH_RATINGS"
         return None
 
-    def send_result(self, result_data):
+    def send_result(self, result_message: ResultMessage):
         """
         Send the result data to the client.
         """
         try:
-            logger.info("Sending result to client %s: %s", self._client_id, result_data)
-            self._protocol_gateway.send_result(result_data)
+            logger.info(
+                "Sending result to client %s: %s", self._client_id, result_message
+            )
+
+            # Guardar en disco antes de intentar enviar
+            save_result_to_disk(result_message, self._client_id)
+
+            self._protocol_gateway.send_result(result_message.to_dict())
+
             self.add_sent_answer()
+
+            # Si se envió bien, eliminar archivo
+            delete_result_file(self._client_id, result_message.query)
 
         except Exception as e:
             logger.error("Error sending result to client %s: %s", self._client_id, e)
             self._stop_client()
 
-    def _save_batch_to_disk(self, batch: BatchMessage):
+    def send_all_stored_results(self):
         """
-        Save batch to disk with improved error handling and atomic writes.
+        Resend all stored results to the client.
+        This is useful for recovery mode to ensure all results are sent.
         """
-        try:
-            client_dir = Path("storage") / batch.client_id
-            client_dir.mkdir(parents=True, exist_ok=True)
-
-            final_path = client_dir / f"{batch.message_code}_{batch.current_batch}.json"
-
-            # Create a unique temporary file in the same directory
-            temp_path = (
-                client_dir
-                / f".tmp_{batch.message_code}_{batch.current_batch}_{int(time.time() * 1000)}.json"
-            )
-
+        logger.info("Resending all stored results for client %s", self._client_id)
+        for saved_result in self.sent_results:
             try:
-                # Write to temporary file with proper error handling
-                with open(temp_path, "w", encoding="utf-8") as tmp_file:
-                    # Use file locking if available (Unix systems)
-                    try:
-                        fcntl.flock(tmp_file.fileno(), fcntl.LOCK_EX)
-                    except (AttributeError, OSError):
-                        # fcntl not available on Windows or file locking failed
-                        pass
-
-                    json.dump(
-                        custom_asdict(batch),
-                        tmp_file,
-                        ensure_ascii=False,
-                        indent=2,
-                        separators=(",", ": "),  # Consistent formatting
-                    )
-                    tmp_file.flush()
-                    os.fsync(tmp_file.fileno())  # Force write to disk
-
-                # Atomically replace the final file
-                if os.name == "nt":  # Windows
-                    # On Windows, remove the target file first if it exists
-                    if final_path.exists():
-                        final_path.unlink()
-                    temp_path.rename(final_path)
-                else:  # Unix-like systems
-                    temp_path.rename(final_path)
-
-                logger.debug("Successfully saved batch to disk: %s", final_path)
-
+                self._protocol_gateway.send_result(saved_result.to_dict())
+                self.add_sent_answer()
+                delete_result_file(self._client_id, saved_result.query)
             except Exception as e:
-                # Clean up temporary file if something went wrong
-                if temp_path.exists():
-                    try:
-                        temp_path.unlink()
-                    except Exception:
-                        pass
-                raise e
-
-        except Exception as e:
-            logger.error(
-                "Error saving batch to disk for client %s: %s", batch.client_id, e
-            )
-            raise
-
-    def _safe_delete_batch_file(self, batch_message: BatchMessage):
-        """
-        Safely delete batch file with retry logic.
-        """
-        filename = f"{batch_message.message_code}_{batch_message.current_batch}.json"
-        path = Path("storage") / batch_message.client_id / filename
-
-        if not path.exists():
-            return
-
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                path.unlink()
-                logger.debug("Successfully deleted batch file: %s", path)
-                return
-            except OSError as e:
-                if attempt < max_retries - 1:
-                    logger.warning(
-                        "Failed to delete batch file %s (attempt %d/%d): %s",
-                        path,
-                        attempt + 1,
-                        max_retries,
-                        e,
-                    )
-                    time.sleep(0.1 * (attempt + 1))  # Exponential backoff
-                else:
-                    logger.error(
-                        "Failed to delete batch file %s after %d attempts: %s",
-                        path,
-                        max_retries,
-                        e,
-                    )
-
-    def _load_batches_from_disk(self):
-        """
-        Load batches from disk with improved error handling and corruption detection.
-        """
-        try:
-            client_dir = Path("storage") / self._client_id
-            if not client_dir.is_dir():
-                logger.info("No storage directory found for client %s", self._client_id)
-                return
-
-            # Get all JSON files, excluding temporary files
-            json_files = [
-                f
-                for f in client_dir.iterdir()
-                if f.is_file()
-                and f.suffix == ".json"
-                and not f.name.startswith(".tmp_")
-            ]
-
-            # Sort files to ensure consistent processing order
-            json_files.sort(key=lambda x: x.name)
-
-            loaded_count = 0
-            error_count = 0
-
-            for file_path in json_files:
-                try:
-                    # Check if file is empty or too small
-                    if file_path.stat().st_size < 10:  # Minimum viable JSON size
-                        logger.warning(
-                            "File %s is too small, likely corrupted. Skipping.",
-                            file_path,
-                        )
-                        self._move_corrupted_file(file_path)
-                        error_count += 1
-                        continue
-
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        # Try to lock file for reading if possible
-                        try:
-                            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
-                        except (AttributeError, OSError):
-                            pass
-
-                        # Read and parse JSON
-                        try:
-                            data = json.load(f)
-                        except json.JSONDecodeError as e:
-                            logger.error(
-                                "JSON decode error in file %s: %s", file_path, e
-                            )
-                            self._move_corrupted_file(file_path)
-                            error_count += 1
-                            continue
-
-                    # Validate the data structure
-                    if not self._validate_batch_data(data):
-                        logger.error(
-                            "Invalid batch data structure in file %s", file_path
-                        )
-                        self._move_corrupted_file(file_path)
-                        error_count += 1
-                        continue
-
-                    # Try to reconstruct the BatchMessage
-                    try:
-                        batch = BatchMessage.from_json_with_casting(data)
-                        self.batches_stored.append(batch)
-                        self.accumulated_batches += 1
-                        loaded_count += 1
-                        logger.debug(
-                            "Successfully loaded batch from %s", file_path.name
-                        )
-
-                    except Exception as e:
-                        logger.error(
-                            "Error reconstructing batch from %s: %s", file_path, e
-                        )
-                        self._move_corrupted_file(file_path)
-                        error_count += 1
-                        continue
-
-                except Exception as e:
-                    logger.error("Unexpected error loading file %s: %s", file_path, e)
-                    error_count += 1
-                    continue
-
-            logger.info(
-                "Batch loading complete for client %s: %d loaded, %d errors",
-                self._client_id,
-                loaded_count,
-                error_count,
-            )
-
-        except Exception as e:
-            logger.error(
-                "Critical error loading batches from disk for client %s: %s",
-                self._client_id,
-                e,
-            )
-
-    def _validate_batch_data(self, data):
-        """
-        Validate that the loaded data has the expected structure for a BatchMessage.
-        """
-        if not isinstance(data, dict):
-            return False
-
-        required_fields = [
-            "message_id",
-            "message_code",
-            "client_id",
-            "current_batch",
-            "is_last_batch",
-        ]
-
-        for field in required_fields:
-            if field not in data:
-                logger.warning("Missing required field '%s' in batch data", field)
-                return False
-
-        # Additional validation can be added here
-        return True
-
-    def _move_corrupted_file(self, file_path: Path):
-        """
-        Move corrupted files to a separate directory for inspection.
-        """
-        try:
-            corrupted_dir = file_path.parent / "corrupted"
-            corrupted_dir.mkdir(exist_ok=True)
-
-            # Generate unique name to avoid conflicts
-            timestamp = int(time.time() * 1000)
-            new_name = f"{file_path.stem}_{timestamp}{file_path.suffix}"
-            corrupted_path = corrupted_dir / new_name
-
-            file_path.rename(corrupted_path)
-            logger.info("Moved corrupted file %s to %s", file_path, corrupted_path)
-
-        except Exception as e:
-            logger.error("Failed to move corrupted file %s: %s", file_path, e)
-            # If we can't move it, try to delete it as last resort
-            try:
-                file_path.unlink()
-                logger.warning("Deleted corrupted file %s", file_path)
-            except Exception:
-                logger.error("Failed to delete corrupted file %s", file_path)
-
-
-def custom_asdict(obj):
-    """
-    Custom serialization function with better error handling.
-    """
-    try:
-        if isinstance(obj, list):
-            return [custom_asdict(i) for i in obj]
-        elif hasattr(obj, "__dict__") or hasattr(obj, "__dataclass_fields__"):
-            return {k: custom_asdict(v) for k, v in asdict(obj).items()}
-        else:
-            return obj
-    except Exception as e:
-        logger.error("Error in custom_asdict serialization: %s", e)
-        # Return a safe representation
-        return str(obj)
+                logger.error("Error resending saved result: %s", e)
+                break
