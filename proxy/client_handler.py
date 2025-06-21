@@ -16,7 +16,7 @@ import common.sender as sender
 from common.logger import get_logger
 
 logger = get_logger("client_handler")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 TIMEOUT_HEADER = 3600
 TIMEOUT_PAYLOAD = 3600
@@ -24,8 +24,9 @@ TIMEOUT_PAYLOAD = 3600
 RETRY_INTERVAL = 2
 
 
-class ClientHandler:
+class ClientHandler(threading.Thread):
     def __init__(self, proxy, client_socket, addr, gateway_id, client_id=None):
+        super().__init__(daemon=True)
         self.proxy = proxy
         self.client_socket = client_socket
         self.addr = addr
@@ -39,14 +40,10 @@ class ClientHandler:
                 f"No gateway socket found for gateway ID {self.gateway_id}"
             )
 
-    def start(self):
+    def run(self):
         try:
             self._register_client()
-
-            threading.Thread(
-                target=self._forward_client_to_gateway,
-                daemon=True,
-            ).start()
+            self._forward_client_to_gateway()
 
         except Exception as e:
             logger.error("Error in client handler: %s", e)
@@ -117,13 +114,13 @@ class ClientHandler:
                     time.sleep(RETRY_INTERVAL)
                     continue
 
-                self.client_socket, self.gateway_socket, _ = current_client_info
+                client_socket, current_gateway_socket, _ = current_client_info
 
-                if self.client_socket.fileno() == -1:
+                if client_socket.fileno() == -1:
                     logger.info("Client %s socket is closed", self.client_id)
                     break
 
-                if self.gateway_socket.fileno() == -1:
+                if current_gateway_socket.fileno() == -1:
                     logger.warning(
                         "Gateway for client %s is down, waiting...", self.client_id
                     )
@@ -154,8 +151,14 @@ class ClientHandler:
                 # Use current gateway socket and lock
                 lock = self.proxy._gateway_locks[self.gateway_id]
                 with lock:
-                    sender.send(self.gateway_socket, header)
-                    sender.send(self.gateway_socket, payload)
+                    logger.debug(
+                        "Forwarding message ID %s from client %s to gateway %s",
+                        message_id,
+                        self.client_id,
+                        self.gateway_id,
+                    )
+                    sender.send(current_gateway_socket, header)
+                    sender.send(current_gateway_socket, payload)
 
             except receiver.ReceiverError:
                 logger.warning(

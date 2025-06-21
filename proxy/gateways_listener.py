@@ -7,6 +7,8 @@ from common.protocol import SIZE_OF_UINT8
 import common.receiver as receiver
 from common.logger import get_logger
 
+from client_handler import ClientHandler
+
 logger = get_logger("gateways_listener")
 
 RETRY_INTERVAL = 5  # segundos
@@ -136,6 +138,17 @@ class GatewaysListener(threading.Thread):
                         client_id,
                         gateway_id,
                     )
+
+                    # Reiniciar el handler si está detenido
+                    if client_id in self.proxy._client_handlers:
+                        handler = self.proxy._client_handlers[client_id]
+                        if not handler.is_alive():
+                            logger.info("Restarting ClientHandler for %s", client_id)
+                            new_handler = ClientHandler(
+                                self.proxy, client_socket, addr, gateway_id
+                            )
+                            self.proxy._client_handlers[client_id] = new_handler
+                            new_handler.start()
                 else:
                     logger.error(
                         "Failed to reconnect client %s to gateway %s",

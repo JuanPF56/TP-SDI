@@ -63,18 +63,18 @@ logs-all:
 down:
 	docker compose -f $(SYSTEM_FILE) -p sistema down
 	docker compose -f $(CLIENTS_FILE) -p clientes down
-	rm -rf ./join/ratings/storage/*
-	rm -rf ./join/credits/storage/*
-	rm -rf ./filter/cleanup/storage/*
-	rm -rf ./filter/year/storage/*
-	rm -rf ./filter/production/storage/*
-	rm -rf ./sentiment_analyzer/storage/*
-	rm -rf ./query/q1/storage/*
-	rm -rf ./query/q2/storage/*
-	rm -rf ./query/q3/storage/*
-	rm -rf ./query/q4/storage/*
-	rm -rf ./query/q5/storage/*
-	rm -rf ./resultados/*
+	sudo rm -rf ./join/ratings/storage/*
+	sudo rm -rf ./join/credits/storage/*
+	sudo rm -rf ./filter/cleanup/storage/*
+	sudo rm -rf ./filter/year/storage/*
+	sudo rm -rf ./filter/production/storage/*
+	sudo rm -rf ./sentiment_analyzer/storage/*
+	sudo rm -rf ./query/q1/storage/*
+	sudo rm -rf ./query/q2/storage/*
+	sudo rm -rf ./query/q3/storage/*
+	sudo rm -rf ./query/q4/storage/*
+	sudo rm -rf ./query/q5/storage/*
+	sudo rm -rf ./resultados/*
 	sudo rm -rf ./gateway/storage/*
 
 # Muestra los contenedores activos relacionados
@@ -86,18 +86,18 @@ ps:
 clean:
 	docker compose -f $(SYSTEM_FILE) -p sistema down -v
 	docker compose -f $(CLIENTS_FILE) -p clientes down -v
-	rm -rf ./join/ratings/storage/*
-	rm -rf ./join/credits/storage/*
-	rm -rf ./filter/cleanup/storage/*
-	rm -rf ./filter/year/storage/*
-	rm -rf ./filter/production/storage/*
-	rm -rf ./sentiment_analyzer/storage/*
-	rm -rf ./query/q1/storage/*
-	rm -rf ./query/q2/storage/*
-	rm -rf ./query/q3/storage/*
-	rm -rf ./query/q4/storage/*
-	rm -rf ./query/q5/storage/*
-	rm -rf ./resultados/*
+	sudo rm -rf ./join/ratings/storage/*
+	sudo rm -rf ./join/credits/storage/*
+	sudo rm -rf ./filter/cleanup/storage/*
+	sudo rm -rf ./filter/year/storage/*
+	sudo rm -rf ./filter/production/storage/*
+	sudo rm -rf ./sentiment_analyzer/storage/*
+	sudo rm -rf ./query/q1/storage/*
+	sudo rm -rf ./query/q2/storage/*
+	sudo rm -rf ./query/q3/storage/*
+	sudo rm -rf ./query/q4/storage/*
+	sudo rm -rf ./query/q5/storage/*
+	sudo rm -rf ./resultados/*
 	sudo rm -rf ./gateway/storage/*
 	docker network rm $(NETWORK) 2>/dev/null || true
 
