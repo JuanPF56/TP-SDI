@@ -137,6 +137,7 @@ class SentimentAnalyzer:
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=self.target_queues,
         )
 

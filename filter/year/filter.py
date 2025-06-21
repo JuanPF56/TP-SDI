@@ -71,6 +71,7 @@ class YearFilter(FilterBase):
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=(
                 self.target_queue if input_queue == self.source_queues[1] else None
             ),

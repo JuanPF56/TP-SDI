@@ -58,6 +58,7 @@ class ProductionFilter(FilterBase):
             headers,
             self.rabbitmq_processor,
             client_state,
+            self.master_logic.is_leader(),
             target_queues=self.target_queues.get(queue_name),
         )
 
@@ -175,7 +176,7 @@ class ProductionFilter(FilterBase):
     def read_storage(self):
         self.client_manager.read_storage()
         self.client_manager.check_all_eos_received(
-            self.config, self.node_id, self.main_source_queues, self.target_queues)
+            self.config, self.node_id, self.main_source_queues, self.target_queues[self.source_queues[0]])
         
     def process(self):
         """

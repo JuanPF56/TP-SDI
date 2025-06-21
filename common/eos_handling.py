@@ -16,7 +16,7 @@ have sent EOS, and propagate the EOS to output queues and exchanges.
 
 def handle_eos(body, node_id, input_queue, source_queues, headers,
                       rabbitmq_processor: RabbitMQProcessor, client_state: ClientState,
-                      target_queues=None, target_exchanges=None):
+                      is_leader=False, target_queues=None, target_exchanges=None):
     """
     Mark the end of stream (EOS) for the given input queue for the given node 
     if it hasn't been marked yet. 
@@ -42,7 +42,8 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
 
     if client_state and not client_state.has_queue_received_eos_from_node(input_queue, n_id):
         client_state.mark_eos(input_queue, n_id)
-        client_state.write_storage()
+        if is_leader:
+            client_state.write_storage()
         check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                         client_state, target_queues, target_exchanges)
 
