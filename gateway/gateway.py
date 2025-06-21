@@ -189,14 +189,24 @@ class Gateway:
                     or tipo_mensaje == TIPO_MENSAJE["BATCH_CREDITS"]
                     or tipo_mensaje == TIPO_MENSAJE["BATCH_RATINGS"]
                 ):
-                    self._handle_batch_messages(
-                        message_id,
-                        tipo_mensaje,
-                        encoded_id,
-                        batch_number,
-                        is_last_batch,
-                        payload_length,
-                    )
+                    try:
+                        self._handle_batch_messages(
+                            message_id,
+                            tipo_mensaje,
+                            encoded_id,
+                            batch_number,
+                            is_last_batch,
+                            payload_length,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Error in batch with: message_id=%s, tipo_mensaje=%s, batch_number=%s: %s",
+                            message_id,
+                            tipo_mensaje,
+                            batch_number,
+                            e,
+                        )
+                        continue
 
                 else:
                     logger.warning("Unknown message type received: %s", tipo_mensaje)

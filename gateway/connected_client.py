@@ -7,7 +7,9 @@ import json
 import socket
 import threading
 from dataclasses import asdict, is_dataclass
-import tempfile
+import fcntl  # For file locking on Unix systems
+import time
+from pathlib import Path
 
 from protocol_gateway_client import ProtocolGateway
 from batch_message import BatchMessage
@@ -274,15 +276,7 @@ class ConnectedClient(threading.Thread):
                 )
 
                 if success:
-                    try:
-                        filename = f"{batch_message.message_code}_{batch_message.current_batch}.json"
-                        path = os.path.join(
-                            "storage", batch_message.client_id, filename
-                        )
-                        if os.path.exists(path):
-                            os.remove(path)
-                    except Exception as e:
-                        logger.warning("Error deleting stored batch file: %s", e)
+                    self._safe_delete_batch_file(batch_message)
 
                 if batch_message.is_last_batch == IS_LAST_BATCH_FLAG:
                     success = self.broker.publish(
@@ -392,66 +386,263 @@ class ConnectedClient(threading.Thread):
             self._stop_client()
 
     def _save_batch_to_disk(self, batch: BatchMessage):
+        """
+        Save batch to disk with improved error handling and atomic writes.
+        """
         try:
-            client_dir = os.path.join("storage", batch.client_id)
-            os.makedirs(client_dir, exist_ok=True)
-            final_path = os.path.join(
-                client_dir, f"{batch.message_code}_{batch.current_batch}.json"
+            client_dir = Path("storage") / batch.client_id
+            client_dir.mkdir(parents=True, exist_ok=True)
+
+            final_path = client_dir / f"{batch.message_code}_{batch.current_batch}.json"
+
+            # Create a unique temporary file in the same directory
+            temp_path = (
+                client_dir
+                / f".tmp_{batch.message_code}_{batch.current_batch}_{int(time.time() * 1000)}.json"
             )
 
-            # Write to a temporary file first
-            with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=client_dir, delete=False
-            ) as tmp_file:
-                json.dump(custom_asdict(batch), tmp_file, ensure_ascii=False, indent=2)
-                tmp_file.flush()
-                os.fsync(tmp_file.fileno())
-                temp_path = tmp_file.name
+            try:
+                # Write to temporary file with proper error handling
+                with open(temp_path, "w", encoding="utf-8") as tmp_file:
+                    # Use file locking if available (Unix systems)
+                    try:
+                        fcntl.flock(tmp_file.fileno(), fcntl.LOCK_EX)
+                    except (AttributeError, OSError):
+                        # fcntl not available on Windows or file locking failed
+                        pass
 
-            # Atomically replace the final file with the temp file
-            os.replace(temp_path, final_path)
+                    json.dump(
+                        custom_asdict(batch),
+                        tmp_file,
+                        ensure_ascii=False,
+                        indent=2,
+                        separators=(",", ": "),  # Consistent formatting
+                    )
+                    tmp_file.flush()
+                    os.fsync(tmp_file.fileno())  # Force write to disk
+
+                # Atomically replace the final file
+                if os.name == "nt":  # Windows
+                    # On Windows, remove the target file first if it exists
+                    if final_path.exists():
+                        final_path.unlink()
+                    temp_path.rename(final_path)
+                else:  # Unix-like systems
+                    temp_path.rename(final_path)
+
+                logger.debug("Successfully saved batch to disk: %s", final_path)
+
+            except Exception as e:
+                # Clean up temporary file if something went wrong
+                if temp_path.exists():
+                    try:
+                        temp_path.unlink()
+                    except Exception:
+                        pass
+                raise e
 
         except Exception as e:
             logger.error(
                 "Error saving batch to disk for client %s: %s", batch.client_id, e
             )
+            raise
+
+    def _safe_delete_batch_file(self, batch_message: BatchMessage):
+        """
+        Safely delete batch file with retry logic.
+        """
+        filename = f"{batch_message.message_code}_{batch_message.current_batch}.json"
+        path = Path("storage") / batch_message.client_id / filename
+
+        if not path.exists():
+            return
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                path.unlink()
+                logger.debug("Successfully deleted batch file: %s", path)
+                return
+            except OSError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        "Failed to delete batch file %s (attempt %d/%d): %s",
+                        path,
+                        attempt + 1,
+                        max_retries,
+                        e,
+                    )
+                    time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                else:
+                    logger.error(
+                        "Failed to delete batch file %s after %d attempts: %s",
+                        path,
+                        max_retries,
+                        e,
+                    )
 
     def _load_batches_from_disk(self):
+        """
+        Load batches from disk with improved error handling and corruption detection.
+        """
         try:
-            client_dir = os.path.join("storage", self._client_id)
-            if not os.path.isdir(client_dir):
+            client_dir = Path("storage") / self._client_id
+            if not client_dir.is_dir():
+                logger.info("No storage directory found for client %s", self._client_id)
                 return
 
-            files = sorted(os.listdir(client_dir))  # ordena por batch
-            for filename in files:
-                if filename.endswith(".json"):
-                    path = os.path.join(client_dir, filename)
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        logger.debug(
-                            "Loading batch from disk: %s, data: %s", filename, data
+            # Get all JSON files, excluding temporary files
+            json_files = [
+                f
+                for f in client_dir.iterdir()
+                if f.is_file()
+                and f.suffix == ".json"
+                and not f.name.startswith(".tmp_")
+            ]
+
+            # Sort files to ensure consistent processing order
+            json_files.sort(key=lambda x: x.name)
+
+            loaded_count = 0
+            error_count = 0
+
+            for file_path in json_files:
+                try:
+                    # Check if file is empty or too small
+                    if file_path.stat().st_size < 10:  # Minimum viable JSON size
+                        logger.warning(
+                            "File %s is too small, likely corrupted. Skipping.",
+                            file_path,
                         )
+                        self._move_corrupted_file(file_path)
+                        error_count += 1
+                        continue
+
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        # Try to lock file for reading if possible
                         try:
-                            batch = BatchMessage.from_json_with_casting(data)
-                        except Exception as e:
+                            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                        except (AttributeError, OSError):
+                            pass
+
+                        # Read and parse JSON
+                        try:
+                            data = json.load(f)
+                        except json.JSONDecodeError as e:
                             logger.error(
-                                "Error parsing batch from disk: %s, error: %s",
-                                filename,
-                                e,
+                                "JSON decode error in file %s: %s", file_path, e
                             )
+                            self._move_corrupted_file(file_path)
+                            error_count += 1
                             continue
+
+                    # Validate the data structure
+                    if not self._validate_batch_data(data):
+                        logger.error(
+                            "Invalid batch data structure in file %s", file_path
+                        )
+                        self._move_corrupted_file(file_path)
+                        error_count += 1
+                        continue
+
+                    # Try to reconstruct the BatchMessage
+                    try:
+                        batch = BatchMessage.from_json_with_casting(data)
                         self.batches_stored.append(batch)
                         self.accumulated_batches += 1
+                        loaded_count += 1
+                        logger.debug(
+                            "Successfully loaded batch from %s", file_path.name
+                        )
+
+                    except Exception as e:
+                        logger.error(
+                            "Error reconstructing batch from %s: %s", file_path, e
+                        )
+                        self._move_corrupted_file(file_path)
+                        error_count += 1
+                        continue
+
+                except Exception as e:
+                    logger.error("Unexpected error loading file %s: %s", file_path, e)
+                    error_count += 1
+                    continue
+
+            logger.info(
+                "Batch loading complete for client %s: %d loaded, %d errors",
+                self._client_id,
+                loaded_count,
+                error_count,
+            )
+
         except Exception as e:
             logger.error(
-                "Error loading batches from disk for client %s: %s", self._client_id, e
+                "Critical error loading batches from disk for client %s: %s",
+                self._client_id,
+                e,
             )
+
+    def _validate_batch_data(self, data):
+        """
+        Validate that the loaded data has the expected structure for a BatchMessage.
+        """
+        if not isinstance(data, dict):
+            return False
+
+        required_fields = [
+            "message_id",
+            "message_code",
+            "client_id",
+            "current_batch",
+            "is_last_batch",
+        ]
+
+        for field in required_fields:
+            if field not in data:
+                logger.warning("Missing required field '%s' in batch data", field)
+                return False
+
+        # Additional validation can be added here
+        return True
+
+    def _move_corrupted_file(self, file_path: Path):
+        """
+        Move corrupted files to a separate directory for inspection.
+        """
+        try:
+            corrupted_dir = file_path.parent / "corrupted"
+            corrupted_dir.mkdir(exist_ok=True)
+
+            # Generate unique name to avoid conflicts
+            timestamp = int(time.time() * 1000)
+            new_name = f"{file_path.stem}_{timestamp}{file_path.suffix}"
+            corrupted_path = corrupted_dir / new_name
+
+            file_path.rename(corrupted_path)
+            logger.info("Moved corrupted file %s to %s", file_path, corrupted_path)
+
+        except Exception as e:
+            logger.error("Failed to move corrupted file %s: %s", file_path, e)
+            # If we can't move it, try to delete it as last resort
+            try:
+                file_path.unlink()
+                logger.warning("Deleted corrupted file %s", file_path)
+            except Exception:
+                logger.error("Failed to delete corrupted file %s", file_path)
 
 
 def custom_asdict(obj):
-    if isinstance(obj, list):
-        return [custom_asdict(i) for i in obj]
-    elif hasattr(obj, "__dict__") or hasattr(obj, "__dataclass_fields__"):
-        return {k: custom_asdict(v) for k, v in asdict(obj).items()}
-    else:
-        return obj
+    """
+    Custom serialization function with better error handling.
+    """
+    try:
+        if isinstance(obj, list):
+            return [custom_asdict(i) for i in obj]
+        elif hasattr(obj, "__dict__") or hasattr(obj, "__dataclass_fields__"):
+            return {k: custom_asdict(v) for k, v in asdict(obj).items()}
+        else:
+            return obj
+    except Exception as e:
+        logger.error("Error in custom_asdict serialization: %s", e)
+        # Return a safe representation
+        return str(obj)
