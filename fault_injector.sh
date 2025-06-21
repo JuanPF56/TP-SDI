@@ -14,7 +14,7 @@ declare -A NODE_PREFIXES=(
   ["gateway"]="gateway"
 )
 
-# ✅ OPCIONAL: Lista de contenedores específicos para matar (modo dirigido)
+# # ✅ OPCIONAL: Lista de contenedores específicos para matar (modo dirigido)
 # TARGET_CONTAINERS=(
 #   "filter_cleanup_6"
 #   "filter_year_2"
@@ -22,10 +22,17 @@ declare -A NODE_PREFIXES=(
 #   "sentiment_analyzer_3"
 #   "join_credits_3"
 #   "join_ratings_3"
+#   "gateway_2"
 # )
+
+# Lista de tipos (orden cíclico)
+NODE_TYPES=("cleanup" "year" "production" "sentiment_analyzer" "join_credits" "join_ratings" "gateway")
+current_type_index=0
+
 kill_nodes() {
   if [ "${#TARGET_CONTAINERS[@]}" -gt 0 ]; then
-    # 🔥 Modo dirigido: matar un contenedor aleatorio de TARGET_CONTAINERS
+
+    # 🔥 Modo dirigidoo: matar un contenedor aleatorio de TARGET_CONTAINERS
     valid_targets=()
     for c in "${TARGET_CONTAINERS[@]}"; do
       if ! [[ "${IMMUNE_CONTAINERS[*]}" =~ "$c" ]]; then
@@ -44,25 +51,23 @@ kill_nodes() {
     return
   fi
 
-  # 🔁 Modo automático: matar un nodo por tipo si hay más de uno
-  killed_any=false
-  for type in "${!NODE_PREFIXES[@]}"; do
-    prefix="${NODE_PREFIXES[$type]}"
-    
-    containers=($(docker ps --format '{{.Names}}' | grep "^$prefix" | grep -v -E "$(IFS='|'; echo "${IMMUNE_CONTAINERS[*]}")"))
+  # 🔁 Modo rotativo: matar un contenedor de un tipo diferente cada vez
+  type="${NODE_TYPES[$current_type_index]}"
+  prefix="${NODE_PREFIXES[$type]}"
+  
+  containers=($(docker ps --format '{{.Names}}' | grep "^$prefix" | grep -v -E "$(IFS='|'; echo "${IMMUNE_CONTAINERS[*]}")"))
 
-    count=${#containers[@]}
-    if [ "$count" -gt 1 ]; then
-      victim=${containers[$((RANDOM % count))]}
-      echo "[!] Matando contenedor: $victim (tipo: $type)"
-      docker kill "$victim"
-      killed_any=true
-    fi
-  done
-
-  if ! $killed_any; then
-    echo "[i] No hay nodos redundantes para matar en este ciclo."
+  count=${#containers[@]}
+  if [ "$count" -gt 1 ]; then
+    victim=${containers[$((RANDOM % count))]}
+    echo "[!] Matando contenedor: $victim (tipo: $type)"
+    docker kill "$victim"
+  else
+    echo "[i] No hay suficientes contenedores de tipo $type para matar."
   fi
+
+  # Avanzar al siguiente tipo en el próximo ciclo
+  current_type_index=$(( (current_type_index + 1) % ${#NODE_TYPES[@]} ))
 }
 
 echo "🚀 Iniciando fault injector. Presioná Ctrl+C para frenar."
