@@ -48,8 +48,8 @@ class SoloCountryBudgetQuery(QueryBase):
         logger.debug("LRU: Results published for client %s, %s", client_id, self.duplicate_handler.get_cache(client_id, self.source_queue))
 
         # Limpieza de memoria
-        del self.budget_by_country_by_request[key]
-        self.client_manager.remove_client(client_id)
+        #del self.budget_by_country_by_request[key]
+        #self.client_manager.remove_client(client_id)
 
     def process_movie(self, movie, client_id):
         """

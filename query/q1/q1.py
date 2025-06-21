@@ -46,8 +46,8 @@ class ArgSpainGenreQuery(QueryBase):
         logger.debug("LRU: Results published for client %s, %s", client_id, self.duplicate_handler.get_cache(client_id, self.source_queue))
 
         # Limpieza de datos para liberar memoria
-        del self.results_by_request[key]
-        self.client_manager.remove_client(client_id)
+        # del self.results_by_request[key]
+        # self.client_manager.remove_client(client_id)
 
     def process_movie(self, movie, client_id):
         """

@@ -57,9 +57,9 @@ class SentimentStats(QueryBase):
             logger.debug("LRU: Results published for client %s in negative queue: %s",
                         client_id, self.duplicate_handler.get_cache(client_id, self.source_queues[1]))
 
-            del self.positive_rates[client_id]
-            del self.negative_rates[client_id]
-            self.client_manager.remove_client(client_id)
+            #del self.positive_rates[client_id]
+            #del self.negative_rates[client_id]
+            #self.client_manager.remove_client(client_id)
 
     def process_movie(self, movie, client_id, sentiment):
         """
