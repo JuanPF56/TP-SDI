@@ -21,8 +21,6 @@ class YearFilter(FilterBase):
 
         self.client_manager = ClientManager(
             expected_queues=self.source_queues,
-            manager=self.manager,
-            lock=self.lock,
             nodes_to_await=self.eos_to_await,
         )
 

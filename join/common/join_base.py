@@ -54,12 +54,9 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
-        self.lock = multiprocessing.Lock()
 
         self.client_manager = ClientManager(
             expected_queues=self.input_queue,
-            manager=self.manager,
-            lock=self.lock,            
             nodes_to_await=self.eos_to_await,
         )
 

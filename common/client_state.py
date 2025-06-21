@@ -8,11 +8,9 @@ logger = get_logger("Client-State")
 
 
 class ClientState:
-    def __init__(self, client_id, manager, lock, nodes_to_await=1):
+    def __init__(self, client_id, nodes_to_await=1):
         self.client_id = client_id
-        self.manager = manager
-        self.eos_flags = self.manager.dict() # key: queue_name, value: dict(node_id: bool)
-        self.lock = lock
+        self.eos_flags = {}  # Dictionary to hold EOS flags for each queue
         self.amount_of_eos = nodes_to_await
 
     def get_eos_flags(self):
@@ -25,7 +23,7 @@ class ClientState:
         """
         Mark that an EOS message has been received for a specific queue and node
         """
-        if queue_name not in self.eos_flags:
+        if queue_name not in self.eos_flags.keys():
             self.eos_flags[queue_name] = {}
         self.eos_flags[queue_name][node_id] = True
         logger.debug(
@@ -82,18 +80,17 @@ class ClientState:
 
 
     def write_storage(self):
-        with self.lock:
-            tmp_dir = "./storage"
-            tmp_file = None
-            try:
-                # Create a temporary file in the same directory
-                with tempfile.NamedTemporaryFile("w", dir=tmp_dir, delete=False) as tf:
-                    json.dump(self.eos_flags, tf)
-                    tmp_file = tf.name
-                # Atomically replace the target file with the temp file
-                os.replace(tmp_file, f"{tmp_dir}/eos_{self.client_id}.json")
-                logger.debug("Client state written to storage for client %s", self.client_id)
-            except Exception as e:
-                logger.error(f"Error writing client state to storage: {e}")
-                if tmp_file and os.path.exists(tmp_file):
-                    os.remove(tmp_file)
+        tmp_dir = "./storage"
+        tmp_file = None
+        try:
+            # Create a temporary file in the same directory
+            with tempfile.NamedTemporaryFile("w", dir=tmp_dir, delete=False) as tf:
+                json.dump(self.eos_flags, tf)
+                tmp_file = tf.name
+            # Atomically replace the target file with the temp file
+            os.replace(tmp_file, f"{tmp_dir}/eos_{self.client_id}.json")
+            logger.debug("Client state written to storage for client %s", self.client_id)
+        except Exception as e:
+            logger.error(f"Error writing client state to storage: {e}")
+            if tmp_file and os.path.exists(tmp_file):
+                os.remove(tmp_file)

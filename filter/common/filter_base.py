@@ -32,7 +32,6 @@ class FilterBase:
         self.node_name = os.getenv("NODE_NAME")
 
         self.manager = multiprocessing.Manager()
-        self.lock = multiprocessing.Lock()
         self.master_logic = None
         self.master_logic_started_event = multiprocessing.Event()
 

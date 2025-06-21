@@ -12,41 +12,35 @@ from common.mom import RabbitMQProcessor
 logger = logger.get_logger("Client-Manager")
 
 class ClientManager:
-    def __init__(self, expected_queues, manager, lock, nodes_to_await=1):
+    def __init__(self, expected_queues, nodes_to_await=1):
 
-        self.manager = manager
-        self.clients = self.manager.dict()  # Dictionary to hold client states
+        self.clients = {}  # Dictionary to hold client_id to ClientState mapping
         self.expected_queues = expected_queues
         self.nodes_to_await = nodes_to_await
-        self.lock = lock
 
     def add_client(self, client_id, is_eos=False) -> ClientState:
         """
         Add a new client or retrieve an existing one.
         """
-        with self.lock:
-            if client_id not in self.clients:
-                if is_eos:
-                    return None
-                self.clients[client_id] = ClientState(client_id, self.nodes_to_await, 
-                                                       manager=self.manager, lock=self.lock)
-            return self.clients[client_id]
+        if client_id not in self.clients:
+            if is_eos:
+                return None
+            self.clients[client_id] = ClientState(client_id, self.nodes_to_await)
+        return self.clients[client_id]
 
     def remove_client(self, client_id):
         """
         Remove a client from the manager.
         """
-        with self.lock:
-            if client_id in self.clients:
-                del self.clients[client_id]
+        if client_id in self.clients:
+            del self.clients[client_id]
 
     def get_clients(self):
         """
         Get all clients managed by this ClientManager.
         Returns a dictionary of client_id to ClientState.
         """
-        with self.lock:
-            return self.clients.copy()
+        return self.clients.copy()
     
     def read_storage(self):
         """
@@ -54,47 +48,45 @@ class ClientManager:
         """
         storage_dir = "./storage"
         
-        with self.lock:
-            for filename in os.listdir(storage_dir):
-                if filename.startswith("eos_") and filename.endswith(".json"):
-                    client_id = filename[4:-5]
-                    file_path = os.path.join(storage_dir, filename)
-                    updated = False
+        for filename in os.listdir(storage_dir):
+            if filename.startswith("eos_") and filename.endswith(".json"):
+                client_id = filename[4:-5]
+                file_path = os.path.join(storage_dir, filename)
+                updated = False
+                try:
+                    with open(file_path, "r") as f:
+                        eos_flags = json.load(f)
+                except Exception as e:
+                    logger.error(f"Error reading client state from {file_path}: {e}")
+                    continue
+                
+                if client_id not in self.clients:
+                    self.clients[client_id] = ClientState(client_id, self.nodes_to_await)
+
+                # Compare and update
+                self.clients[client_id].eos_flags, updated = self.compare_flags(
+                    eos_flags,
+                    self.clients[client_id].get_eos_flags()
+                )
+
+                logger.debug("Client state read from storage for client %s", client_id)
+
+                # If updated, write back to storage
+                if updated:
+                    logger.info("Client state updated for client %s", client_id)
+                    logger.info("EOS flags: %s", self.clients[client_id].eos_flags)
+                    tmp_file = None
                     try:
-                        with open(file_path, "r") as f:
-                            eos_flags = json.load(f)
+                        # Write updated data atomically
+                        with tempfile.NamedTemporaryFile("w", dir=storage_dir, delete=False) as tf:
+                            json.dump(self.clients[client_id].eos_flags, tf)
+                            tmp_file = tf.name
+                        os.replace(tmp_file, file_path)
+                        logger.debug("Client state updated in storage for client %s", client_id)
                     except Exception as e:
-                        logger.error(f"Error reading client state from {file_path}: {e}")
-                        continue
-                    
-                    if client_id not in self.clients:
-                        self.clients[client_id] = ClientState(client_id, self.nodes_to_await, 
-                                                               manager=self.manager, lock=self.lock)
-
-                    # Compare and update
-                    self.clients[client_id].eos_flags, updated = self.compare_flags(
-                        eos_flags,
-                        self.clients[client_id].get_eos_flags()
-                    )
-
-                    logger.debug("Client state read from storage for client %s", client_id)
-
-                    # If updated, write back to storage
-                    if updated:
-                        logger.info("Client state updated for client %s", client_id)
-                        logger.info("EOS flags: %s", self.clients[client_id].eos_flags)
-                        tmp_file = None
-                        try:
-                            # Write updated data atomically
-                            with tempfile.NamedTemporaryFile("w", dir=storage_dir, delete=False) as tf:
-                                json.dump(self.clients[client_id].eos_flags, tf)
-                                tmp_file = tf.name
-                            os.replace(tmp_file, file_path)
-                            logger.debug("Client state updated in storage for client %s", client_id)
-                        except Exception as e:
-                            logger.error(f"Error updating client state for {client_id}: {e}")
-                            if tmp_file and os.path.exists(tmp_file):
-                                os.remove(tmp_file)
+                        logger.error(f"Error updating client state for {client_id}: {e}")
+                        if tmp_file and os.path.exists(tmp_file):
+                            os.remove(tmp_file)
 
     def compare_flags(self, new_flags, existing_flags):
         """
@@ -109,12 +101,11 @@ class ClientManager:
                 logger.error(f"Invalid format for nodes in queue {queue_name}: {nodes}")
                 continue
             for node_id, flag in nodes.items():
-                n_id = str(node_id)
-                if n_id not in existing_flags[queue_name]:
+                if node_id not in existing_flags[queue_name]:
                     updated = True
-                elif existing_flags[queue_name][n_id] != flag:
+                elif existing_flags[queue_name][node_id] != flag:
                     updated = True
-                existing_flags[queue_name][n_id] = flag
+                existing_flags[queue_name][node_id] = flag
                 
         return existing_flags, updated
     
