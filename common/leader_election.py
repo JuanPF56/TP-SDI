@@ -7,7 +7,7 @@ import random
 from common.logger import get_logger
 
 # logging.basicConfig(level=logging.INFO)
-logger = get_logger("RabbitMQProcessor")
+logger = get_logger("Leader_election")
 
 
 class LeaderElector:
