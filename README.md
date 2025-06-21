@@ -75,13 +75,13 @@ Antes de generar el archivo `docker-compose.system.yml`, podés editar el archiv
 
 ```ini
 [DEFAULT]
-gateway_nodes = 1
-cleanup_filter_nodes = 2
-production_filter_nodes = 2
-year_filter_nodes = 2
+gateway_nodes = 5
+cleanup_filter_nodes = 6
+production_filter_nodes = 4
+year_filter_nodes = 4
 sentiment_analyzer_nodes = 5
-join_credits_nodes = 2
-join_ratings_nodes = 3
+join_credits_nodes = 5
+join_ratings_nodes = 5
 ```
 
 ---
