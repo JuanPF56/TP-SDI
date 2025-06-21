@@ -275,7 +275,7 @@ class ConnectedClient(threading.Thread):
 
                 if success:
                     try:
-                        filename = f"batch_{batch_message.current_batch}.json"
+                        filename = f"{batch_message.message_code}_{batch_message.current_batch}.json"
                         path = os.path.join(
                             "storage", batch_message.client_id, filename
                         )
@@ -403,7 +403,7 @@ class ConnectedClient(threading.Thread):
             with tempfile.NamedTemporaryFile(
                 "w", encoding="utf-8", dir=client_dir, delete=False
             ) as tmp_file:
-                json.dump(asdict(batch), tmp_file, ensure_ascii=False, indent=2)
+                json.dump(custom_asdict(batch), tmp_file, ensure_ascii=False, indent=2)
                 tmp_file.flush()
                 os.fsync(tmp_file.fileno())
                 temp_path = tmp_file.name
@@ -417,16 +417,41 @@ class ConnectedClient(threading.Thread):
             )
 
     def _load_batches_from_disk(self):
-        client_dir = os.path.join("storage", self._client_id)
-        if not os.path.isdir(client_dir):
-            return
+        try:
+            client_dir = os.path.join("storage", self._client_id)
+            if not os.path.isdir(client_dir):
+                return
 
-        files = sorted(os.listdir(client_dir))  # ordena por batch
-        for filename in files:
-            if filename.endswith(".json"):
-                path = os.path.join(client_dir, filename)
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    batch = BatchMessage(**data)
-                    self.batches_stored.append(batch)
-                    self.accumulated_batches += 1
+            files = sorted(os.listdir(client_dir))  # ordena por batch
+            for filename in files:
+                if filename.endswith(".json"):
+                    path = os.path.join(client_dir, filename)
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        logger.debug(
+                            "Loading batch from disk: %s, data: %s", filename, data
+                        )
+                        try:
+                            batch = BatchMessage.from_json_with_casting(data)
+                        except Exception as e:
+                            logger.error(
+                                "Error parsing batch from disk: %s, error: %s",
+                                filename,
+                                e,
+                            )
+                            continue
+                        self.batches_stored.append(batch)
+                        self.accumulated_batches += 1
+        except Exception as e:
+            logger.error(
+                "Error loading batches from disk for client %s: %s", self._client_id, e
+            )
+
+
+def custom_asdict(obj):
+    if isinstance(obj, list):
+        return [custom_asdict(i) for i in obj]
+    elif hasattr(obj, "__dict__") or hasattr(obj, "__dataclass_fields__"):
+        return {k: custom_asdict(v) for k, v in asdict(obj).items()}
+    else:
+        return obj
