@@ -185,7 +185,7 @@ class YearFilter(FilterBase):
         self.client_manager.read_storage()
         self.client_manager.check_all_eos_received(
             self.config, self.node_id, self.main_source_queues[0],
-            self.target_exchange)
+            target_exchange=self.target_exchange)
         self.client_manager.check_all_eos_received(
             self.config, self.node_id, self.main_source_queues[1],
             self.target_queue)

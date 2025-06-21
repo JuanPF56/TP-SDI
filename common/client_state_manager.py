@@ -105,7 +105,7 @@ class ClientManager:
                 
         return existing_flags, updated
     
-    def check_all_eos_received(self, config, node_id, queues, target_queues=None, target_exchanges=None):
+    def check_all_eos_received(self, config, node_id, queues, target_queues=None, target_exchange=None):
         """
         Check if all EOS messages have been received for a specific client and queue.
         Returns True if all EOS messages have been received, False otherwise.
@@ -114,7 +114,7 @@ class ClientManager:
             config=config,
             source_queues=queues,
             target_queues=target_queues,
-            target_exchanges=target_exchanges            
+            target_exchange=target_exchange            
         )
         if not rabbit.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")
@@ -129,7 +129,7 @@ class ClientManager:
                 rabbitmq_processor=rabbit,
                 client_state=client_state,
                 target_queues=target_queues,
-                target_exchanges=target_exchanges
+                target_exchanges=target_exchange
             )
         rabbit.close()
 
