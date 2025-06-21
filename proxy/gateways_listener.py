@@ -145,7 +145,7 @@ class GatewaysListener(threading.Thread):
                         if not handler.is_alive():
                             logger.info("Restarting ClientHandler for %s", client_id)
                             new_handler = ClientHandler(
-                                self.proxy, client_socket, addr, gateway_id
+                                self.proxy, client_socket, addr, gateway_id, client_id
                             )
                             self.proxy._client_handlers[client_id] = new_handler
                             new_handler.start()

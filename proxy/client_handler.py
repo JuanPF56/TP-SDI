@@ -16,7 +16,7 @@ import common.sender as sender
 from common.logger import get_logger
 
 logger = get_logger("client_handler")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 TIMEOUT_HEADER = 3600
 TIMEOUT_PAYLOAD = 3600
@@ -63,16 +63,14 @@ class ClientHandler(threading.Thread):
         )
 
         encoded_id = self.client_id.encode("utf-8")
-        payload_length = len(encoded_id)
+        # Asegurar longitud 36 bytes
+        if len(encoded_id) > 36:
+            logger.error("Client ID %s too long, truncating.", self.client_id)
+            encoded_id = encoded_id[:36]
+        elif len(encoded_id) < 36:
+            logger.warning("Client ID %s too short, padding.", self.client_id)
+            encoded_id = encoded_id.ljust(36, b"\x00")
 
-        header = pack_header(
-            message_id=0,
-            tipo_de_mensaje=TIPO_MENSAJE["NEW_CLIENT"],
-            encoded_id=encoded_id,
-            batch_number=0,
-            is_last_batch=0,
-            payload_length=payload_length,
-        )
         sender.send(self.client_socket, encoded_id)
 
         # Registrar en estructuras del proxy
@@ -83,14 +81,14 @@ class ClientHandler(threading.Thread):
         )
         self.proxy._clients_per_gateway[self.gateway_id].append(self.client_id)
 
-        # Asegurar longitud 36 bytes
-        if len(encoded_id) > 36:
-            logger.error("Client ID %s too long, truncating.", self.client_id)
-            encoded_id = encoded_id[:36]
-        elif len(encoded_id) < 36:
-            logger.warning("Client ID %s too short, padding.", self.client_id)
-            encoded_id = encoded_id.ljust(36, b"\x00")
-
+        header = pack_header(
+            message_id=0,
+            tipo_de_mensaje=TIPO_MENSAJE["NEW_CLIENT"],
+            encoded_id=encoded_id,
+            batch_number=0,
+            is_last_batch=0,
+            payload_length=0,  # no payloadneeded, client_id is in header
+        )
         with self.proxy._gateway_locks[self.gateway_id]:
             sender.send(self.gateway_socket, header)
 
