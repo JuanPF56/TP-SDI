@@ -7,7 +7,8 @@ from common.logger import get_logger
 
 logger = get_logger("Coordinator")
 
-SLEEP = 5
+DEAD_TIME = 10
+MONITOR_SLEEP = 1
 
 MONITORED_NODES = os.getenv("MONITORED_NODES", "")
 nodos = MONITORED_NODES.split(",") if MONITORED_NODES else []
@@ -20,9 +21,11 @@ def reiniciar_nodo(nombre):
     try:
         container = client.containers.get(nombre)
         container.stop()
-        time.sleep(SLEEP)
+        wait_time = 1 if "gateway" in nombre.lower() else DEAD_TIME
+        logger.info("Deteniendo %s (caida de %s segundos)", nombre, wait_time)
+        time.sleep(wait_time)
         container.start()
-        logger.info("%s reiniciado", nombre)
+        logger.info("%s reiniciado (tras caida de %s segundos)", nombre, wait_time)
     except Exception as e:
         logger.error("Error al reiniciar %s: %s", nombre, e)
 
@@ -45,7 +48,7 @@ def monitorear():
                     reiniciar_nodo(nodo)
             except Exception as e:
                 logger.error("Error revisando %s: %s", nodo, e)
-        time.sleep(SLEEP)
+        time.sleep(MONITOR_SLEEP)
 
 
 if __name__ == "__main__":
