@@ -11,7 +11,7 @@ declare -A NODE_PREFIXES=(
   ["sentiment_analyzer"]="sentiment_analyzer"
   ["join_credits"]="join_credits"
   ["join_ratings"]="join_ratings"
-  #["gateway"]="gateway"
+  ["gateway"]="gateway"
 )
 
 # # ✅ OPCIONAL: Lista de contenedores específicos para matar (modo dirigido)
@@ -80,5 +80,5 @@ done
 # Luego, continuar con el ciclo infinito matando 1 contenedor por vez
 while true; do
   kill_nodes
-  sleep 15
+  sleep 20
 done

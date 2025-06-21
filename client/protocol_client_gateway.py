@@ -387,7 +387,7 @@ class ProtocolClient:
         if not payload_bytes or len(payload_bytes) != payload_len:
             return None
 
-        logger.info("Received payload size: %d", len(payload_bytes))
+        logger.debug("Received payload size: %d", len(payload_bytes))
 
         try:
             result_of_query = json.loads(payload_bytes.decode())
