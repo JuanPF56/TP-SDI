@@ -42,11 +42,6 @@ class JoinBase:
         )
         self.output_queue = self.config["DEFAULT"].get("output_queue", "output_queue")
 
-        self.client_manager = ClientManager(
-            expected_queues=self.input_queue,
-            nodes_to_await=self.eos_to_await,
-        )
-
         # Initialize the RabbitMQProcessor
         self.rabbitmq_processor = RabbitMQProcessor(
             config, self.input_queue, self.output_queue
@@ -59,6 +54,14 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
+        self.lock = multiprocessing.Lock()
+
+        self.client_manager = ClientManager(
+            expected_queues=self.input_queue,
+            manager=self.manager,
+            lock=self.lock,            
+            nodes_to_await=self.eos_to_await,
+        )
 
         self.movies_handler = MoviesHandler(
             config=self.config,

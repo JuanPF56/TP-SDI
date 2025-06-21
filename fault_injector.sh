@@ -75,5 +75,5 @@ echo "🚀 Iniciando fault injector. Presioná Ctrl+C para frenar."
 # Loop infinito
 while true; do
   kill_nodes
-  sleep 5
+  sleep 10
 done

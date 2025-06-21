@@ -49,13 +49,17 @@ class SentimentAnalyzer:
             target_queues=self.target_queues,
         )
 
+        self.manager = multiprocessing.Manager()
+        self.master_logic_started_event = self.manager.Event()
+        self.lock = self.manager.Lock()
+
         self.client_manager = ClientManager(
             expected_queues=self.source_queue,
+            manager=self.manager,
+            lock=self.lock,
             nodes_to_await=self.eos_to_await,
         )
         
-        self.manager = multiprocessing.Manager()
-        self.master_logic_started_event = self.manager.Event()
         self.master_logic = MasterLogic(
             config=self.config,
             manager=self.manager,

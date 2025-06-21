@@ -20,7 +20,7 @@ class CleanupFilter(FilterBase):
         super().__init__(config)
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
-        self.client_manager = ClientManager(self.source_queues)
+        self.client_manager = ClientManager(self.source_queues, manager=self.manager, lock=self.lock)
 
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
