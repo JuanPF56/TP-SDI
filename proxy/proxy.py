@@ -188,7 +188,17 @@ class Proxy:
 
                     # Forward to the specific client
                     sender.send(client_socket, header)
+                    logger.debug(
+                        "Forwarded header to client %s: tipo_mensaje=%s, query_id=%s, payload_len=%s",
+                        target_client_id,
+                        tipo_mensaje,
+                        query_id,
+                        payload_len,
+                    )
                     sender.send(client_socket, payload)
+                    logger.debug(
+                        "Forwarded payload to client %s: %s", target_client_id, payload
+                    )
                     logger.debug("Forwarded response to client %s", target_client_id)
 
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
