@@ -59,8 +59,8 @@ class ArgProdActorsQuery(QueryBase):
         )
         logger.debug("LRU: Results published for client %s, %s", client_state.client_id, 
                     self.duplicate_handler.get_cache(client_state.client_id, self.source_queue))
-        del self.actor_participations[key]
-        self.client_manager.remove_client(client_state.client_id)
+        #del self.actor_participations[key]
+        #self.client_manager.remove_client(client_state.client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"

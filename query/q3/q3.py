@@ -68,8 +68,8 @@ class ArgProdRatingsQuery(QueryBase):
         logger.info("RESULTS for client %s: %s", client_id, results_msg)
         self.rabbitmq_processor.publish(self.target_queue, results_msg)
         logger.debug("LRU: Results published for client %s, %s", client_id, self.duplicate_handler.get_cache(client_id, self.source_queue))
-        del self.movie_ratings[client_id]
-        self.client_manager.remove_client(client_id)
+        #del self.movie_ratings[client_id]
+        #self.client_manager.remove_client(client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
