@@ -12,12 +12,12 @@ from common.mom import RabbitMQProcessor
 logger = logger.get_logger("Client-Manager")
 
 class ClientManager:
-    def __init__(self, expected_queues, done_reading, nodes_to_await=1):
+    def __init__(self, expected_queues, nodes_to_await=1):
 
         self.clients = {}  # Dictionary to hold client_id to ClientState mapping
         self.expected_queues = expected_queues
         self.nodes_to_await = nodes_to_await
-        self.done_reading = done_reading
+        #self.done_reading = done_reading
 
     def add_client(self, client_id, is_eos=False) -> ClientState:
         """
@@ -90,7 +90,7 @@ class ClientManager:
                             os.remove(tmp_file)
                 '''
         
-        self.done_reading.set()
+        #self.done_reading.set()
 
     def compare_flags(self, new_flags, existing_flags):
         """

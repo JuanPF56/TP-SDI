@@ -43,8 +43,7 @@ class MoviesHandler(multiprocessing.Process):
         self.ready = False
         self.movies_table_ready = ready_event
 
-        self.done_reading = multiprocessing.Event()
-        self.done_reading.set()  # Set by default, will be cleared when the node is elected as leader
+        self.done_recovering = multiprocessing.Event()
 
         self.current_client_id = None
         self.current_request_number = None
@@ -92,7 +91,7 @@ class MoviesHandler(multiprocessing.Process):
                         self.year_eos_flags[id_tuple] = self.manager.dict()
                     if node_id not in self.year_eos_flags[id_tuple]:
                         self.year_eos_flags[id_tuple][node_id] = True
-                        self.write_storage("moveos", self.year_eos_flags[id_tuple], self.current_client_id)
+                        #self.write_storage("moveos", self.year_eos_flags[id_tuple], self.current_client_id)
                         logger.debug("EOS received for node %s.", node_id)
                     if not self.ready and self.client_ready(self.current_client_id):
                         self.ready = True
@@ -125,13 +124,13 @@ class MoviesHandler(multiprocessing.Process):
                         }
                         if new_movie not in self.movies[id_tuple]:
                             self.movies[id_tuple].append(new_movie)
-                    if self.is_leader:
-                        self.done_reading.wait()
-                        self.write_storage(
-                            "movies",
-                            self.movies[id_tuple],
-                            self.current_client_id,
-                        )
+                    #if self.is_leader:
+                        #self.done_recovering.wait()
+                        #self.write_storage(
+                        #    "movies",
+                        #    self.movies[id_tuple],
+                        #    self.current_client_id,
+                        #)
                     logger.debug(
                         "Movies table updated for client %s, request %s: %s",
                         self.current_client_id,
@@ -256,12 +255,12 @@ class MoviesHandler(multiprocessing.Process):
             eos_copy[client_id] = dict(eos_dict)
         return eos_copy
     
-    def clear_done_reading(self):
+    def clear_done_recovering(self):
         """
         Reset the done reading event to allow processing of new messages.
         This is typically called when the node is elected as leader.
         """
-        self.done_reading.clear()
+        self.done_recovering.clear()
         logger.debug("Done reading event reset for MoviesHandler.")
 
     def write_storage(self, key, data, client_id):
@@ -325,7 +324,7 @@ class MoviesHandler(multiprocessing.Process):
                 )
                 self.movies_table_ready.set()
 
-        self.done_reading.set()
+        self.done_recovering.set()
 
     def compare_and_update(self, type, data, client_id):
         """

@@ -8,6 +8,7 @@ from common.eos_handling import handle_eos
 from common.filter_base import FilterBase, EOS_TYPE
 
 from common.logger import get_logger
+from common.master import REC_TYPE
 
 logger = get_logger("Filter-Cleanup")
 
@@ -20,7 +21,7 @@ class CleanupFilter(FilterBase):
         super().__init__(config)
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
-        self.client_manager = ClientManager(self.source_queues, self.done_reading)
+        self.client_manager = ClientManager(self.source_queues)
 
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
@@ -113,7 +114,6 @@ class CleanupFilter(FilterBase):
             queue,
             queue,
             headers,
-            self.done_reading,
             self.rabbitmq_processor,
             client_state,
             self.master_logic.is_leader(),
@@ -141,6 +141,10 @@ class CleanupFilter(FilterBase):
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(queue_name, body, method, headers, client_state)
+                return
+            
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
                 return
             
             if message_id is None:
@@ -197,8 +201,8 @@ class CleanupFilter(FilterBase):
         finally:
             self.rabbitmq_processor.acknowledge(method)
 
-    def read_storage(self):
-        self.client_manager.read_storage()
+    #def read_storage(self):
+        #self.client_manager.read_storage()
         #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[0],
                                                     #self.target_queues.get(self.source_queues[0], []))
         #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[1],
@@ -211,7 +215,7 @@ class CleanupFilter(FilterBase):
         Main processing function for the CleanupFilter.
         """
         logger.info("CleanupFilter is starting up")
-        self.elector.start_election()
+        self.elector.start()
         recover_node(self, self.main_source_queues)
         self.run_consumer()
 

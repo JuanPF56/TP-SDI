@@ -7,6 +7,7 @@ from common.client_state_manager import ClientManager
 from common.client_state import ClientState
 from common.eos_handling import handle_eos
 from common.logger import get_logger
+from common.master import REC_TYPE
 
 logger = get_logger("Filter-Production")
 
@@ -20,7 +21,6 @@ class ProductionFilter(FilterBase):
         self._initialize_rabbitmq_processor()
         self.client_manager = ClientManager(
             self.source_queues,
-            self.done_reading,
             nodes_to_await=self.eos_to_await,
         )
 
@@ -57,7 +57,6 @@ class ProductionFilter(FilterBase):
             queue,
             self.main_source_queues,
             headers,
-            self.done_reading,
             self.rabbitmq_processor,
             client_state,
             self.master_logic.is_leader(),
@@ -128,6 +127,10 @@ class ProductionFilter(FilterBase):
                 self._handle_eos(queue_name, body, method, headers, client_state)
                 return
             
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
+                return
+            
             if message_id is None:
                 logger.error("Missing message_id in headers")
                 return
@@ -187,7 +190,7 @@ class ProductionFilter(FilterBase):
         to the respective queues.
         """
         logger.info("ProductionFilter is starting up")
-        self.elector.start_election()
+        self.elector.start()
         recover_node(self, self.main_source_queues)
         self.run_consumer()
 

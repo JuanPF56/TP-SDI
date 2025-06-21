@@ -7,6 +7,7 @@ from common.client_state_manager import ClientState
 from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.eos_handling import handle_eos
+from common.master import REC_TYPE
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
@@ -21,7 +22,6 @@ class YearFilter(FilterBase):
 
         self.client_manager = ClientManager(
             self.source_queues,
-            self.done_reading,
             nodes_to_await=self.eos_to_await,
         )
 
@@ -70,7 +70,6 @@ class YearFilter(FilterBase):
             queue,
             queue,
             headers,
-            self.done_reading,
             self.rabbitmq_processor,
             client_state,
             self.master_logic.is_leader(),
@@ -96,6 +95,10 @@ class YearFilter(FilterBase):
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(input_queue, body, method, headers, client_state)
+                return
+            
+            if msg_type == REC_TYPE:
+                self.done_recovering.set()
                 return
             
             if message_id is None:

@@ -1,4 +1,3 @@
-import multiprocessing
 import os
 import signal
 
@@ -23,9 +22,6 @@ class QueryBase:
 
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
-        self.manager = multiprocessing.Manager()
-        self.done_reading = multiprocessing.Event()
-        self.done_reading.set()
 
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
@@ -35,7 +31,6 @@ class QueryBase:
 
         self.client_manager = ClientManager(
             self.source_queues,
-            self.done_reading,
             nodes_to_await=self.eos_to_await,
         )
 

@@ -162,9 +162,17 @@ class MasterLogic(multiprocessing.Process):
                             message={"node_id": target_node},
                             msg_type=EOS_TYPE,
                             headers={"client_id": client_id},
-                            priority=1                            
+                            priority=1                           
                         )
         
+        # Acknowledge the recovery request
+        self.rabbitmq_processor.publish(
+            target=f"{queue_name}_node_{node_id}",
+            message={"status": "recovery_complete"},
+            msg_type=REC_TYPE,
+            headers={"node_id": node_id, "queue_name": queue_name},
+            priority=1
+        )
         logger.info(f"EOS messages sent to node {node_id} for queue {queue_name}.")
 
     def _close_connection(self):
