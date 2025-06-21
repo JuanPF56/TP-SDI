@@ -20,7 +20,8 @@ class YearFilter(FilterBase):
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
 
         self.client_manager = ClientManager(
-            expected_queues=self.source_queues,
+            self.source_queues,
+            self.done_reading,
             nodes_to_await=self.eos_to_await,
         )
 
@@ -69,6 +70,7 @@ class YearFilter(FilterBase):
             queue,
             queue,
             headers,
+            self.done_reading,
             self.rabbitmq_processor,
             client_state,
             self.master_logic.is_leader(),
@@ -184,12 +186,12 @@ class YearFilter(FilterBase):
 
     def read_storage(self):
         self.client_manager.read_storage()
-        self.client_manager.check_all_eos_received(
-            self.config, self.node_id, self.main_source_queues[0],
-            target_exchange=self.target_exchange)
-        self.client_manager.check_all_eos_received(
-            self.config, self.node_id, self.main_source_queues[1],
-            self.target_queue)
+        #self.client_manager.check_all_eos_received(
+            #self.config, self.node_id, self.main_source_queues[0],
+            #target_exchange=self.target_exchange)
+        #self.client_manager.check_all_eos_received(
+            #self.config, self.node_id, self.main_source_queues[1],
+            #self.target_queue)
 
     def process(self):
         """

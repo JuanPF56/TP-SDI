@@ -20,7 +20,7 @@ class CleanupFilter(FilterBase):
         super().__init__(config)
         self._initialize_queues()
         self._initialize_rabbitmq_processor()
-        self.client_manager = ClientManager(self.source_queues)
+        self.client_manager = ClientManager(self.source_queues, self.done_reading)
 
     def _initialize_queues(self):
         defaults = self.config["DEFAULT"]
@@ -113,6 +113,7 @@ class CleanupFilter(FilterBase):
             queue,
             queue,
             headers,
+            self.done_reading,
             self.rabbitmq_processor,
             client_state,
             self.master_logic.is_leader(),
@@ -198,12 +199,12 @@ class CleanupFilter(FilterBase):
 
     def read_storage(self):
         self.client_manager.read_storage()
-        self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[0],
-                                                    self.target_queues.get(self.source_queues[0], []))
-        self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[1],
-                                                    self.target_queues.get(self.source_queues[1], []))
-        self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[2],
-                                                    self.target_queues.get(self.source_queues[2], []))
+        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[0],
+                                                    #self.target_queues.get(self.source_queues[0], []))
+        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[1],
+                                                    #self.target_queues.get(self.source_queues[1], []))
+        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[2],
+                                                    #self.target_queues.get(self.source_queues[2], []))
 
     def process(self):
         """

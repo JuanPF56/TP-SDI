@@ -34,6 +34,8 @@ class FilterBase:
         self.manager = multiprocessing.Manager()
         self.master_logic = None
         self.master_logic_started_event = multiprocessing.Event()
+        self.done_reading = multiprocessing.Event()
+        self.done_reading.set() # Set by default, will be cleared when the node is elected as leader
 
         self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
 
@@ -57,7 +59,7 @@ class FilterBase:
         election_logic(
             self,
             leader_id=leader_id,
-            leader_queues=self.main_source_queues,
+            done_reading=self.done_reading,
         )
 
     def read_storage(self):

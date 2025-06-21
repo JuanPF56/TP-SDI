@@ -1,3 +1,4 @@
+import multiprocessing
 from common.logger import get_logger
 from common.mom import MAX_PRIORITY, RabbitMQProcessor
 from common.master import MasterLogic
@@ -6,7 +7,7 @@ REC_TYPE = "RECOVERY"
 
 logger = get_logger("ElectionLogic")
 
-def election_logic(self, leader_id: int, leader_queues=None):
+def election_logic(self, leader_id, done_reading, clear_done_reading_movies=None):
     """
     Logic to be executed when a leader is elected.
     This method will be called by the LeaderElector when a new leader is elected.
@@ -21,6 +22,9 @@ def election_logic(self, leader_id: int, leader_queues=None):
     was_leader = self.master_logic.is_leader()
     if is_now_leader != was_leader:
         self.master_logic.toggle_leader()
+        done_reading.clear()  # Clear the done_reading event if the node is now the leader
+        if clear_done_reading_movies is not None and callable(clear_done_reading_movies):
+            clear_done_reading_movies() # Call the clear_done_reading_movies callback if provided
 
     if not was_leader and is_now_leader:
         logger.info(f"[Node {self.node_id}] I am the leader. Reading from storage...")

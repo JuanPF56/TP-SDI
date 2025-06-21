@@ -51,9 +51,12 @@ class SentimentAnalyzer:
 
         self.manager = multiprocessing.Manager()
         self.master_logic_started_event = self.manager.Event()
+        self.done_reading = multiprocessing.Event()
+        self.done_reading.set() # Set by default, will be cleared when the node is elected as leader
 
         self.client_manager = ClientManager(
-            expected_queues=self.source_queue,
+            self.source_queue,
+            self.done_reading,
             nodes_to_await=self.eos_to_await,
         )
         
@@ -94,14 +97,14 @@ class SentimentAnalyzer:
         election_logic(
             self,
             leader_id=leader_id,
-            leader_queues=self.clean_batch_queue,
+            done_reading=self.done_reading,
         )
 
     def read_storage(self):
         self.client_manager.read_storage()
-        self.client_manager.check_all_eos_received(
-            self.config, self.node_id, self.clean_batch_queue, self.target_queues
-        )
+        #self.client_manager.check_all_eos_received(
+        #    self.config, self.node_id, self.clean_batch_queue, self.target_queues
+        #)
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
@@ -136,6 +139,7 @@ class SentimentAnalyzer:
             queue,
             queue,
             headers,
+            self.done_reading,
             self.rabbitmq_processor,
             client_state,
             self.master_logic.is_leader(),

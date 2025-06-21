@@ -12,11 +12,12 @@ from common.mom import RabbitMQProcessor
 logger = logger.get_logger("Client-Manager")
 
 class ClientManager:
-    def __init__(self, expected_queues, nodes_to_await=1):
+    def __init__(self, expected_queues, done_reading, nodes_to_await=1):
 
         self.clients = {}  # Dictionary to hold client_id to ClientState mapping
         self.expected_queues = expected_queues
         self.nodes_to_await = nodes_to_await
+        self.done_reading = done_reading
 
     def add_client(self, client_id, is_eos=False) -> ClientState:
         """
@@ -64,14 +65,14 @@ class ClientManager:
                     self.clients[client_id] = ClientState(client_id, self.nodes_to_await)
 
                 # Compare and update
-                self.clients[client_id].eos_flags, updated = self.compare_flags(
+                self.clients[client_id].eos_flags = self.compare_flags(
                     eos_flags,
                     self.clients[client_id].get_eos_flags()
                 )
 
                 logger.debug("Client state read from storage for client %s", client_id)
 
-                # If updated, write back to storage
+                '''
                 if updated:
                     logger.info("Client state updated for client %s", client_id)
                     logger.info("EOS flags: %s", self.clients[client_id].eos_flags)
@@ -87,13 +88,16 @@ class ClientManager:
                         logger.error(f"Error updating client state for {client_id}: {e}")
                         if tmp_file and os.path.exists(tmp_file):
                             os.remove(tmp_file)
+                '''
+        
+        self.done_reading.set()
 
     def compare_flags(self, new_flags, existing_flags):
         """
         Compare the new flags with the existing flags and return the updated flags.
         This is used to ensure that the client state is consistent with the storage.
         """
-        updated = False
+        #updated = False
         for queue_name, nodes in new_flags.items():
             if queue_name not in existing_flags:
                 existing_flags[queue_name] = {}
@@ -101,13 +105,13 @@ class ClientManager:
                 logger.error(f"Invalid format for nodes in queue {queue_name}: {nodes}")
                 continue
             for node_id, flag in nodes.items():
-                if node_id not in existing_flags[queue_name]:
-                    updated = True
-                elif existing_flags[queue_name][node_id] != flag:
-                    updated = True
+                #if node_id not in existing_flags[queue_name]:
+                    #updated = True
+                #elif existing_flags[queue_name][node_id] != flag:
+                    #updated = True
                 existing_flags[queue_name][node_id] = flag
                 
-        return existing_flags, updated
+        return existing_flags
     
     def check_all_eos_received(self, config, node_id, queues, target_queues=None, target_exchange=None):
         """

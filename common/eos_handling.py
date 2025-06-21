@@ -14,7 +14,7 @@ It provides functions to mark the EOS for a given input queue, check if all node
 have sent EOS, and propagate the EOS to output queues and exchanges.
 """
 
-def handle_eos(body, node_id, input_queue, source_queues, headers,
+def handle_eos(body, node_id, input_queue, source_queues, headers, done_reading,
                       rabbitmq_processor: RabbitMQProcessor, client_state: ClientState,
                       is_leader=False, target_queues=None, target_exchanges=None):
     """
@@ -43,6 +43,7 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
     if client_state and not client_state.has_queue_received_eos_from_node(input_queue, n_id):
         client_state.mark_eos(input_queue, n_id)
         if is_leader:
+            done_reading.wait()
             client_state.write_storage()
         check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                         client_state, target_queues, target_exchanges)

@@ -15,8 +15,7 @@ REC_TYPE = "RECOVERY"
 
 class MasterLogic(multiprocessing.Process):
     def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, 
-                 client_manager,
-                 started_event=None,
+                 client_manager, started_event=None,
                  movies_handler=None):
         """
         Initialize the MasterLogic class with the given configuration and manager.
@@ -184,7 +183,11 @@ class MasterLogic(multiprocessing.Process):
         """
         Toggle the leader status.
         """
-        self.leader.set() if not self.leader.is_set() else self.leader.clear()
+        if not self.leader.is_set():
+            self.leader.set()
+        else:
+            self.leader.clear()
+
         logger.info(f"Leader status toggled to: {self.leader.is_set()}")
 
     def is_leader(self):

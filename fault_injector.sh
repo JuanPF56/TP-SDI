@@ -80,5 +80,5 @@ done
 # Luego, continuar con el ciclo infinito matando 1 contenedor por vez
 while true; do
   kill_nodes
-  sleep 10
+  sleep 15
 done

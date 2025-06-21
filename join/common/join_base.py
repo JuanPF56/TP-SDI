@@ -54,12 +54,16 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
+        
+        self.done_reading = multiprocessing.Event()
+        self.done_reading.set() # Set by default, will be cleared when the node is elected as leader
 
         self.client_manager = ClientManager(
-            expected_queues=self.input_queue,
+            self.input_queue,
+            self.done_reading,
             nodes_to_await=self.eos_to_await,
         )
-
+        
         self.movies_handler = MoviesHandler(
             config=self.config,
             manager=self.manager,
@@ -67,6 +71,7 @@ class JoinBase:
             node_id=self.node_id,
             node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
+            is_leader=self.is_leader,
         )
 
         self.master_logic = MasterLogic(
@@ -102,15 +107,22 @@ class JoinBase:
         election_logic(
             self,
             leader_id=leader_id,
-            leader_queues=self.clean_batch_queue,
+            done_reading=self.done_reading,
+            clear_done_reading_movies=self.movies_handler.clear_done_reading
         )
+
+    def is_leader(self):
+        """
+        Check if the current node is the leader.
+        """
+        return self.master_logic.is_leader()
 
     def read_storage(self):
         self.movies_handler.read_storage()
         self.client_manager.read_storage()
-        self.client_manager.check_all_eos_received(
-            self.config, self.node_id, self.clean_batch_queue, self.output_queue
-        )
+        #self.client_manager.check_all_eos_received(
+        #    self.config, self.node_id, self.clean_batch_queue, self.output_queue
+        #)
 
     def process(self):
         # Start the process to receive the movies table
@@ -168,6 +180,7 @@ class JoinBase:
             queue,
             queue,
             headers,
+            self.done_reading,
             self.rabbitmq_processor,
             client_state,
             self.master_logic.is_leader(),
