@@ -204,15 +204,6 @@ class CleanupFilter(FilterBase):
         finally:
             self.rabbitmq_processor.acknowledge(method)
 
-    #def read_storage(self):
-        #self.client_manager.read_storage()
-        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[0],
-                                                    #self.target_queues.get(self.source_queues[0], []))
-        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[1],
-                                                    #self.target_queues.get(self.source_queues[1], []))
-        #self.client_manager.check_all_eos_received(config, self.node_id, self.main_source_queues[2],
-                                                    #self.target_queues.get(self.source_queues[2], []))
-
     def process(self):
         """
         Main processing function for the CleanupFilter.
