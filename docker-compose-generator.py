@@ -288,6 +288,12 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         "volumes": [
             "/var/run/docker.sock:/var/run/docker.sock",
             "./coordinator/coordinator.py:/app/coordinator.py",
+            "./filter/cleanup/storage:/app/storage/filter_cleanup",
+            "./filter/year/storage:/app/storage/filter_year",
+            "./filter/production/storage:/app/storage/filter_production",
+            "./sentiment_analyzer/storage:/app/storage/sentiment_analyzer",
+            "./join/credits/storage:/app/storage/join_credits",
+            "./join/ratings/storage:/app/storage/join_ratings",
         ],
         "environment": {
             "MONITORED_NODES": ",".join(monitored_nodes),

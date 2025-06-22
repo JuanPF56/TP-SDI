@@ -32,6 +32,7 @@ class SentimentAnalyzer:
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.recovery_mode = os.path.exists(f"./storage/recovery_mode_{self.node_id}.flag")
         self.first_run = True
 
         self.config = ConfigParser()
@@ -51,8 +52,6 @@ class SentimentAnalyzer:
 
         self.manager = multiprocessing.Manager()
         self.master_logic_started_event = self.manager.Event()
-        self.done_recovering = multiprocessing.Event()
-        #self.done_recovering.set() # Set by default, will be cleared when the node is elected as leader
 
         self.client_manager = ClientManager(
             self.source_queue,
@@ -74,8 +73,7 @@ class SentimentAnalyzer:
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.done_recovering,
-                                      self.election_port, self._election_logic)
+        self.elector = None
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -89,8 +87,6 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.close()
             os.kill(self.master_logic.pid, signal.SIGINT)
             self.master_logic.join()
-            os.kill(self.elector.pid, signal.SIGINT)
-            self.elector.join()
             self.manager.shutdown()            
         except Exception as e:
             logger.error("Error closing connection: %s", e)
@@ -169,7 +165,10 @@ class SentimentAnalyzer:
                 return
             
             if msg_type == REC_TYPE:
-                self.done_recovering.set()
+                if self.elector is None:
+                    self.elector = LeaderElector(self.node_id, self.peers, 
+                                                 self.election_port, self._election_logic)
+                    self.elector.start_election()
                 return
             
             if message_id is None:
@@ -254,8 +253,11 @@ class SentimentAnalyzer:
             # Start the master logic process
             self.master_logic.start()
 
-            self.elector.start_election()
-            recover_node(self, self.clean_batch_queue)
+            if self.recovery_mode:
+                recover_node(self, self.clean_batch_queue)
+            else:
+                self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+                self.elector.start_election()
             
             logger.info("Starting message consumption...")
             self.rabbitmq_processor.consume(self.callback)

@@ -28,22 +28,20 @@ class FilterBase:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
+        self.recovery_mode = os.path.exists(f"./storage/recovery_mode_{self.node_id}.flag")
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
 
         self.manager = multiprocessing.Manager()
         self.master_logic = None
-        self.master_logic_started_event = multiprocessing.Event()
-        self.done_recovering = multiprocessing.Event()
-        #self.done_recovering.set() # Set by default, will be cleared when the node is elected as leader
-
-        self.elector = LeaderElector(self.node_id, self.peers, self.done_recovering,
-                                      self.election_port, self._election_logic)
+        self.master_logic_started_event = self.manager.Event()
 
         self.duplicate_handler = DuplicateHandler()
 
         self.rabbitmq_processor = None
         self.client_manager = None
+
+        self.elector = None
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -143,6 +141,4 @@ class FilterBase:
     def terminate_subprocesses(self):
         os.kill(self.master_logic.pid, signal.SIGINT)
         self.master_logic.join()
-        os.kill(self.elector.pid, signal.SIGINT)
-        self.elector.join()
         self.manager.shutdown()

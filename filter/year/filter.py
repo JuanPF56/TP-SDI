@@ -7,6 +7,7 @@ from common.client_state_manager import ClientState
 from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.eos_handling import handle_eos
+from common.leader_election import LeaderElector
 from common.master import REC_TYPE
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
@@ -98,7 +99,9 @@ class YearFilter(FilterBase):
                 return
             
             if msg_type == REC_TYPE:
-                self.done_recovering.set()
+                if self.elector is None:
+                    self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+                    self.elector.start_election()
                 return
             
             if message_id is None:
@@ -207,8 +210,11 @@ class YearFilter(FilterBase):
         - movies_arg_spain_2000s: Argentina+Spain movies between 2000-2009
         """
         logger.info("YearFilter is starting up")
-        self.elector.start_election()
-        recover_node(self, self.main_source_queues)
+        if self.recovery_mode:
+            recover_node(self, self.main_source_queues)
+        else:
+            self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+            self.elector.start_election()
         self.run_consumer()
 
     def extract_year(self, date_str):

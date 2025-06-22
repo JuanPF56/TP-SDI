@@ -15,12 +15,27 @@ nodos = MONITORED_NODES.split(",") if MONITORED_NODES else []
 
 client = docker.from_env()
 
+def crear_flag_recovery(nombre):
+    """Crea un archivo de flag de recuperación para el nodo."""
+    try:
+        node_type = nombre.split("_")[0]
+        node_suffix = nombre.split("_")[1] if len(nombre.split("_")) > 1 else ""
+        node_number = nombre.split("_")[-1] if len(nombre.split("_")) > 2 else ""
+        dir = f"./storage/{node_type}_{node_suffix}/"
+        file = f"recovery_mode_{node_number}.flag"
+        with open(os.path.join(dir, file), "w") as f:
+            # Write a simple message to indicate recovery mode
+            f.write("Recovery mode activated for node: " + nombre)
+        logger.info("Flag de recuperación creado para %s", nombre)
+    except Exception as e:
+        logger.error("Error al crear flag de recuperación para %s: %s", nombre, e)
 
 def reiniciar_nodo(nombre):
     """Reinicia un contenedor Docker dado su nombre."""
     try:
         container = client.containers.get(nombre)
         container.stop()
+        crear_flag_recovery(nombre)
         wait_time = 1 if "gateway" in nombre.lower() else DEAD_TIME
         logger.info("Deteniendo %s (caida de %s segundos)", nombre, wait_time)
         time.sleep(wait_time)

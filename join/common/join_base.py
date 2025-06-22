@@ -28,6 +28,7 @@ class JoinBase:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.recovery_mode = os.path.exists(f"./storage/recovery_mode_{self.node_id}.flag")
         self.stopped = False
         self.first_run = True
 
@@ -54,9 +55,6 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
-        
-        self.done_recovering = multiprocessing.Event()
-        #self.done_recovering.set() # Set by default, will be cleared when the node is elected as leader
 
         self.client_manager = ClientManager(
             self.input_queue,
@@ -83,14 +81,15 @@ class JoinBase:
             started_event=self.master_logic_started_event,
             movies_handler=self.movies_handler,
         )
+        self.master_logic.start()
 
         self.duplicate_handler = DuplicateHandler()
 
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.done_recovering, self.election_port, 
-                                     self._election_logic)
+        
+        self.elector = None
 
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
@@ -126,12 +125,13 @@ class JoinBase:
         # Start the process to receive the movies table
         self.movies_handler.start()
 
-        recover_node(self, self.clean_batch_queue)
-
-        # Start the master logic process
-        self.master_logic.start()
-        self.elector.start()
-
+        if self.recovery_mode:
+            recover_node(self, self.clean_batch_queue)
+        else:
+            self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 
+                                     self._election_logic)
+            self.elector.start_election()
+        
         # Start the loop to receive the batches
         self.receive_batch()
 
@@ -143,7 +143,7 @@ class JoinBase:
         """
         try:
             # Wait for the movies table to be ready
-            self.movies_handler_ready.wait()
+            # self.movies_handler_ready.wait()
 
             self.log_info(
                 "Movies table is ready for at least 1 client. Starting to receive batches..."
@@ -167,8 +167,6 @@ class JoinBase:
             self.movies_handler.join()
             os.kill(self.master_logic.pid, signal.SIGINT)
             self.master_logic.join()
-            os.kill(self.elector.pid, signal.SIGINT)
-            self.elector.join()
             self.manager.shutdown()
             self.stopped = True
 
@@ -219,7 +217,10 @@ class JoinBase:
                 return
             
             if msg_type == REC_TYPE:
-                self.done_recovering.set()
+                if self.elector is None:
+                    self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 
+                                     self._election_logic)
+                    self.elector.start_election()
                 return
             
             if message_id is None:

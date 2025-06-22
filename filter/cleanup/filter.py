@@ -7,6 +7,7 @@ from common.election_logic import recover_node
 from common.eos_handling import handle_eos
 from common.filter_base import FilterBase, EOS_TYPE
 
+from common.leader_election import LeaderElector
 from common.logger import get_logger
 from common.master import REC_TYPE
 
@@ -144,7 +145,9 @@ class CleanupFilter(FilterBase):
                 return
             
             if msg_type == REC_TYPE:
-                self.done_recovering.set()
+                if self.elector is None:
+                    self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+                    self.elector.start_election()
                 return
             
             if message_id is None:
@@ -215,8 +218,12 @@ class CleanupFilter(FilterBase):
         Main processing function for the CleanupFilter.
         """
         logger.info("CleanupFilter is starting up")
-        self.elector.start()
-        recover_node(self, self.main_source_queues)
+        if self.recovery_mode:
+            recover_node(self, self.main_source_queues)
+        else:
+            self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+            self.elector.start_election()
+
         self.run_consumer()
 
 if __name__ == "__main__":
