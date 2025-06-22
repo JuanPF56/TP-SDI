@@ -60,9 +60,6 @@ class FilterBase:
             leader_id=leader_id,
         )
 
-    def read_storage(self):
-        pass
-
     def __handleSigterm(self, signum, frame):
         print("SIGTERM signal received. Closing connection...")
         try:
@@ -141,4 +138,4 @@ class FilterBase:
     def terminate_subprocesses(self):
         os.kill(self.master_logic.pid, signal.SIGINT)
         self.master_logic.join()
-        self.manager.shutdown()
+        #self.manager.shutdown()

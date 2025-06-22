@@ -16,7 +16,7 @@ from common.eos_handling import handle_eos
 from common.logger import get_logger
 from common.master import REC_TYPE, MasterLogic
 from common.mom import RabbitMQProcessor
-from common.client_state_manager import ClientState, ClientManager
+from common.client_state_manager import ClientManager
 
 logger = get_logger("SentimentAnalyzer")
 
@@ -55,6 +55,7 @@ class SentimentAnalyzer:
 
         self.client_manager = ClientManager(
             self.source_queue,
+            manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
         
@@ -87,7 +88,7 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.close()
             os.kill(self.master_logic.pid, signal.SIGINT)
             self.master_logic.join()
-            self.manager.shutdown()            
+            #self.manager.shutdown()            
         except Exception as e:
             logger.error("Error closing connection: %s", e)
     
@@ -96,12 +97,6 @@ class SentimentAnalyzer:
             self,
             leader_id=leader_id,
         )
-
-    def read_storage(self):
-        self.client_manager.read_storage()
-        #self.client_manager.check_all_eos_received(
-        #    self.config, self.node_id, self.clean_batch_queue, self.target_queues
-        #)
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
@@ -127,24 +122,22 @@ class SentimentAnalyzer:
             return "neutral"
 
     def _handle_eos(
-        self, input_queue, body, method, headers, client_state: ClientState
+        self, input_queue, body, method, headers
     ):
         queue = input_queue.split("_node_")[0]
-        handle_eos(
+        self.client_manager.handle_eos(
             body,
             self.node_id,
             queue,
             queue,
             headers,
             self.rabbitmq_processor,
-            client_state,
-            self.master_logic.is_leader(),
             target_queues=self.target_queues,
         )
 
-    def _free_resources(self, client_state: ClientState):
-        if client_state and client_state.has_received_all_eos(self.source_queue):
-            self.client_manager.remove_client(client_state.client_id)
+    def _free_resources(self, client_id):
+        if self.client_manager.has_received_all_eos(client_id, self.clean_batch_queue):
+            self.client_manager.remove_client(client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         try:
@@ -153,15 +146,8 @@ class SentimentAnalyzer:
             client_id = headers.get("client_id")
             message_id = headers.get("message_id")
 
-            if client_id is None:
-                logger.error("Missing client_id in headers")
-                return
-
-            key = client_id
-            client_state = self.client_manager.add_client(client_id, msg_type == EOS_TYPE)
-
             if msg_type == EOS_TYPE:
-                self._handle_eos(input_queue, body, method, headers, client_state)
+                self._handle_eos(input_queue, body, method, headers)
                 return
             
             if msg_type == REC_TYPE:
@@ -169,6 +155,10 @@ class SentimentAnalyzer:
                     self.elector = LeaderElector(self.node_id, self.peers, 
                                                  self.election_port, self._election_logic)
                     self.elector.start_election()
+                return
+            
+            if client_id is None:
+                logger.error("Missing client_id in headers")
                 return
             
             if message_id is None:

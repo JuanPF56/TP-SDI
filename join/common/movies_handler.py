@@ -17,7 +17,7 @@ class MoviesHandler(multiprocessing.Process):
         """
         Initialize the MoviesHandler class with the given configuration and manager.
         """
-        super().__init__(target=self.run)
+        super().__init__()
         self.config = config
         self.source_exchange = config["DEFAULT"].get(
             "movies_exchange", "movies_arg_post_2000"

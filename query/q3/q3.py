@@ -68,8 +68,6 @@ class ArgProdRatingsQuery(QueryBase):
         logger.info("RESULTS for client %s: %s", client_id, results_msg)
         self.rabbitmq_processor.publish(self.target_queue, results_msg)
         logger.debug("LRU: Results published for client %s, %s", client_id, self.duplicate_handler.get_cache(client_id, self.source_queue))
-        #del self.movie_ratings[client_id]
-        #self.client_manager.remove_client(client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
@@ -83,7 +81,7 @@ class ArgProdRatingsQuery(QueryBase):
             self.rabbitmq_processor.acknowledge(method)
             return
 
-        client_state = self.client_manager.add_client(client_id)
+        self.client_manager.add_client(client_id)
 
         if msg_type == EOS_TYPE:
             try:
@@ -98,21 +96,17 @@ class ArgProdRatingsQuery(QueryBase):
                 "EOS received for node %s in queue %s, eos flags: %s",
                 node_id,
                 input_queue,
-                client_state.eos_flags,
+                self.client_manager.get_eos_flags(client_id),
             )
 
-            if not client_state.has_queue_received_eos_from_node(input_queue, node_id):
-                client_state.mark_eos(input_queue, node_id)
+            if not self.client_manager.has_queue_received_eos_from_node(client_id, input_queue, node_id):
+                self.client_manager.mark_eos(client_id, input_queue, node_id)
                 logger.info("✅ EOS received from node %s.", node_id)
-
+                if self.client_manager.has_received_all_eos(client_id, input_queue):
+                    logger.info("✅ All EOS received. Proceeding to calculate results.")
+                    self._calculate_and_publish_results(client_id)
             else:
                 logger.warning("⚠️ Duplicate EOS from node %s. Ignored.", node_id)
-                self.rabbitmq_processor.acknowledge(method)
-                return
-
-            if client_state.has_received_all_eos(input_queue):
-                logger.info("✅ All EOS received. Proceeding to calculate results.")
-                self._calculate_and_publish_results(client_id)
 
             self.rabbitmq_processor.acknowledge(method)
             return

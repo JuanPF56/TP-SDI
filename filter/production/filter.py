@@ -4,7 +4,6 @@ from collections import defaultdict
 from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.client_state_manager import ClientManager
-from common.client_state import ClientState
 from common.eos_handling import handle_eos
 from common.leader_election import LeaderElector
 from common.logger import get_logger
@@ -22,6 +21,7 @@ class ProductionFilter(FilterBase):
         self._initialize_rabbitmq_processor()
         self.client_manager = ClientManager(
             self.source_queues,
+            manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
 
@@ -49,24 +49,26 @@ class ProductionFilter(FilterBase):
         self.rabbitmq_processor.publish(target=queue, message=movie, headers=headers)
         logger.debug("Sent movie to %s", queue)
 
-    def _handle_eos(self, queue_name, body, method, headers, client_state: ClientState):
+    def _handle_eos(self, queue_name, body, method, headers):
         logger.debug("Received EOS from %s", queue_name)
         queue = queue_name.split("_node_")[0]
-        handle_eos(
+        self.client_manager.handle_eos(
             body,
             self.node_id,
             queue,
             self.main_source_queues,
             headers,
             self.rabbitmq_processor,
-            client_state,
-            self.master_logic.is_leader(),
             target_queues=self.target_queues.get(queue_name),
         )
 
-    def _free_resources(self, client_state: ClientState):
-        if client_state and client_state.has_received_all_eos(self.source_queues):
-            self.client_manager.remove_client(client_state.client_id)
+    def _free_resources(self, client_id):
+        try:
+            if self.client_manager.has_received_all_eos(client_id, self.main_source_queues):
+                logger.info("All EOS received for client %s. Cleaning up resources.", client_id)
+                self.client_manager.remove_client(client_id)
+        except KeyError:
+            logger.warning("Client not found for cleanup: %s.", client_id)
 
     def _process_single_movie(self, movie, queue_name):
         """
@@ -118,20 +120,18 @@ class ProductionFilter(FilterBase):
             client_id = headers.get("client_id")
             message_id = headers.get("message_id")
 
-            if not client_id:
-                logger.error("Missing client_id in headers")
-                return
-
-            client_state = self.client_manager.add_client(client_id, msg_type == EOS_TYPE)
-
             if msg_type == EOS_TYPE:
-                self._handle_eos(queue_name, body, method, headers, client_state)
+                self._handle_eos(queue_name, body, method, headers)
                 return
             
             if msg_type == REC_TYPE:
                 if self.elector is None:
                     self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
                     self.elector.start_election()
+                return
+            
+            if not client_id:
+                logger.error("Missing client_id in headers")
                 return
             
             if message_id is None:
@@ -180,11 +180,6 @@ class ProductionFilter(FilterBase):
 
         finally:
             self.rabbitmq_processor.acknowledge(method)
-
-    def read_storage(self):
-        self.client_manager.read_storage()
-        #self.client_manager.check_all_eos_received(
-            #self.config, self.node_id, self.main_source_queues, self.target_queues[self.source_queues[0]])
         
     def process(self):
         """

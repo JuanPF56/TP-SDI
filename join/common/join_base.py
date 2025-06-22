@@ -6,7 +6,6 @@ import signal
 from common.duplicate_handler import DuplicateHandler
 from common.election_logic import election_logic, recover_node
 from common.leader_election import LeaderElector
-from common.client_state import ClientState
 from common.client_state_manager import ClientManager
 from common.eos_handling import handle_eos
 from common.master import MasterLogic
@@ -58,6 +57,7 @@ class JoinBase:
 
         self.client_manager = ClientManager(
             self.input_queue,
+            manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
         
@@ -112,15 +112,7 @@ class JoinBase:
         Check if the current node is the leader.
         """
         return self.master_logic.is_leader()
-
-    def read_storage(self):
-        pass
-        #self.movies_handler.read_storage()
-        #self.client_manager.read_storage()
-        #self.client_manager.check_all_eos_received(
-        #    self.config, self.node_id, self.clean_batch_queue, self.output_queue
-        #)
-
+    
     def process(self):
         # Start the process to receive the movies table
         self.movies_handler.start()
@@ -167,28 +159,26 @@ class JoinBase:
             self.movies_handler.join()
             os.kill(self.master_logic.pid, signal.SIGINT)
             self.master_logic.join()
-            self.manager.shutdown()
+            #self.manager.shutdown()
             self.stopped = True
 
-    def _handle_eos(self, queue_name, body, method, headers, client_state):
+    def _handle_eos(self, queue_name, body, method, headers):
         self.log_debug(f"Received EOS from {queue_name}")
         queue = queue_name.split("_node_")[0]
-        handle_eos(
+        self.client_manager.handle_eos(
             body,
             self.node_id,
             queue,
             queue,
             headers,
             self.rabbitmq_processor,
-            client_state,
-            self.master_logic.is_leader(),
             target_queues=self.output_queue,
         )
 
-    def _free_resources(self, client_state: ClientState):
-        if client_state and client_state.has_received_all_eos(self.input_queue):
-            self.client_manager.remove_client(client_state.client_id)
-            self.movies_handler.remove_movies_table(client_state.client_id)
+    def _free_resources(self, client_id):
+        if self.client_manager.has_received_all_eos(client_id, self.clean_batch_queue):            
+            self.client_manager.remove_client(client_id)
+            self.movies_handler.remove_movies_table(client_id)
 
     def process_batch(self, ch, method, properties, body, input_queue):
         """
@@ -203,17 +193,9 @@ class JoinBase:
             headers = getattr(properties, "headers", {}) or {}
             current_client_id = headers.get("client_id")
             message_id = headers.get("message_id")
-            
-            if not current_client_id:
-                self.log_error("Missing client_id in headers")
-                return
-
-            client_state = self.client_manager.add_client(
-                current_client_id, msg_type == EOS_TYPE
-            )
 
             if msg_type == EOS_TYPE:
-                self._handle_eos(input_queue, body, method, headers, client_state)
+                self._handle_eos(input_queue, body, method, headers)
                 return
             
             if msg_type == REC_TYPE:
@@ -221,6 +203,10 @@ class JoinBase:
                     self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 
                                      self._election_logic)
                     self.elector.start_election()
+                return
+            
+            if not current_client_id:
+                self.log_error("Missing client_id in headers")
                 return
             
             if message_id is None:

@@ -3,7 +3,6 @@ import os
 from datetime import datetime
 
 from common.client_state_manager import ClientManager
-from common.client_state_manager import ClientState
 from common.election_logic import recover_node
 from common.filter_base import FilterBase, EOS_TYPE
 from common.eos_handling import handle_eos
@@ -23,6 +22,7 @@ class YearFilter(FilterBase):
 
         self.client_manager = ClientManager(
             self.source_queues,
+            manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
 
@@ -59,21 +59,16 @@ class YearFilter(FilterBase):
         self._initialize_master_logic()
 
     def _handle_eos(
-        self, input_queue, body, method, headers, client_state: ClientState
+        self, input_queue, body, method, headers
     ):
-        if client_state:
-            logger.debug("Received EOS from %s", input_queue)
-
         queue = input_queue.split("_node_")[0]
-        handle_eos(
+        self.client_manager.handle_eos(
             body,
             self.node_id,
             queue,
             queue,
             headers,
             self.rabbitmq_processor,
-            client_state,
-            self.master_logic.is_leader(),
             target_queues=(
                 self.target_queue if input_queue == self.source_queues[1] else None
             ),
@@ -82,9 +77,13 @@ class YearFilter(FilterBase):
             ),
         )
 
-    def _free_resources(self, client_state: ClientState):
-        if client_state and client_state.has_received_all_eos(self.source_queues):
-            self.client_manager.remove_client(client_state.client_id)
+    def _free_resources(self, client_id):
+        try:
+            if self.client_manager.has_received_all_eos(client_id, self.main_source_queues):
+                logger.info("All EOS received for client %s. Cleaning up resources.", client_id)
+                self.client_manager.remove_client(client_id)
+        except KeyError:
+            logger.warning("Client not found for cleanup: %s.", client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         try:
@@ -92,16 +91,19 @@ class YearFilter(FilterBase):
             headers = getattr(properties, "headers", {}) or {}
             client_id = headers.get("client_id")
             message_id = headers.get("message_id")
-            client_state = self.client_manager.add_client(client_id, msg_type == EOS_TYPE)
 
             if msg_type == EOS_TYPE:
-                self._handle_eos(input_queue, body, method, headers, client_state)
+                self._handle_eos(input_queue, body, method, headers)
                 return
             
             if msg_type == REC_TYPE:
                 if self.elector is None:
                     self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
                     self.elector.start_election()
+                return
+            
+            if client_id is None:
+                logger.error("Missing client_id in headers")
                 return
             
             if message_id is None:
@@ -189,15 +191,6 @@ class YearFilter(FilterBase):
                 headers=headers,
                 priority=1,
             )
-
-    def read_storage(self):
-        self.client_manager.read_storage()
-        #self.client_manager.check_all_eos_received(
-            #self.config, self.node_id, self.main_source_queues[0],
-            #target_exchange=self.target_exchange)
-        #self.client_manager.check_all_eos_received(
-            #self.config, self.node_id, self.main_source_queues[1],
-            #self.target_queue)
 
     def process(self):
         """
