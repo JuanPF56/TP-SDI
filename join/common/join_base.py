@@ -70,6 +70,14 @@ class JoinBase:
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
             is_leader=self.is_leader,
         )
+        shard_mapping_str = os.getenv("SHARD_MAPPING", "")
+        shard_mapping = {}
+        if shard_mapping_str:
+            for mapping in shard_mapping_str.split(","):
+                node_name, range_str = mapping.split(":")
+                start, end = range_str.split("-")
+                shard_mapping[node_name] = (int(start), int(end))
+
 
         self.master_logic = MasterLogic(
             config=self.config,
@@ -80,6 +88,9 @@ class JoinBase:
             client_manager=self.client_manager,
             started_event=self.master_logic_started_event,
             movies_handler=self.movies_handler,
+            sharded=True,  # Enable sharding for join nodes
+            shard_mapping=shard_mapping
+
         )
         self.master_logic.start()
 
@@ -193,6 +204,9 @@ class JoinBase:
             headers = getattr(properties, "headers", {}) or {}
             current_client_id = headers.get("client_id")
             message_id = headers.get("message_id")
+            sub_id = headers.get("sub_id")
+            expected = headers.get("expected")
+            message_key = f"{message_id}:{sub_id}/{expected}"
 
             if msg_type == EOS_TYPE:
                 self._handle_eos(input_queue, body, method, headers)
@@ -204,18 +218,18 @@ class JoinBase:
                                      self._election_logic)
                     self.elector.start_election()
                 return
-            
+
             if not current_client_id:
                 self.log_error("Missing client_id in headers")
                 return
             
-            if message_id is None:
+            if message_key is None:
                 self.log_error("Missing message_id in headers")
                 return
 
-            if self.duplicate_handler.is_duplicate(current_client_id, input_queue, message_id):
+            if self.duplicate_handler.is_duplicate(current_client_id, input_queue, message_key):
                 self.log_info(f"Current LRU cache: {self.duplicate_handler.get_caches()}")
-                self.log_info(f"Duplicate message detected: {message_id} for client {current_client_id}. Acknowledging without processing.")
+                self.log_info(f"Duplicate message detected: {message_key} for client {current_client_id}. Acknowledging without processing.")
                 return
 
             # Load the data from the incoming message
@@ -263,7 +277,9 @@ class JoinBase:
 
                 # Build a set of movie IDs for fast lookup
                 movies_by_id = {movie["id"]: movie for movie in movies_table}
+              
                 joined_data = self.perform_join(data, movies_by_id)
+
 
                 if not joined_data:
                     self.log_debug("No matching movies found in the movies table.")
@@ -274,7 +290,7 @@ class JoinBase:
                         msg_type=msg_type,
                         headers=headers,
                     )
-                self.duplicate_handler.add(current_client_id, input_queue, message_id)
+                self.duplicate_handler.add(current_client_id, input_queue, message_key)
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.reconnect_and_restart(self.process_batch)

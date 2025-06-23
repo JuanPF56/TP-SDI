@@ -22,6 +22,9 @@ class MoviesHandler(multiprocessing.Process):
         self.source_exchange = config["DEFAULT"].get(
             "movies_exchange", "movies_arg_post_2000"
         )
+        self.shard_start = int(os.getenv("SHARD_RANGE_START", "0"))
+        self.shard_end = int(os.getenv("SHARD_RANGE_END", "0"))
+
         self.rabbitmq_processor = RabbitMQProcessor(
             config,
             [],
@@ -80,6 +83,7 @@ class MoviesHandler(multiprocessing.Process):
                     logger.error("Missing client_id in headers")
                     self.rabbitmq_processor.acknowledge(method)
                     return
+
                 if msg_type == EOS_TYPE:
                     try:
                         data = json.loads(body)
@@ -99,6 +103,7 @@ class MoviesHandler(multiprocessing.Process):
                             "One table is ready for at least 1 client. Notifying..."
                         )
                         self.movies_table_ready.set()
+
                 else:
                     try:
                         decoded = json.loads(body)
@@ -114,16 +119,34 @@ class MoviesHandler(multiprocessing.Process):
                     except json.JSONDecodeError:
                         logger.error("Error decoding JSON: %s", body)
                         return
+
                     logger.debug("Received message: %s", movies_data)
+
                     if id_tuple not in self.movies:
                         self.movies[id_tuple] = self.manager.list()
-                    for movie in movies_data:
-                        new_movie = {
-                            "id": str(movie["id"]),
-                            "original_title": movie["original_title"],
-                        }
-                        if new_movie not in self.movies[id_tuple]:
-                            self.movies[id_tuple].append(new_movie)
+
+                    filtered_movies = [
+                        movie for movie in movies_data
+                        if self.shard_start <= int(movie["id"]) <= self.shard_end
+                    ]
+
+                    logger.debug(
+                        "Filtered movies for client %s, request %s: %s",
+                        self.current_client_id,
+                        self.current_request_number,
+                        filtered_movies,
+                    )
+                    
+
+                    if not filtered_movies:
+                        logger.debug("No movies in range [%s-%s] for node %s",
+                                    self.shard_start, self.shard_end, self.node_name)
+                        return
+
+                    for movie in filtered_movies:
+                        if movie not in self.movies[id_tuple]:
+                            self.movies[id_tuple].append(movie)
+
                     #if self.is_leader:
                         #self.done_recovering.wait()
                         #self.write_storage(
@@ -137,6 +160,7 @@ class MoviesHandler(multiprocessing.Process):
                         self.current_request_number,
                         self.movies[id_tuple],
                     )
+
             except Exception as e:
                 logger.error("Error processing message: %s", e)
             finally:
