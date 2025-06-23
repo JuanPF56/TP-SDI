@@ -16,7 +16,7 @@ REC_TYPE = "RECOVERY"
 class MasterLogic(multiprocessing.Process):
     def __init__(self, config, manager, node_id, nodes_of_type, clean_queues, 
                  client_manager, started_event=None,
-                 movies_handler=None):
+                 movies_handler=None, sharded=False, shard_mapping=None):
         """
         Initialize the MasterLogic class with the given configuration and manager.
         """
@@ -40,6 +40,10 @@ class MasterLogic(multiprocessing.Process):
         self.client_manager = client_manager
         self.movies_handler = movies_handler
         self.started_event = started_event
+        
+        # Sharding configuration
+        self.sharded = sharded
+        self.shard_mapping = shard_mapping or {}  # {node_name: (start_range, end_range)}
 
         self.duplicate_handler = DuplicateHandler()
 
@@ -58,6 +62,27 @@ class MasterLogic(multiprocessing.Process):
         except Exception as e:
             logger.info(f"Error closing connection: {e}")
 
+    def _get_node_for_shard_id(self, shard_id, queue_name):
+        """
+        Find which node should handle a given shard ID.
+        Returns the target node queue name.
+        """
+        if not self.sharded or not self.shard_mapping:
+            # Fallback to round-robin if not sharded
+            return f"{queue_name}_node_{((shard_id % self.nodes_of_type) + 1)}"
+        
+        # Find the node that handles this shard range
+        for node_name, (start_range, end_range) in self.shard_mapping.items():
+            if start_range <= shard_id <= end_range:
+                # Extract node number from node_name (e.g., "join_credits_2" -> "2")
+                node_num = node_name.split('_')[-1]
+                return f"{queue_name}_node_{node_num}"
+        
+        # Fallback if no shard range found
+        logger.warning(f"No shard range found for shard_id {shard_id}, using round-robin")
+        return f"{queue_name}_node_{((shard_id % self.nodes_of_type) + 1)}"
+
+
     def load_balance(self, ch, method, properties, body, queue_name):
         """
         Callback function to handle load balancing of messages.
@@ -74,6 +99,7 @@ class MasterLogic(multiprocessing.Process):
             except json.JSONDecodeError:
                 logger.error(f"Failed to decode message body: {body}")
                 return
+                
             if msg_type == EOS_TYPE:
                 # Publish the EOS message to all nodes
                 for i in range(1, self.nodes_of_type + 1):
@@ -98,15 +124,60 @@ class MasterLogic(multiprocessing.Process):
                     logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
                     return
                 
-                self.target_index = (message_id % self.nodes_of_type) + 1
-                logger.debug(f"Distributing message {message_id} from client {client_id} to node {self.target_index} for queue {queue_name}")
-                target_node = f"{queue_name}_node_{self.target_index}"
-                self.rabbitmq_processor.publish(
-                    target=target_node,
-                    message=decoded,
-                    msg_type=msg_type,
-                    headers=headers,
-                )
+                # Determine target node based on sharding or round-robin
+
+                if self.sharded:
+                    logger.debug("Sharded mode enabled. Decoding shard_id from message: %s", decoded)
+                    messages = decoded if isinstance(decoded, list) else [decoded]
+
+                    node_batches = {}  # target_node -> list of messages
+
+                    for i, message in enumerate(messages):
+                        if not isinstance(message, dict):
+                            logger.error("Invalid message type: %s. Expected dict. Skipping.", type(message))
+                            continue
+
+                        shard_id = message.get("id") or message.get("movie_id")
+                        if shard_id is None:
+                            logger.error("Missing shard_id (id or movie_id) in message %s", message)
+                            continue
+
+                        target_node = self._get_node_for_shard_id(shard_id, queue_name)
+                        logger.debug("Target node for shard_id %s is %s", shard_id, target_node)
+
+                        if target_node not in node_batches:
+                            node_batches[target_node] = []
+                        node_batches[target_node].append(message)
+
+                    expected_parts = len(node_batches)
+                    for sub_id, (target_node, batch) in enumerate(node_batches.items()):
+                        self.target_index = int(target_node.split('_')[-1])  # Adjust according to your naming
+                        logger.info(
+                            "Distributing batch of %d messages to node %d (node: %s) for queue %s",
+                            len(batch), self.target_index, target_node, queue_name
+                        )
+
+                        headers["sub_id"] = sub_id
+                        headers["expected"] = expected_parts
+                        self.rabbitmq_processor.publish(
+                            target=target_node,
+                            message=batch,  # send list of messages
+                            msg_type=msg_type,
+                            headers=headers,
+                        )
+
+
+                else:
+                    # Original round-robin logic
+                    self.target_index = (message_id % self.nodes_of_type) + 1
+                    logger.debug(f"Distributing message {message_id} from client {client_id} to node {self.target_index} for queue {queue_name}")
+                    target_node = f"{queue_name}_node_{self.target_index}"
+                    self.rabbitmq_processor.publish(
+                        target=target_node,
+                        message=decoded,
+                        msg_type=msg_type,
+                        headers=headers,
+                    )
                 if message_id:
                     self.duplicate_handler.add(client_id, queue_name, message_id)
         except Exception as e:
