@@ -109,8 +109,6 @@ class MasterLogic(multiprocessing.Process):
                     )
             elif msg_type == REC_TYPE:
                 self._handle_node_recovery(decoded, queue_name)
-                # if self.movies_handler is not None:
-                #     self.movies_handler.recover_movies_table(self.node_id)
             else:
                 if client_id is None:
                     logger.error("Missing client_id in headers")
@@ -150,7 +148,7 @@ class MasterLogic(multiprocessing.Process):
                     expected_parts = len(node_batches)
                     for sub_id, (target_node, batch) in enumerate(node_batches.items()):
                         self.target_index = int(target_node.split('_')[-1])  # Adjust according to your naming
-                        logger.info(
+                        logger.debug(
                             "Distributing batch of %d messages to node %d (node: %s) for queue %s",
                             len(batch), self.target_index, target_node, queue_name
                         )

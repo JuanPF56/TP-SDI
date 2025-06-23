@@ -46,18 +46,18 @@ echo "¿Saltear descarga de datasets?: $skip_download"
 # Descargar datasets completos si no está en modo test y no se quiere saltear la descarga
 if [ "$modo_test" == "No" ] && [ "$skip_download" == "No" ]; then
     echo "Descargando datasets completos..."
-    python3 download_datasets.py
+    python download_datasets.py
 fi
 
 # Reducir datasets si está el flag -test
 if [ "$modo_test" == "Sí" ]; then
     echo "Reduciendo datasets con -test $test_config_path"
-    python3 download_datasets.py -test "$test_config_path"
+    python download_datasets.py -test "$test_config_path"
 fi
 
 # Generamos archivo del sistema
 echo "Generando $base_filename.system.yml"
-python3 docker-compose-generator.py system "$base_filename.system.yml"
+python docker-compose-generator.py system "$base_filename.system.yml"
 
 # Generamos archivo de clientes
 echo "Generando $base_filename.clients.yml"
@@ -66,7 +66,7 @@ if [ "$modo_test" == "Sí" ]; then
     client_args+=("-test" "$test_config_path")
 fi
 
-python3 docker-compose-generator.py "${client_args[@]}"
+python docker-compose-generator.py "${client_args[@]}"
 
 echo "Archivos generados con éxito:"
 echo "  -> $base_filename.system.yml"

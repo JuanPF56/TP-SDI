@@ -198,6 +198,8 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                     "NODE_NAME": name,
                     "ELECTION_PORT": str(election_port_start + i),
                     "PEERS": peers_str,
+                    "JOIN_RATING_NODES": str(j_ratings),
+                    "JOIN_CREDIT_NODES": str(j_credits),
                 },
                 "depends_on": deepcopy(depends),
                 "networks": ["testing_net"],

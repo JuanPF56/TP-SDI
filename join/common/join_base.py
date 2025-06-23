@@ -60,16 +60,15 @@ class JoinBase:
             manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
-        
+
         self.movies_handler = MoviesHandler(
             config=self.config,
             manager=self.manager,
-            ready_event=self.movies_handler_ready,
             node_id=self.node_id,
             node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
-            is_leader=self.is_leader,
         )
+
         shard_mapping_str = os.getenv("SHARD_MAPPING", "")
         shard_mapping = {}
         if shard_mapping_str:
@@ -90,7 +89,6 @@ class JoinBase:
             movies_handler=self.movies_handler,
             sharded=True,  # Enable sharding for join nodes
             shard_mapping=shard_mapping
-
         )
         self.master_logic.start()
 
@@ -145,13 +143,6 @@ class JoinBase:
         starting to consume messages.
         """
         try:
-            # Wait for the movies table to be ready
-            # self.movies_handler_ready.wait()
-
-            self.log_info(
-                "Movies table is ready for at least 1 client. Starting to receive batches..."
-            )
-
             self.rabbitmq_processor.consume(self.process_batch)
         except KeyboardInterrupt:
             self.log_info("Shutting down gracefully...")
@@ -268,11 +259,10 @@ class JoinBase:
 
                 # Get the movies table for the client
                 movies_table = self.movies_handler.get_movies_table(current_client_id)
-                self.log_info(
+                self.log_debug(
                     f"Movies table for client {current_client_id}: {movies_table}"
                 )
     
-
                 if not movies_table:
                     self.log_debug(
                         f"Movies table is empty for client {current_client_id},"

@@ -19,6 +19,8 @@ class YearFilter(FilterBase):
         super().__init__(config)
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
+        self.join_rating_nodes = int(os.getenv("JOIN_RATING_NODES", "1"))
+        self.join_credit_nodes = int(os.getenv("JOIN_CREDIT_NODES", "1"))
 
         self.client_manager = ClientManager(
             self.source_queues,
@@ -27,11 +29,11 @@ class YearFilter(FilterBase):
         )
 
     def _initialize_rabbitmq_processor(self):
+        all_target_queues = self.movie_table_target_queues + [self.target_queue]
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
             source_queues=self.source_queues,
-            target_queues=self.target_queue,
-            target_exchange=self.target_exchange,
+            target_queues=all_target_queues,
         )
 
     def _initialize_queues(self):
@@ -49,8 +51,20 @@ class YearFilter(FilterBase):
         self.target_queue = defaults.get(
             "movies_arg_spain_2000s_queue", "movies_arg_spain_2000s"
         )
-        self.target_exchange = defaults.get(
-            "movies_arg_post_2000_exchange", "movies_arg_post_2000"
+        self.main_movie_table_target_queue = defaults.get(
+            "movies_arg_post_2000_queue", "movies_arg_post_2000"
+        )
+
+        self.credits_target_queues = [
+            self.main_movie_table_target_queue + "_node_join_credits_" + str(n_id) for n_id in range(1, self.join_credit_nodes + 1)
+        ]
+
+        self.ratings_target_queues = [
+            self.main_movie_table_target_queue + "_node_join_ratings_" + str(n_id) for n_id in range(1, self.join_rating_nodes + 1)
+        ]
+
+        self.movie_table_target_queues = (
+            self.credits_target_queues + self.ratings_target_queues
         )
 
     def setup(self):
@@ -70,10 +84,8 @@ class YearFilter(FilterBase):
             headers,
             self.rabbitmq_processor,
             target_queues=(
-                self.target_queue if input_queue == self.source_queues[1] else None
-            ),
-            target_exchanges=(
-                self.target_exchange if input_queue == self.source_queues[0] else None
+                self.target_queue if input_queue == self.source_queues[1] else 
+                self.movie_table_target_queues
             ),
         )
 
@@ -174,20 +186,19 @@ class YearFilter(FilterBase):
         Publish all processed movies as one batch.
         """
         if input_queue == self.source_queues[0]:
-            # Argentina queue: publish to exchange
-            self.rabbitmq_processor.publish(
-                target=self.target_exchange,
-                message=movies,  
-                exchange=True,
-                headers=headers,
-                priority=1,
-            )
+            # Argentina queue: publish to all movie table target queues
+            for target_queue in self.movie_table_target_queues:
+                self.rabbitmq_processor.publish(
+                    target=target_queue,
+                    message=movies,  
+                    headers=headers,
+                    priority=1,
+                )
         elif input_queue == self.source_queues[1]:
             # Argentina+Spain queue: publish to queue
             self.rabbitmq_processor.publish(
                 target=self.target_queue,
                 message=movies, 
-                exchange=False,
                 headers=headers,
                 priority=1,
             )
