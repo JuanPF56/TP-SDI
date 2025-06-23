@@ -109,8 +109,8 @@ class MasterLogic(multiprocessing.Process):
                     )
             elif msg_type == REC_TYPE:
                 self._handle_node_recovery(decoded, queue_name)
-                if self.movies_handler is not None:
-                    self.movies_handler.recover_movies_table(self.node_id)
+                # if self.movies_handler is not None:
+                #     self.movies_handler.recover_movies_table(self.node_id)
             else:
                 if client_id is None:
                     logger.error("Missing client_id in headers")

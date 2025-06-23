@@ -69,6 +69,8 @@ class MoviesHandler(multiprocessing.Process):
         Once all nodes for the client have sent EOS messages, it will notify that
         at least one table is ready.
         """
+        self.read_storage()  # Step 1: load memory from disk
+        self.recover_movies_table(self.node_name)  # Step 2: replay memory to RabbitMQ
 
         def callback(ch, method, properties, body, queue_name):
             try:
@@ -147,13 +149,14 @@ class MoviesHandler(multiprocessing.Process):
                         if movie not in self.movies[id_tuple]:
                             self.movies[id_tuple].append(movie)
 
-                    #if self.is_leader:
-                        #self.done_recovering.wait()
-                        #self.write_storage(
-                        #    "movies",
-                        #    self.movies[id_tuple],
-                        #    self.current_client_id,
-                        #)
+                    self.done_recovering.wait()
+                    self.write_storage(
+                        "movies",
+                        self.movies[id_tuple],
+                        self.current_client_id,
+                        self.node_id,
+                    )
+
                     logger.debug(
                         "Movies table updated for client %s, request %s: %s",
                         self.current_client_id,
@@ -191,6 +194,8 @@ class MoviesHandler(multiprocessing.Process):
         """
         Check if all nodes have sent EOS messages for the given client ID.
         """
+        logger.info("Checking if client %s is ready with EOS flags: %s",
+                    client_id, self.year_eos_flags.get(client_id, {}))
         if client_id not in self.year_eos_flags:
             return False
         return len(self.year_eos_flags[client_id]) == int(self.year_nodes_to_await)
@@ -233,7 +238,7 @@ class MoviesHandler(multiprocessing.Process):
             logger.error("Error connecting to RabbitMQ. Exiting...")
             return
 
-        all_movies = self.get_movies_tables()
+        all_movies = self.get_movies_tables(node_id)
         all_eos_flags = self.get_year_eos_flags()
 
         for client_id, movie_list in all_movies.items():
@@ -260,16 +265,35 @@ class MoviesHandler(multiprocessing.Process):
 
         rabbit.close()
     
-    def get_movies_tables(self):
+    def get_movies_tables(self, node_id):
         """
-        Get a deep copy of all movies tables.
+        Get a dictionary of client_id -> movie list for the current node only,
+        based on files in storage.
         """
-        return {
-            client_id: list(movies)
-            for client_id, movies in self.movies.items()
-            if movies is not None and len(movies) > 0
-        }
-    
+        storage_dir = "./storage"
+        tables = {}
+
+        if not os.path.exists(storage_dir):
+            logger.warning("Storage directory not found.")
+            return tables
+
+        for filename in os.listdir(storage_dir):
+            if filename.startswith("movies_") and filename.endswith(f"_{node_id}.json"):
+                parts = filename.split("_")
+                if len(parts) < 3:
+                    continue  # Skip invalid filenames
+                client_id = "_".join(parts[1:-1])  # in case client_id has underscores
+                file_path = os.path.join(storage_dir, filename)
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+                    if data:
+                        tables[client_id] = data
+                except Exception as e:
+                    logger.error(f"Error reading movies table from {file_path}: {e}")
+        return tables
+
+        
     def get_year_eos_flags(self):
         """
         Get a deep copy of all year EOS flags.
@@ -287,10 +311,10 @@ class MoviesHandler(multiprocessing.Process):
         self.done_recovering.clear()
         logger.debug("Done reading event reset for MoviesHandler.")
 
-    def write_storage(self, key, data, client_id):
+    def write_storage(self, key, data, client_id, node_id):
         storage_dir = "./storage"
         os.makedirs(storage_dir, exist_ok=True)
-        file_path = os.path.join(storage_dir, f"{key}_{client_id}.json")
+        file_path = os.path.join(storage_dir, f"{key}_{client_id}_{node_id}.json")
         tmp_file = None
 
         if isinstance(data, multiprocessing.managers.DictProxy):
@@ -321,25 +345,24 @@ class MoviesHandler(multiprocessing.Process):
             return
 
         for filename in os.listdir(storage_dir):
-            if filename.startswith("moveos_") and filename.endswith(".json"):
-                type = "moveos"
-            elif filename.startswith("movies_") and filename.endswith(".json"):
+            if filename.startswith("movies_") and filename.endswith(".json"):
                 type = "movies"
             else:
                 continue
-            client_id = filename.split("_")[1][:-5]
+            parts = filename[:-5].split("_")
+            if len(parts) != 3:
+                logger.warning("Invalid filename format in storage: %s", filename)
+                continue
+            key_type, client_id, node_id = parts
+
             file_path = os.path.join(storage_dir, filename)
             try:
                 with open(file_path, "r") as f:
                     data = json.load(f)
-                self.compare_and_update(
-                    type,
-                    data,
-                    client_id
-                )
+                self.compare_and_update(data, client_id, node_id)
+
             except Exception as e:
                 logger.error(f"Error reading {type} data from {file_path}: {e}")
-
         for client_id in self.year_eos_flags:
             if not self.ready and self.client_ready(client_id):
                 self.ready = True
@@ -350,31 +373,18 @@ class MoviesHandler(multiprocessing.Process):
 
         self.done_recovering.set()
 
-    def compare_and_update(self, type, data, client_id):
+    def compare_and_update(self, data, client_id, node_id):
         """
         Compare the data read from storage with the current state and update file if necessary.
         """
-        if type == "moveos":
-            if client_id not in self.year_eos_flags:
-                self.year_eos_flags[client_id] = self.manager.dict()
-            current_flags = self.year_eos_flags[client_id]
-            updated = False
-            for node_id, flag in data.items():
-                if node_id not in current_flags or current_flags[node_id] != flag:
-                    current_flags[node_id] = flag
-                    updated = True
-            if updated:
-                self.write_storage("moveos", current_flags, client_id)
-                logger.debug(f"EOS data for client {client_id} updated.")
-        elif type == "movies":
-            if client_id not in self.movies:
-                self.movies[client_id] = self.manager.list()
-            current_movies = self.movies[client_id]
-            updated = False
-            for movie in data:
-                if movie not in current_movies:
-                    current_movies.append(movie)
-                    updated = True
-            if updated:
-                self.write_storage("movies", list(current_movies), client_id)
-                logger.debug(f"Movies data for client {client_id} updated.")
+        if client_id not in self.movies:
+            self.movies[client_id] = self.manager.list()
+        current_movies = self.movies[client_id]
+        updated = False
+        for movie in data:
+            if movie not in current_movies:
+                current_movies.append(movie)
+                updated = True
+        if updated:
+            self.write_storage("movies", list(current_movies), client_id, node_id)
+            logger.info(f"Movies data for client {client_id} updated. {self.movies[client_id]}")

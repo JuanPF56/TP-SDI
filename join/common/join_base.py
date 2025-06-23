@@ -268,6 +268,10 @@ class JoinBase:
 
                 # Get the movies table for the client
                 movies_table = self.movies_handler.get_movies_table(current_client_id)
+                self.log_info(
+                    f"Movies table for client {current_client_id}: {movies_table}"
+                )
+    
 
                 if not movies_table:
                     self.log_debug(

@@ -7,7 +7,7 @@ import configparser
 from copy import deepcopy
 import yaml
 
-SHARD_ID_LIMIT_CREDITS = 450000  # Límite exclusivo
+SHARD_ID_LIMIT_CREDITS = 490000  # Límite exclusivo
 SHARD_ID_LIMIT_RATINGS = 26024290  # Límite exclusivo
 
 def calculate_shard_ranges(count, is_ratings_join=False):
