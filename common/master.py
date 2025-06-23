@@ -218,19 +218,19 @@ class MasterLogic(multiprocessing.Process):
         logger.info(f"Clients for recovery: {clients}")
         if not clients:
             logger.warning("No clients found for recovery.")
-            return
-        logger.info(f"Clients found: {clients.items()}")
-        # Send all EOS messages to the requesting node for the specified queue
-        for client_id, eos_flags in clients.items():
-            if queue_name in eos_flags.keys():
-                for target_node in eos_flags[queue_name]:
-                    self.rabbitmq_processor.publish(
-                        target=f"{queue_name}_node_{node_id}",
-                        message={"node_id": target_node},
-                        msg_type=EOS_TYPE,
-                        headers={"client_id": client_id},
-                        priority=1                           
-                    )
+        else:
+            logger.info(f"Clients found: {clients.items()}")
+            # Send all EOS messages to the requesting node for the specified queue
+            for client_id, eos_flags in clients.items():
+                if queue_name in eos_flags.keys():
+                    for target_node in eos_flags[queue_name]:
+                        self.rabbitmq_processor.publish(
+                            target=f"{queue_name}_node_{node_id}",
+                            message={"node_id": target_node},
+                            msg_type=EOS_TYPE,
+                            headers={"client_id": client_id},
+                            priority=2                         
+                        )
         
         # Acknowledge the recovery request
         self.rabbitmq_processor.publish(
