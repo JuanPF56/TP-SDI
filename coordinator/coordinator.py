@@ -7,7 +7,7 @@ from common.logger import get_logger
 
 logger = get_logger("Coordinator")
 
-DEAD_TIME = 5
+DEAD_TIME = 20
 MONITOR_SLEEP = 1
 
 MONITORED_NODES = os.getenv("MONITORED_NODES", "")
@@ -18,6 +18,8 @@ client = docker.from_env()
 def crear_flag_recovery(nombre):
     """Crea un archivo de flag de recuperación para el nodo."""
     try:
+        if "gateway" in nombre.lower():
+            return # No crear flag de recuperación para gateways
         node_type = nombre.split("_")[0]
         node_suffix = nombre.split("_")[1] if len(nombre.split("_")) > 1 else ""
         node_number = nombre.split("_")[-1] if len(nombre.split("_")) > 2 else ""

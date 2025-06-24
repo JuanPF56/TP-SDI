@@ -56,23 +56,23 @@ class LeaderElector:
 
         # Start heartbeat mechanism first
         self.start_heartbeat()
+       
+        threading.Thread(target=self.ask_for_leader, daemon=True).start()
 
-        # Add startup delay to prevent simultaneous elections, then force initial election
-        startup_delay = 10
-        logger.info(
-            f"[Node {self.node_id}] Waiting {startup_delay:.1f}s before starting initial election"
-        )
+    def ask_for_leader(self):
+        logger.info(f"[Node {self.node_id}] Asking peers who is the leader (WHOISLEADER)")
+        
+        for peer_id in self.peers.keys():
+            self.send_message("WHOISLEADER", peer_id)
 
-        def delayed_startup():
-            time.sleep(startup_delay)
-            if not self.initial_election_attempted:
-                logger.info(
-                    f"[Node {self.node_id}] Starting initial election after startup delay"
-                )
+        def wait_for_leader_response():
+            time.sleep(5)
+            if self.leader_id is None and not self.election_in_progress:
+                logger.info(f"[Node {self.node_id}] No LEADER response received, starting election")
                 self.initial_election_attempted = True
                 self.start_election()
 
-        threading.Thread(target=delayed_startup, daemon=True).start()
+        threading.Thread(target=wait_for_leader_response, daemon=True).start()
 
     def _parse_peers(self, peers_str):
         """
@@ -99,6 +99,22 @@ class LeaderElector:
             except Exception as e:
                 logger.error(f"Error receiving message: {e}")
 
+    def handle_whoisleader(self, sender_id):
+        logger.info(f"[Node {self.node_id}] Received WHOISLEADER from {sender_id}")
+        if self.leader_id is not None:
+            logger.info(f"[Node {self.node_id}] Responding with LEADER {self.leader_id} to {sender_id}")
+            self.send_message("LEADER", self.leader_id)
+
+    def handle_leader_announcement(self, sender_id):
+        logger.info(f"[Node {self.node_id}] Received LEADER announcement: {sender_id}")
+        if self._validate_leader(sender_id):
+            self.leader_id = sender_id
+            self.election_in_progress = False
+            if self.election_logic:
+                self.election_logic(self.leader_id)
+        else:
+            logger.warning(f"[Node {self.node_id}] Ignoring invalid LEADER message from {sender_id}")
+
     def handle_message(self, message, addr):
         parts = message.split()
         if len(parts) < 2:
@@ -116,6 +132,10 @@ class LeaderElector:
             self.handle_coordinator_message(sender_id)
         elif cmd == "HEARTBEAT":
             self.handle_heartbeat_message(sender_id)
+        elif cmd == "WHOISLEADER":
+            self.handle_whoisleader(sender_id)
+        elif cmd == "LEADER":
+            self.handle_leader_announcement(sender_id)
         else:
             logger.warning(f"Unknown command: {cmd}")
 

@@ -13,7 +13,8 @@ EOS_TYPE = "EOS"
 
 
 class MoviesHandler(multiprocessing.Process):
-    def __init__(self, config, manager, node_id, node_name, year_nodes_to_await):
+    def __init__(self, config, manager, node_id, node_name, year_nodes_to_await,
+                 movies_handler_ready_event=None):
         """
         Initialize the MoviesHandler class with the given configuration and manager.
         """
@@ -37,6 +38,7 @@ class MoviesHandler(multiprocessing.Process):
         self.rabbitmq_processor.connect(node_name=node_name)
         self.manager = manager
         self.movies = self.manager.dict()
+        self.movies_handler_ready_event = movies_handler_ready_event
 
         self.year_eos_flags = self.manager.dict()
         self.year_nodes_to_await = year_nodes_to_await
@@ -83,12 +85,15 @@ class MoviesHandler(multiprocessing.Process):
                     except json.JSONDecodeError:
                         logger.error("Failed to decode EOS message")
                         return
+                    logger.info("EOS received for node %s in queue %s for client %s, eos flags: %s",
+                                node_id, queue_name, current_client_id, self.year_eos_flags.get(current_client_id, {}))
                     if current_client_id not in self.year_eos_flags:
                         self.year_eos_flags[current_client_id] = self.manager.dict()
                     if node_id not in self.year_eos_flags[current_client_id]:
                         self.year_eos_flags[current_client_id][node_id] = True
                         self.write_storage("moveos", self.year_eos_flags[current_client_id], current_client_id, self.node_id)
                         logger.debug("EOS received for node %s.", node_id)
+                    logger.info("EOS flags for client %s: %s", current_client_id, self.year_eos_flags[current_client_id])   
                 else:
                     try:
                         decoded = json.loads(body)
@@ -179,8 +184,8 @@ class MoviesHandler(multiprocessing.Process):
         if client_id not in self.year_eos_flags:
             return False
         logger.info("EOS flags for client %s: %s", client_id, self.year_eos_flags[client_id])
-        logger.info("Year nodes to await for client %s: %s", client_id, self.year_nodes_to_await)
-        logger.info("EOS flags count for client %s: %d", client_id, len(self.year_eos_flags[client_id]))
+        logger.debug("Year nodes to await for client %s: %s", client_id, self.year_nodes_to_await)
+        logger.debug("EOS flags count for client %s: %d", client_id, len(self.year_eos_flags[client_id]))
         return len(self.year_eos_flags[client_id]) >= int(self.year_nodes_to_await)
 
     def get_movies_table(self, client_id):
@@ -217,6 +222,10 @@ class MoviesHandler(multiprocessing.Process):
         else:
             serializable_data = data
 
+        if key == "moveos":
+            logger.info("Writing %s data for client %s to %s", key, client_id, file_path)
+            logger.info("Data to write: %s", serializable_data)
+
         try:
             with tempfile.NamedTemporaryFile("w", dir=storage_dir, delete=False) as tf:
                 json.dump(serializable_data, tf)
@@ -235,6 +244,7 @@ class MoviesHandler(multiprocessing.Process):
         storage_dir = "./storage"
         if not os.path.exists(storage_dir):
             logger.warning("Storage directory not found.")
+            self.movies_handler_ready_event.set()
             return
     
         logger.info("Loading persisted data from storage directory: %s", storage_dir)
@@ -249,7 +259,7 @@ class MoviesHandler(multiprocessing.Process):
             key_type, client_id, node_id = parts
 
             if node_id != str(self.node_id):
-                logger.info("Skipping file %s for node %s", filename, self.node_id)
+                logger.info("Skipping file %s for node %s", filename, node_id)
                 continue
 
             file_path = os.path.join(storage_dir, filename)
@@ -261,6 +271,8 @@ class MoviesHandler(multiprocessing.Process):
 
             except Exception as e:
                 logger.error(f"Error reading {key_type} data from {file_path}: {e}")
+        
+        self.movies_handler_ready_event.set()
 
     def update(self, key_type, data, client_id, node_id):
         """
@@ -291,6 +303,6 @@ class MoviesHandler(multiprocessing.Process):
         for movie in data:
             if movie not in self.movies[client_id]:
                 self.movies[client_id].append(movie)
-        logger.info("Movies table updated for client %s: %s", client_id, self.movies[client_id])
+        logger.debug("Movies table updated for client %s: %s", client_id, self.movies[client_id])
 
         
