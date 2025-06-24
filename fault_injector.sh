@@ -72,13 +72,13 @@ kill_nodes() {
 
 echo "🚀 Iniciando fault injector. Presioná Ctrl+C para frenar."
 
-# # En la primera ronda, matar 4 contenedores
-# for i in {1..4}; do
-#   kill_nodes
-# done
+# En la primera ronda, matar 4 contenedores
+for i in {1..4}; do
+  kill_nodes
+done
 
 # Luego, continuar con el ciclo infinito matando 1 contenedor por vez
 while true; do
   kill_nodes
-  sleep 20
+  sleep 15
 done
