@@ -157,20 +157,12 @@
         "count": 7
       },
       {
-        "name": "Valeria Bertuccelli",
-        "count": 7
-      },
-      {
         "name": "Inés Efron",
         "count": 7
       },
       {
-        "name": "Leonardo Sbaraglia",
-        "count": 6
-      },
-      {
-        "name": "Rodrigo de la Serna",
-        "count": 6
+        "name": "Valeria Bertuccelli",
+        "count": 7
       },
       {
         "name": "Alejandro Awada",
@@ -181,11 +173,19 @@
         "count": 6
       },
       {
+        "name": "Leonardo Sbaraglia",
+        "count": 6
+      },
+      {
         "name": "Rafael Spregelburd",
         "count": 6
       },
       {
-        "name": "Mercedes Morán",
+        "name": "Rodrigo de la Serna",
+        "count": 6
+      },
+      {
+        "name": "Adrián Suar",
         "count": 5
       }
     ]

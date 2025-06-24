@@ -49,12 +49,9 @@ def load_reference_results(reference_file):
 
 
 def compare_with_reference(results_by_client, reference_results):
-    client_discrepancies = {}
+    client_discrepancies = defaultdict(lambda: {"missing": [], "anomalous": []})
 
     for client_id, responses in results_by_client.items():
-        anomalous = []
-        missing = []
-
         seen_query_ids = set()
 
         for obj in responses:
@@ -68,17 +65,13 @@ def compare_with_reference(results_by_client, reference_results):
             expected = reference_results[qid]
             actual = obj["results"]
 
-            if not compare_results(expected, actual):
-                anomalous.append(qid)
+            ok, diff_detail = compare_results(expected, actual)
+            if not ok:
+                client_discrepancies[client_id]["anomalous"].append((qid, diff_detail))
 
+        # Verificar si el cliente omitió algún query_id esperado
         missing_qids = set(reference_results.keys()) - seen_query_ids
-        missing.extend(missing_qids)
-
-        if anomalous or missing:
-            client_discrepancies[client_id] = {
-                "anomalous": anomalous,
-                "missing": list(missing),
-            }
+        client_discrepancies[client_id]["missing"].extend(missing_qids)
 
     return client_discrepancies
 
@@ -99,19 +92,54 @@ def normalize_result(r):
         return r
 
 
+def diff_actors(expected, obtained):
+    expected_map = {a["name"]: a["count"] for a in expected}
+    obtained_map = {a["name"]: a["count"] for a in obtained}
+
+    expected_names = set(expected_map.keys())
+    obtained_names = set(obtained_map.keys())
+
+    missing = expected_names - obtained_names
+    extra = obtained_names - expected_names
+    common = expected_names & obtained_names
+
+    differences = []
+
+    if missing:
+        differences.append("🚫 Actores faltantes (en resultado):")
+        for name in sorted(missing):
+            differences.append(f"   • {name} (esperado count: {expected_map[name]})")
+
+    if extra:
+        differences.append("⚠️ Actores inesperados (en resultado):")
+        for name in sorted(extra):
+            differences.append(f"   • {name} (obtenido count: {obtained_map[name]})")
+
+    for name in sorted(common):
+        if expected_map[name] != obtained_map[name]:
+            differences.append(
+                f"🔄 Diferente count para {name}: esperado {expected_map[name]}, obtenido {obtained_map[name]}"
+            )
+
+    return differences
+
+
 def compare_results(r1, r2):
     norm_r1 = normalize_result(r1)
     norm_r2 = normalize_result(r2)
 
     if norm_r1 != norm_r2:
-        print("⚠️ Diferencia detectada:")
-        print("➡️ Esperado:")
-        print(json.dumps(norm_r1, indent=2, ensure_ascii=False, sort_keys=True))
-        print("➡️ Obtenido:")
-        print(json.dumps(norm_r2, indent=2, ensure_ascii=False, sort_keys=True))
-        print("-" * 80)
-        return False
-    return True
+        diff_detail = []
+
+        # Si ambos son dicts y tienen clave 'actors', analizamos diferencias detalladas
+        if isinstance(norm_r1, dict) and isinstance(norm_r2, dict):
+            if "actors" in norm_r1 and "actors" in norm_r2:
+                diffs = diff_actors(norm_r1["actors"], norm_r2["actors"])
+                diff_detail.extend(diffs)
+
+        return False, diff_detail
+
+    return True, []
 
 
 def main():
@@ -139,7 +167,15 @@ def main():
         return
 
     reference_results = load_reference_results(reference_file)
+    if not reference_results:
+        print(
+            "⚠️ No se encontraron resultados de referencia en el archivo especificado."
+        )
+        return
     client_results = load_results_from_folder(args.folder)
+    if not client_results:
+        print("⚠️ No se encontraron resultados de clientes en la carpeta especificada.")
+        return
 
     discrepancies = compare_with_reference(client_results, reference_results)
 
@@ -155,8 +191,12 @@ def main():
                     print(f"     • {qid}")
             if issues["anomalous"]:
                 print("   - Anomalous results:")
-                for qid in issues["anomalous"]:
+                for qid, diff_detail in issues["anomalous"]:
                     print(f"     • {qid}")
+                    if diff_detail:
+                        for line in diff_detail:
+                            print(f"       {line}")
+            print("\n")
 
 
 if __name__ == "__main__":
