@@ -1,5 +1,6 @@
 import threading
 import json
+import logging
 
 from client_registry import ClientRegistry
 from result_message import ResultMessage
@@ -8,7 +9,7 @@ from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
 logger = get_logger("Result Dispatcher")
-
+logger.setLevel(logging.INFO)
 
 BASE_COOL_DOWN_TIME = 0.5  # seconds
 MAX_COOL_DOWN_TIME = 60  # seconds
@@ -73,12 +74,25 @@ class ResultDispatcher(threading.Thread):
 
     def run(self):
         logger.info("Result Dispatcher started.")
-        try:
-            self.broker.consume(self._handle_message)
-        except Exception as e:
-            logger.error("Error in ResultDispatcher: %s", e)
-        finally:
-            self.stop()
+        cool_down_time = BASE_COOL_DOWN_TIME
+
+        while not self._stop_flag.is_set():
+            try:
+                if self._clients_connected.has_any():
+                    logger.debug("Clients connected. Starting to consume results.")
+                    self.broker.consume(self._handle_message)
+                    # Si consume, se queda bloqueado en consume() hasta que se detenga,
+                    # por lo tanto salimos del loop.
+                    break
+                else:
+                    logger.debug("No clients connected. Waiting before rechecking.")
+                    self._stop_flag.wait(timeout=cool_down_time)
+                    cool_down_time = min(MAX_COOL_DOWN_TIME, cool_down_time * 2)
+            except Exception as e:
+                logger.error("Error in ResultDispatcher loop: %s", e)
+                self._stop_flag.wait(timeout=cool_down_time)
+
+        self.stop()
 
     def _get_next_result(self) -> tuple:
         # logger.info("Waiting for next result...")

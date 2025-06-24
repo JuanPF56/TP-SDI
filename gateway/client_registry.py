@@ -42,3 +42,8 @@ class ClientRegistry:
                 except Exception as e:
                     logger.warning(f"Error al detener cliente: {e}")
             self._clients.clear()
+
+    def has_any(self) -> bool:
+        """Returns True if at least one ConnectedClient is registered."""
+        with self._lock:
+            return bool(self._clients)

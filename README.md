@@ -272,6 +272,52 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ## 💯 Respuestas esperadas
 
+### 🔍 Comparación de resultados de los clientes
+
+El proyecto incluye un **script de comparación** que permite verificar que los resultados obtenidos por los clientes coincidan con los resultados esperados para los datasets del 20% o del 100%.
+
+#### 🚀 Cómo ejecutarlo
+
+El script permite comparar los resultados de los clientes contra los resultados correctos de referencia. Se debe indicar mediante un flag qué conjunto de respuestas se desea usar como referencia:
+
+| Flag  | Referencia utilizada |
+|--------|---------------------|
+| `-20`  | Respuestas correctas para el dataset recortado al 20% |
+| `-100` | Respuestas correctas para el dataset completo (100%) |
+
+Además, se puede especificar la carpeta que contiene los resultados generados por los clientes (por defecto es `resultados`).
+
+#### 📌 Ejemplos de uso
+
+✅ Comparar contra los resultados esperados del 20%:
+
+```bash
+python comparar_resultados.py -20 --folder resultados_20
+```
+
+✅ Comparar contra los resultados esperados del 100%:
+
+```bash
+python comparar_resultados.py -100 --folder resultados_100
+```
+
+✅ Comparar contra el 20% usando la carpeta default (`resultados`):
+
+```bash
+python comparar_resultados.py -20
+```
+
+#### ⚠️ Importante
+
+- El script espera que los archivos de resultados de los clientes estén en formato `.txt` y que contengan objetos JSON (uno o más por archivo).
+- Los archivos de referencia se encuentran en:
+  - `resources/answers_datasets_20/resultados.txt`
+  - `resources/answers_datasets_100/resultados.txt`
+
+#### 💡 Salida
+
+El script informa por consola si los resultados son consistentes o muestra las discrepancias encontradas (queries faltantes o con datos diferentes).
+
 ### Datasets al 100 %
 
 ![query_1](resources/answers_datasets_100/query_1.png)

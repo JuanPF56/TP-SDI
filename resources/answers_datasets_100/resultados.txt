@@ -1,0 +1,208 @@
+{
+  "query_id": "Q2",
+  "results": [
+    [
+      "United States of America",
+      120128886644
+    ],
+    [
+      "France",
+      2283781209
+    ],
+    [
+      "United Kingdom",
+      1611604610
+    ],
+    [
+      "India",
+      1184682797
+    ],
+    [
+      "Japan",
+      832585873
+    ]
+  ]
+}
+
+{
+  "query_id": "Q1",
+  "results": {
+    "La Ciénaga": [
+      "Comedy",
+      "Drama"
+    ],
+    "Plata quemada": [
+      "Crime"
+    ],
+    "En la ciudad sin límites": [
+      "Thriller",
+      "Drama"
+    ],
+    "Nicotina": [
+      "Drama",
+      "Action",
+      "Comedy",
+      "Thriller"
+    ],
+    "El abrazo partido": [
+      "Drama",
+      "Foreign"
+    ],
+    "Lugares comunes": [
+      "Drama"
+    ],
+    "Whisky": [
+      "Comedy",
+      "Drama",
+      "Foreign"
+    ],
+    "La niña santa": [
+      "Drama",
+      "Foreign"
+    ],
+    "El Aura": [
+      "Crime",
+      "Drama",
+      "Thriller"
+    ],
+    "Bombón, el perro": [
+      "Drama"
+    ],
+    "Familia rodante": [
+      "Drama",
+      "Comedy"
+    ],
+    "El método": [
+      "Drama",
+      "Thriller"
+    ],
+    "Todas las azafatas van al cielo": [
+      "Drama",
+      "Romance",
+      "Foreign"
+    ],
+    "Tetro": [
+      "Drama",
+      "Mystery"
+    ],
+    "El secreto de sus ojos": [
+      "Crime",
+      "Drama",
+      "Mystery",
+      "Romance"
+    ],
+    "Liverpool": [
+      "Drama"
+    ],
+    "La mujer sin cabeza": [
+      "Drama",
+      "Mystery",
+      "Thriller"
+    ],
+    "El último verano de La Boyita": [
+      "Drama"
+    ],
+    "Aparecidos": [
+      "Horror",
+      "Thriller",
+      "Mystery"
+    ],
+    "El niño pez": [
+      "Drama",
+      "Thriller",
+      "Romance",
+      "Foreign"
+    ],
+    "Cleopatra": [
+      "Drama",
+      "Comedy",
+      "Foreign"
+    ],
+    "Roma": [
+      "Drama",
+      "Foreign"
+    ],
+    "Conversaciones con mamá": [
+      "Comedy",
+      "Drama",
+      "Foreign"
+    ],
+    "La educación de las hadas": [
+      "Drama"
+    ],
+    "La buena vida": [
+      "Drama"
+    ]
+  }
+}
+
+{
+  "query_id": "Q5",
+  "results": {
+    "average_positive_rate": 8104.966414353625,
+    "average_negative_rate": 3.6056914961782978
+  }
+}
+
+{
+  "query_id": "Q4",
+  "results": {
+    "actors": [
+      {
+        "name": "Ricardo Darín",
+        "count": 17
+      },
+      {
+        "name": "Diego Peretti",
+        "count": 7
+      },
+      {
+        "name": "Valeria Bertuccelli",
+        "count": 7
+      },
+      {
+        "name": "Inés Efron",
+        "count": 7
+      },
+      {
+        "name": "Leonardo Sbaraglia",
+        "count": 6
+      },
+      {
+        "name": "Rodrigo de la Serna",
+        "count": 6
+      },
+      {
+        "name": "Alejandro Awada",
+        "count": 6
+      },
+      {
+        "name": "Arturo Goetz",
+        "count": 6
+      },
+      {
+        "name": "Rafael Spregelburd",
+        "count": 6
+      },
+      {
+        "name": "Mercedes Morán",
+        "count": 5
+      }
+    ]
+  }
+}
+
+{
+  "query_id": "Q3",
+  "results": {
+    "highest": {
+      "title": "La educación prohibida",
+      "rating": 4.0
+    },
+    "lowest": {
+      "title": "Left for Dead",
+      "rating": 1.0
+    }
+  }
+}
+
