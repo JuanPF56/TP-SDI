@@ -123,6 +123,11 @@ class LeaderElector():
                 self.start_election()
             elif self.leader_id is not None:
                 logger.info(f"[Node {self.node_id}] Not starting election - current leader is {self.leader_id}")
+                if self.leader_id == self.node_id:
+                    logger.info(f"[Node {self.node_id}] I am the leader, notifying {sender_id} as coordinator")
+                    for i in range(3): # Repeat 3 times
+                        self.send_message("COORDINATOR", sender_id)
+                        time.sleep(2)  # Wait before sending again
             return
 
         # If sender has higher ID, step back and let them handle it
