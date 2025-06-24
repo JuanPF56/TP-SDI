@@ -204,7 +204,18 @@ class JoinBase:
             message_key = f"{message_id}:{sub_id}/{expected}"
 
             if msg_type == EOS_TYPE:
-                self._handle_eos(input_queue, body, method, headers)
+                if not self.movies_handler.client_ready(current_client_id):
+                    # If the movies table is not ready, we cannot handle EOS yet
+                    self.log_info(f"EOS received but movies table not ready for client {current_client_id}. Publishing to input queue {input_queue}.")
+                    self.rabbitmq_processor.publish(
+                        target=input_queue,
+                        message=body,
+                        msg_type=msg_type,
+                        headers=headers,
+                        priority=1,
+                    )
+                else:  
+                    self._handle_eos(input_queue, body, method, headers)
                 return
             
             if msg_type == REC_TYPE:
@@ -268,9 +279,7 @@ class JoinBase:
                 )
     
                 if not movies_table:
-                    self.log_debug(
-                        f"Movies table is empty for client {current_client_id},"
-                    )
+                    self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has no movies table.")
                     return
 
                 # Build a set of movie IDs for fast lookup
@@ -280,8 +289,9 @@ class JoinBase:
 
 
                 if not joined_data:
-                    self.log_debug("No matching movies found in the movies table.")
+                    self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has no joined data.")
                 else:
+                    self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has joined data of length {len(joined_data)}.")
                     self.rabbitmq_processor.publish(
                         target=self.output_queue,
                         message=joined_data,

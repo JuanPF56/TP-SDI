@@ -2,7 +2,7 @@ import json
 import multiprocessing
 import os
 import signal
-import tempfile
+import fcntl
 
 from common.logger import get_logger
 from common.mom import RabbitMQProcessor
@@ -81,7 +81,7 @@ class MoviesHandler(multiprocessing.Process):
                 if msg_type == EOS_TYPE:
                     try:
                         data = json.loads(body)
-                        node_id = data.get("node_id")
+                        node_id = str(data.get("node_id"))
                     except json.JSONDecodeError:
                         logger.error("Failed to decode EOS message")
                         return
@@ -186,15 +186,15 @@ class MoviesHandler(multiprocessing.Process):
         """
         Check if all nodes have sent EOS messages for the given client ID.
         """
-        logger.info("Checking if client %s is ready with EOS flags: %s",
+        logger.debug("Checking if client %s is ready with EOS flags: %s",
                     client_id, self.year_eos_flags.get(client_id, {}))
         if client_id not in self.year_eos_flags:
             return False
-        logger.info("EOS flags for client %s: %s", client_id, self.year_eos_flags[client_id])
+        logger.debug("EOS flags for client %s: %s", client_id, self.year_eos_flags[client_id])
         logger.debug("Year nodes to await for client %s: %s", client_id, self.year_nodes_to_await)
         logger.debug("EOS flags count for client %s: %d", client_id, len(self.year_eos_flags[client_id]))
         return len(self.year_eos_flags[client_id]) >= int(self.year_nodes_to_await)
-
+    
     def get_movies_table(self, client_id):
         """
         Get the movies table for the given client ID.
@@ -217,10 +217,19 @@ class MoviesHandler(multiprocessing.Process):
 
 
     def write_storage(self, key, data, client_id, node_id):
+        # Get the "./storage/{node_id}" directory
         storage_dir = "./storage"
-        os.makedirs(storage_dir, exist_ok=True)
+        if not os.path.exists(storage_dir):
+            os.makedirs(storage_dir)
+            logger.info("Created storage directory: %s", storage_dir)
+        storage_dir = os.path.join(storage_dir, str(self.node_id))
+        if not os.path.exists(storage_dir):
+            os.makedirs(storage_dir)
+            logger.info("Created storage directory for node %s: %s", self.node_id, storage_dir)
+        logger.debug("Writing %s data for client %s to storage directory: %s", key, client_id, storage_dir)       
+        
         file_path = os.path.join(storage_dir, f"{key}_{client_id}_{node_id}.json")
-        tmp_file = None
+        tmp_file = os.path.join(storage_dir, f".tmp_{key}_{client_id}_{node_id}_{int(os.getpid())}.json")
 
         if isinstance(data, multiprocessing.managers.DictProxy):
             serializable_data = dict(data)
@@ -234,11 +243,13 @@ class MoviesHandler(multiprocessing.Process):
             logger.info("Data to write: %s", serializable_data)
 
         try:
-            with tempfile.NamedTemporaryFile("w", dir=storage_dir, delete=False) as tf:
+            with open(tmp_file, "w") as tf:
+                fcntl.flock(tf.fileno(), fcntl.LOCK_EX)
                 json.dump(serializable_data, tf)
-                tmp_file = tf.name
+                tf.flush()
+                os.fsync(tf.fileno())
             os.replace(tmp_file, file_path)
-            logger.debug("Client %s state written to %s", client_id, file_path)
+            logger.debug(f"Successfully wrote {key} data for client {client_id} to {file_path}")
         except Exception as e:
             logger.error(f"Failed to write {key} data for client {client_id}: {e}")
             if tmp_file and os.path.exists(tmp_file):
@@ -248,9 +259,9 @@ class MoviesHandler(multiprocessing.Process):
         """
         Load persisted EOS and movies data into memory on startup.
         """
-        storage_dir = "./storage"
+        storage_dir = "./storage" + os.path.sep + str(self.node_id)
         if not os.path.exists(storage_dir):
-            logger.warning("Storage directory not found.")
+            logger.warning("Storage directory for node %s does not exist: %s", self.node_id, storage_dir)
             self.movies_handler_ready_event.set()
             return
     
@@ -259,10 +270,14 @@ class MoviesHandler(multiprocessing.Process):
         for filename in os.listdir(storage_dir):
             if filename.endswith(".flag"):
                 continue
+            if "tmp" in filename:
+                logger.debug("Skipping temporary file: %s", filename)
+                continue
             parts = filename[:-5].split("_")
             if len(parts) != 3:
                 logger.warning("Invalid filename format in storage: %s", filename)
                 continue
+            
             key_type, client_id, node_id = parts
 
             if node_id != str(self.node_id):
@@ -271,11 +286,11 @@ class MoviesHandler(multiprocessing.Process):
 
             file_path = os.path.join(storage_dir, filename)
             try:
-                with open(file_path, "r") as f:
+                with open(file_path, "r") as f: 
+                    fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                     data = json.load(f)
-                self.update(key_type, data, client_id, node_id)
+                    self.update(key_type, data, client_id, node_id)
                 logger.info("Loaded %s data for client %s from %s", key_type, client_id, file_path)
-
             except Exception as e:
                 logger.error(f"Error reading {key_type} data from {file_path}: {e}")
         
