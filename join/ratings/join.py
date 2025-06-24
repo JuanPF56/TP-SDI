@@ -9,8 +9,8 @@ class JoinRatings(JoinBase):
         joined_data = []
         for movie in data:
             movie_id = movie.get("movie_id")
-            if str(movie_id) in movies_by_id:
-                movie_title = movies_by_id[str(movie_id)]["original_title"]
+            if movie_id in movies_by_id:
+                movie_title = movies_by_id[movie_id]["original_title"]
                 joined_movie = {
                     "id": movie_id,
                     "original_title": movie_title,

@@ -2,7 +2,6 @@ import configparser
 import json
 from collections import defaultdict
 
-from common.client_state_manager import ClientState
 from common.duplicate_handler import DuplicateHandler
 from common.query_base import QueryBase, EOS_TYPE
 from common.logger import get_logger
@@ -27,11 +26,11 @@ class SentimentStats(QueryBase):
         self.positive_rates = defaultdict(list)
         self.negative_rates = defaultdict(list)
 
-    def _calculate_and_publish_results(self, client_id, client_state: ClientState):
+    def _calculate_and_publish_results(self, client_id):
         """
         Calculate the average rates and publish the results.
         """
-        if client_state.has_received_all_eos(self.source_queues):
+        if self.client_manager.has_received_all_eos(client_id, self.source_queues):
             positives = self.positive_rates[client_id]
             negatives = self.negative_rates[client_id]
 
@@ -56,10 +55,6 @@ class SentimentStats(QueryBase):
                         client_id, self.duplicate_handler.get_cache(client_id, self.source_queues[0]))
             logger.debug("LRU: Results published for client %s in negative queue: %s",
                         client_id, self.duplicate_handler.get_cache(client_id, self.source_queues[1]))
-
-            #del self.positive_rates[client_id]
-            #del self.negative_rates[client_id]
-            #self.client_manager.remove_client(client_id)
 
     def process_movie(self, movie, client_id, sentiment):
         """
@@ -96,7 +91,7 @@ class SentimentStats(QueryBase):
                 self.rabbitmq_processor.acknowledge(method)
                 return
 
-            client_state = self.client_manager.add_client(client_id)
+            self.client_manager.add_client(client_id)
 
             sentiment = "unknown"
             if input_queue == self.source_queues[0]:
@@ -112,13 +107,20 @@ class SentimentStats(QueryBase):
                     logger.error("Failed to decode EOS message")
                     self.rabbitmq_processor.acknowledge(method)
                     return
-
-                client_state.mark_eos(input_queue, node_id)
-                logger.info("EOS received for node %s in %s queue.", node_id, sentiment)
-
-                if client_state.has_received_all_eos(self.source_queues):
-                    logger.info("All nodes have sent EOS.")
-                    self._calculate_and_publish_results(client_id, client_state)
+                
+                if not self.client_manager.has_queue_received_eos_from_node(client_id, input_queue, node_id):
+                    self.client_manager.mark_eos(client_id, input_queue, node_id)
+                    logger.info("EOS received for node %s in %s queue.", node_id, sentiment)
+                    if self.client_manager.has_received_all_eos(client_id, self.source_queues):
+                        logger.info("All nodes have sent EOS.")
+                        self._calculate_and_publish_results(client_id)
+                else:
+                    logger.warning(
+                        "Duplicate EOS from node %s for client %s in %s queue. Ignored.",
+                        node_id,
+                        client_id,
+                        sentiment,
+                    )
 
                 self.rabbitmq_processor.acknowledge(method)
                 return

@@ -6,7 +6,6 @@ import signal
 from common.duplicate_handler import DuplicateHandler
 from common.election_logic import election_logic, recover_node
 from common.leader_election import LeaderElector
-from common.client_state import ClientState
 from common.client_state_manager import ClientManager
 from common.eos_handling import handle_eos
 from common.master import MasterLogic
@@ -28,6 +27,7 @@ class JoinBase:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.recovery_mode = os.path.exists(f"./storage/recovery_mode_{self.node_id}.flag")
         self.stopped = False
         self.first_run = True
 
@@ -54,24 +54,29 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
-        
-        self.done_recovering = multiprocessing.Event()
-        #self.done_recovering.set() # Set by default, will be cleared when the node is elected as leader
 
         self.client_manager = ClientManager(
             self.input_queue,
+            manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
-        
+
         self.movies_handler = MoviesHandler(
             config=self.config,
             manager=self.manager,
-            ready_event=self.movies_handler_ready,
             node_id=self.node_id,
             node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
-            is_leader=self.is_leader,
         )
+
+        shard_mapping_str = os.getenv("SHARD_MAPPING", "")
+        shard_mapping = {}
+        if shard_mapping_str:
+            for mapping in shard_mapping_str.split(","):
+                node_name, range_str = mapping.split(":")
+                start, end = range_str.split("-")
+                shard_mapping[node_name] = (int(start), int(end))
+
 
         self.master_logic = MasterLogic(
             config=self.config,
@@ -82,15 +87,18 @@ class JoinBase:
             client_manager=self.client_manager,
             started_event=self.master_logic_started_event,
             movies_handler=self.movies_handler,
+            sharded=True,  # Enable sharding for join nodes
+            shard_mapping=shard_mapping
         )
+        self.master_logic.start()
 
         self.duplicate_handler = DuplicateHandler()
 
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
         self.node_name = os.getenv("NODE_NAME")
-        self.elector = LeaderElector(self.node_id, self.peers, self.done_recovering, self.election_port, 
-                                     self._election_logic)
+        
+        self.elector = None
 
         # Register signal handler for SIGTERM signal
         signal.signal(signal.SIGTERM, self.__handleSigterm)
@@ -113,25 +121,18 @@ class JoinBase:
         Check if the current node is the leader.
         """
         return self.master_logic.is_leader()
-
-    def read_storage(self):
-        pass
-        #self.movies_handler.read_storage()
-        #self.client_manager.read_storage()
-        #self.client_manager.check_all_eos_received(
-        #    self.config, self.node_id, self.clean_batch_queue, self.output_queue
-        #)
-
+    
     def process(self):
         # Start the process to receive the movies table
         self.movies_handler.start()
 
-        recover_node(self, self.clean_batch_queue)
-
-        # Start the master logic process
-        self.master_logic.start()
-        self.elector.start()
-
+        if self.recovery_mode:
+            recover_node(self, self.clean_batch_queue)
+        else:
+            self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 
+                                     self._election_logic)
+            self.elector.start_election()
+        
         # Start the loop to receive the batches
         self.receive_batch()
 
@@ -142,13 +143,6 @@ class JoinBase:
         starting to consume messages.
         """
         try:
-            # Wait for the movies table to be ready
-            self.movies_handler_ready.wait()
-
-            self.log_info(
-                "Movies table is ready for at least 1 client. Starting to receive batches..."
-            )
-
             self.rabbitmq_processor.consume(self.process_batch)
         except KeyboardInterrupt:
             self.log_info("Shutting down gracefully...")
@@ -167,30 +161,26 @@ class JoinBase:
             self.movies_handler.join()
             os.kill(self.master_logic.pid, signal.SIGINT)
             self.master_logic.join()
-            os.kill(self.elector.pid, signal.SIGINT)
-            self.elector.join()
-            self.manager.shutdown()
+            #self.manager.shutdown()
             self.stopped = True
 
-    def _handle_eos(self, queue_name, body, method, headers, client_state):
+    def _handle_eos(self, queue_name, body, method, headers):
         self.log_debug(f"Received EOS from {queue_name}")
         queue = queue_name.split("_node_")[0]
-        handle_eos(
+        self.client_manager.handle_eos(
             body,
             self.node_id,
             queue,
             queue,
             headers,
             self.rabbitmq_processor,
-            client_state,
-            self.master_logic.is_leader(),
             target_queues=self.output_queue,
         )
 
-    def _free_resources(self, client_state: ClientState):
-        if client_state and client_state.has_received_all_eos(self.input_queue):
-            self.client_manager.remove_client(client_state.client_id)
-            self.movies_handler.remove_movies_table(client_state.client_id)
+    def _free_resources(self, client_id):
+        if self.client_manager.has_received_all_eos(client_id, self.clean_batch_queue):            
+            self.client_manager.remove_client(client_id)
+            self.movies_handler.remove_movies_table(client_id)
 
     def process_batch(self, ch, method, properties, body, input_queue):
         """
@@ -205,30 +195,32 @@ class JoinBase:
             headers = getattr(properties, "headers", {}) or {}
             current_client_id = headers.get("client_id")
             message_id = headers.get("message_id")
-            
-            if not current_client_id:
-                self.log_error("Missing client_id in headers")
-                return
-
-            client_state = self.client_manager.add_client(
-                current_client_id, msg_type == EOS_TYPE
-            )
+            sub_id = headers.get("sub_id")
+            expected = headers.get("expected")
+            message_key = f"{message_id}:{sub_id}/{expected}"
 
             if msg_type == EOS_TYPE:
-                self._handle_eos(input_queue, body, method, headers, client_state)
+                self._handle_eos(input_queue, body, method, headers)
                 return
             
             if msg_type == REC_TYPE:
-                self.done_recovering.set()
+                if self.elector is None:
+                    self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 
+                                     self._election_logic)
+                    self.elector.start_election()
+                return
+
+            if not current_client_id:
+                self.log_error("Missing client_id in headers")
                 return
             
-            if message_id is None:
+            if message_key is None:
                 self.log_error("Missing message_id in headers")
                 return
 
-            if self.duplicate_handler.is_duplicate(current_client_id, input_queue, message_id):
+            if self.duplicate_handler.is_duplicate(current_client_id, input_queue, message_key):
                 self.log_info(f"Current LRU cache: {self.duplicate_handler.get_caches()}")
-                self.log_info(f"Duplicate message detected: {message_id} for client {current_client_id}. Acknowledging without processing.")
+                self.log_info(f"Duplicate message detected: {message_key} for client {current_client_id}. Acknowledging without processing.")
                 return
 
             # Load the data from the incoming message
@@ -267,7 +259,10 @@ class JoinBase:
 
                 # Get the movies table for the client
                 movies_table = self.movies_handler.get_movies_table(current_client_id)
-
+                self.log_debug(
+                    f"Movies table for client {current_client_id}: {movies_table}"
+                )
+    
                 if not movies_table:
                     self.log_debug(
                         f"Movies table is empty for client {current_client_id},"
@@ -276,7 +271,9 @@ class JoinBase:
 
                 # Build a set of movie IDs for fast lookup
                 movies_by_id = {movie["id"]: movie for movie in movies_table}
+              
                 joined_data = self.perform_join(data, movies_by_id)
+
 
                 if not joined_data:
                     self.log_debug("No matching movies found in the movies table.")
@@ -287,7 +284,7 @@ class JoinBase:
                         msg_type=msg_type,
                         headers=headers,
                     )
-                self.duplicate_handler.add(current_client_id, input_queue, message_id)
+                self.duplicate_handler.add(current_client_id, input_queue, message_key)
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.reconnect_and_restart(self.process_batch)
