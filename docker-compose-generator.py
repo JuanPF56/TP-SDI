@@ -10,70 +10,72 @@ import yaml
 SHARD_ID_LIMIT_CREDITS = 490000  # Límite exclusivo
 SHARD_ID_LIMIT_RATINGS = 26024290  # Límite exclusivo
 
+
 def calculate_shard_ranges(count, is_ratings_join=False):
 
     if is_ratings_join and count > 1:
         # Rangos específicos para 6 nodos de ratings
         if count == 8:
             predefined_ranges = [
-                (0, 586),      # Nodo 1
-                (587, 1345),   # Nodo 2
+                (0, 586),  # Nodo 1
+                (587, 1345),  # Nodo 2
                 (1346, 2611),  # Nodo 3
                 (2612, 4466),  # Nodo 4
-                (4467, 20000), # Nodo 5 - dividiendo el rango grande
-                (20001, 36529), # Nodo 6 - segunda parte del rango grande
-                (36530, 106400), # Nodo 7 - dividiendo el último rango
-                (106401, 176271) # Nodo 8 - segunda parte del último rango
-        ]
+                (4467, 20000),  # Nodo 5 - dividiendo el rango grande
+                (20001, 36529),  # Nodo 6 - segunda parte del rango grande
+                (36530, 106400),  # Nodo 7 - dividiendo el último rango
+                (106401, 176271),  # Nodo 8 - segunda parte del último rango
+            ]
             return predefined_ranges
 
         # Para otros casos (4 o menos nodos), usar distribución automática
         elif count <= 4:
             total_range = SHARD_ID_LIMIT_CREDITS + 1
-            
+
             # If 4 or fewer nodes, distribute equally
             base_size = total_range // count
             remainder = total_range % count
-            
+
             ranges = []
             current_start = 0
-            
+
             for i in range(count):
                 extra = 1 if i < remainder else 0
                 current_end = current_start + base_size + extra - 1
                 ranges.append((current_start, current_end))
                 current_start = current_end + 1
-                
+
             return ranges
         else:
             # First 4 nodes get 5% each, remaining nodes share the 80%
+            total_range = SHARD_ID_LIMIT_RATINGS + 1
             small_shard_size = total_range // 300  # 5% each
             used_by_small_shards = 4 * small_shard_size  # 20% total
             remaining_range = total_range - used_by_small_shards  # 80% left
             remaining_nodes = count - 4
             base_size = remaining_range // remaining_nodes
             remainder = remaining_range % remaining_nodes
-            
+
             ranges = []
             current_start = 0
-            
+
             # First 4 shards get 5% each
             for i in range(4):
                 current_end = current_start + small_shard_size - 1
                 ranges.append((current_start, current_end))
                 current_start = current_end + 1
-            
+
             # Remaining nodes share the 80%
             for i in range(remaining_nodes):
                 extra = 1 if i < remainder else 0
                 current_end = current_start + base_size + extra - 1
                 ranges.append((current_start, current_end))
                 current_start = current_end + 1
-                
+
             return ranges
 
     else:
-        total_range = SHARD_ID_LIMIT_CREDITS  + 1
+        total_range = SHARD_ID_LIMIT_CREDITS + 1
         first_shard_size = total_range // 10  # First shard gets 10%
         second_shard_size = total_range // 4  # Second shard gets 25%
         remaining_range = total_range - (first_shard_size + second_shard_size)
@@ -101,6 +103,7 @@ def calculate_shard_ranges(count, is_ratings_join=False):
             current_start = current_end + 1
 
         return ranges
+
 
 def generate_system_compose(filename="docker-compose.system.yml"):
     """
@@ -253,16 +256,18 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         ]
         peers_str = ",".join(peer_list)
         shard_ranges = calculate_shard_ranges(count, typ == "ratings")
-        
+
         # Create shard mapping for this type
         shard_map = {}
         for i in range(1, count + 1):
             node_name = f"join_{typ}_{i}"
             start_range, end_range = shard_ranges[i - 1]
             shard_map[node_name] = f"{start_range}-{end_range}"
-        
+
         # Convert shard map to string (similar to peers_str)
-        shard_mapping_str = ",".join([f"{name}:{range_str}" for name, range_str in shard_map.items()])
+        shard_mapping_str = ",".join(
+            [f"{name}:{range_str}" for name, range_str in shard_map.items()]
+        )
 
         for i in range(1, count + 1):
             name = f"join_{typ}_{i}"
@@ -288,7 +293,9 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                     "ELECTION_PORT": str(election_port_start + i),
                     "PEERS": peers_str,
                     "SHARD_MAPPING": shard_mapping_str,  # New: complete shard mapping
-                    "SHARD_RANGE_START": str(start_range),  # Keep individual range for convenience
+                    "SHARD_RANGE_START": str(
+                        start_range
+                    ),  # Keep individual range for convenience
                     "SHARD_RANGE_END": str(end_range),
                 },
                 "depends_on": {
