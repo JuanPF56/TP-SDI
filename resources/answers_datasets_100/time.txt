@@ -1,0 +1,15 @@
+TOTAL TIME SPENT: 19m 18s
+
+(tarda 16 min entre q4 y q3)
+
+con config:
+
+2 clientes
+
+gateway_nodes = 5
+cleanup_filter_nodes = 6
+production_filter_nodes = 4
+year_filter_nodes = 4
+sentiment_analyzer_nodes = 5
+join_credits_nodes = 5
+join_ratings_nodes = 5
