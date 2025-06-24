@@ -7,7 +7,7 @@ from common.logger import get_logger
 
 logger = get_logger("Coordinator")
 
-DEAD_TIME = 5
+DEAD_TIME = 20
 MONITOR_SLEEP = 1
 
 MONITORED_NODES = os.getenv("MONITORED_NODES", "")
