@@ -78,14 +78,15 @@ def compare_with_reference(results_by_client, reference_results):
 
 def normalize_result(r):
     if isinstance(r, list):
+        normalized_items = [normalize_result(x) for x in r]
         return sorted(
-            [normalize_result(x) for x in r],
-            key=lambda x: json.dumps(x, sort_keys=True),
+            normalized_items,
+            key=lambda x: json.dumps(x, sort_keys=True, ensure_ascii=True),
         )
     elif isinstance(r, dict):
         return {k.strip(): normalize_result(v) for k, v in sorted(r.items())}
     elif isinstance(r, float):
-        return round(r, 4)  # ajustá el nivel de precisión que quieras tolerar
+        return round(r, 4)
     elif isinstance(r, str):
         return r.strip()
     else:
@@ -131,11 +132,17 @@ def compare_results(r1, r2):
     if norm_r1 != norm_r2:
         diff_detail = []
 
-        # Si ambos son dicts y tienen clave 'actors', analizamos diferencias detalladas
+        # Comparación detallada para 'actors'
         if isinstance(norm_r1, dict) and isinstance(norm_r2, dict):
             if "actors" in norm_r1 and "actors" in norm_r2:
-                diffs = diff_actors(norm_r1["actors"], norm_r2["actors"])
-                diff_detail.extend(diffs)
+                diff_detail.extend(diff_actors(norm_r1["actors"], norm_r2["actors"]))
+
+        # Si no hay detalle específico, mostrar el JSON normalizado
+        if not diff_detail:
+            diff_detail.append("📦 Esperado (normalizado):")
+            diff_detail.append(json.dumps(norm_r1, indent=2, sort_keys=True))
+            diff_detail.append("📦 Obtenido (normalizado):")
+            diff_detail.append(json.dumps(norm_r2, indent=2, sort_keys=True))
 
         return False, diff_detail
 
@@ -179,16 +186,25 @@ def main():
 
     discrepancies = compare_with_reference(client_results, reference_results)
 
-    if not discrepancies:
+    # Filtrar solo discrepancias reales (no listas vacías)
+    real_discrepancies = {
+        cid: issues
+        for cid, issues in discrepancies.items()
+        if issues["missing"] or issues["anomalous"]
+    }
+
+    if not real_discrepancies:
         print("✅ Todos los resultados son consistentes con los de referencia.")
     else:
         print("❌ Se encontraron discrepancias con los resultados de referencia:")
-        for client_id, issues in discrepancies.items():
+        for client_id, issues in real_discrepancies.items():
             print(f"- Cliente {client_id}:")
+
             if issues["missing"]:
                 print("   - Missing:")
                 for qid in issues["missing"]:
                     print(f"     • {qid}")
+
             if issues["anomalous"]:
                 print("   - Anomalous results:")
                 for qid, diff_detail in issues["anomalous"]:
@@ -196,7 +212,10 @@ def main():
                     if diff_detail:
                         for line in diff_detail:
                             print(f"       {line}")
-            print("\n")
+                    else:
+                        print("       ⚠️ Resultado distinto, sin detalles detectables.")
+
+            print()
 
 
 if __name__ == "__main__":
