@@ -350,9 +350,15 @@ class ProtocolClient:
             return None
 
         tipo_mensaje, query_id, payload_len = unpack_result_header(header_bytes)
+        logger.debug(
+            "Received header: tipo_mensaje=%s, query_id=%d, payload_len=%d",
+            tipo_mensaje,
+            query_id,
+            payload_len,
+        )
 
         if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
-            logger.error("Unexpected message type: %s", tipo_mensaje)
+            # logger.error("Unexpected message type: %s", tipo_mensaje)
             return None
 
         # Recibir payload

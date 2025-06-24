@@ -2,15 +2,22 @@
 This module defines the ConnectedClient class, which represents a client connected to the protocol gateway.
 """
 
-import os
-import json
 import socket
 import threading
 from dataclasses import asdict, is_dataclass
-import tempfile
 
 from protocol_gateway_client import ProtocolGateway
 from batch_message import BatchMessage
+from result_message import ResultMessage
+from storage import (
+    save_batch_to_disk,
+    safe_delete_batch_file,
+    load_batches_from_disk,
+    load_results_from_disk,
+    save_result_to_disk,
+    delete_result_file,
+)
+
 
 from common.protocol import IS_LAST_BATCH_FLAG, TIPO_MENSAJE
 from common.mom import RabbitMQProcessor
@@ -59,7 +66,7 @@ class ConnectedClient(threading.Thread):
         )
         if self.recovery_mode:
             logger.info("Recovery mode is enabled for client %s", self._client_id)
-            self._load_batches_from_disk()
+            load_batches_from_disk(self._client_id)
         else:
             logger.info("Recovery mode is disabled for client %s", self._client_id)
 
@@ -70,7 +77,9 @@ class ConnectedClient(threading.Thread):
 
         self._processed_datasets_from_request = 0
 
-        self._sent_answers = 0
+        self.sent_results = load_results_from_disk(self._client_id)
+        self._sent_answers = len(self.sent_results)
+
         self._sent_answers_lock = threading.Lock()
 
         self.broker = None
@@ -93,6 +102,22 @@ class ConnectedClient(threading.Thread):
         connected = self.broker.connect()
         if not connected:
             raise RuntimeError("Failed to connect to RabbitMQ.")
+
+    def all_answers_sent(self) -> bool:
+        """
+        Check if all expected answers have been sent.
+
+        :return: True if all expected answers have been sent, False otherwise.
+        """
+        with self._sent_answers_lock:
+            all_sent = self._sent_answers == self._expected_answers_to_send_per_request
+            logger.debug(
+                "All answers sent: %s (Sent: %d, Expected: %d)",
+                all_sent,
+                self._sent_answers,
+                self._expected_answers_to_send_per_request,
+            )
+            return all_sent
 
     def add_sent_answer(self):
         """
@@ -202,7 +227,7 @@ class ConnectedClient(threading.Thread):
                     processed_data=processed_data,
                 )
                 self.batches_stored.append(new_batch)
-                self._save_batch_to_disk(new_batch)
+                save_batch_to_disk(new_batch)
                 self.accumulated_batches += 1
 
                 if (
@@ -274,15 +299,7 @@ class ConnectedClient(threading.Thread):
                 )
 
                 if success:
-                    try:
-                        filename = f"batch_{batch_message.current_batch}.json"
-                        path = os.path.join(
-                            "storage", batch_message.client_id, filename
-                        )
-                        if os.path.exists(path):
-                            os.remove(path)
-                    except Exception as e:
-                        logger.warning("Error deleting stored batch file: %s", e)
+                    safe_delete_batch_file(batch_message)
 
                 if batch_message.is_last_batch == IS_LAST_BATCH_FLAG:
                     success = self.broker.publish(
@@ -378,55 +395,40 @@ class ConnectedClient(threading.Thread):
             return "BATCH_RATINGS"
         return None
 
-    def send_result(self, result_data):
+    def send_result(self, result_message: ResultMessage):
         """
         Send the result data to the client.
         """
         try:
-            logger.info("Sending result to client %s: %s", self._client_id, result_data)
-            self._protocol_gateway.send_result(result_data)
+            logger.info(
+                "Sending result to client %s: %s", self._client_id, result_message
+            )
+
+            # Guardar en disco antes de intentar enviar
+            save_result_to_disk(result_message, self._client_id)
+
+            self._protocol_gateway.send_result(result_message.to_dict())
+
             self.add_sent_answer()
+
+            # Si se envió bien, eliminar archivo
+            delete_result_file(self._client_id, result_message.query)
 
         except Exception as e:
             logger.error("Error sending result to client %s: %s", self._client_id, e)
             self._stop_client()
 
-    def _save_batch_to_disk(self, batch: BatchMessage):
-        try:
-            client_dir = os.path.join("storage", batch.client_id)
-            os.makedirs(client_dir, exist_ok=True)
-            final_path = os.path.join(
-                client_dir, f"{batch.message_code}_{batch.current_batch}.json"
-            )
-
-            # Write to a temporary file first
-            with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=client_dir, delete=False
-            ) as tmp_file:
-                json.dump(asdict(batch), tmp_file, ensure_ascii=False, indent=2)
-                tmp_file.flush()
-                os.fsync(tmp_file.fileno())
-                temp_path = tmp_file.name
-
-            # Atomically replace the final file with the temp file
-            os.replace(temp_path, final_path)
-
-        except Exception as e:
-            logger.error(
-                "Error saving batch to disk for client %s: %s", batch.client_id, e
-            )
-
-    def _load_batches_from_disk(self):
-        client_dir = os.path.join("storage", self._client_id)
-        if not os.path.isdir(client_dir):
-            return
-
-        files = sorted(os.listdir(client_dir))  # ordena por batch
-        for filename in files:
-            if filename.endswith(".json"):
-                path = os.path.join(client_dir, filename)
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    batch = BatchMessage(**data)
-                    self.batches_stored.append(batch)
-                    self.accumulated_batches += 1
+    def send_all_stored_results(self):
+        """
+        Resend all stored results to the client.
+        This is useful for recovery mode to ensure all results are sent.
+        """
+        logger.info("Resending all stored results for client %s", self._client_id)
+        for saved_result in self.sent_results:
+            try:
+                self._protocol_gateway.send_result(saved_result.to_dict())
+                self.add_sent_answer()
+                delete_result_file(self._client_id, saved_result.query)
+            except Exception as e:
+                logger.error("Error resending saved result: %s", e)
+                break

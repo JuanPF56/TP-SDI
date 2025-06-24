@@ -26,3 +26,6 @@ sentiment_analyzer/storage/
 # Ignore the docker-compose files
 docker-compose.clients.yml
 docker-compose.system.yml
+
+# Ignore the Python cache files
+/common/__pycache__/

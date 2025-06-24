@@ -219,6 +219,7 @@ class ProtocolGateway:
             with self._socket_lock:
                 sender.send(self._gateway_socket, header)
                 sender.send(self._gateway_socket, payload)
+
             return True
 
         except sender.SenderConnectionLostError as e:

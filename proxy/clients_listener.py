@@ -64,7 +64,9 @@ class ClientsListener(threading.Thread):
                 )
                 self.current_index += 1
 
-                ClientHandler(self.proxy, client_socket, addr, gateway).start()
+                handler = ClientHandler(self.proxy, client_socket, addr, gateway)
+                self.proxy._client_handlers[handler.client_id] = handler
+                handler.start()
 
             except socket.timeout:
                 continue  # volver al loop para chequear el _stop_flag

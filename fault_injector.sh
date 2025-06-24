@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Contenedores inmunes: no se matan nunca
-IMMUNE_CONTAINERS=("proxy" "q1" "q2" "q3" "q4" "q5" "coordinator" "gateway" "rabbitmq")
+IMMUNE_CONTAINERS=("proxy" "q1" "q2" "q3" "q4" "q5" "coordinator" "rabbitmq" "client")
 
 # Prefijos por tipo de nodo
 declare -A NODE_PREFIXES=(
@@ -11,7 +11,7 @@ declare -A NODE_PREFIXES=(
   ["sentiment_analyzer"]="sentiment_analyzer"
   ["join_credits"]="join_credits"
   ["join_ratings"]="join_ratings"
-  #["gateway"]="gateway"
+  ["gateway"]="gateway"
 )
 
 # # ✅ OPCIONAL: Lista de contenedores específicos para matar (modo dirigido)
@@ -32,7 +32,7 @@ current_type_index=0
 kill_nodes() {
   if [ "${#TARGET_CONTAINERS[@]}" -gt 0 ]; then
 
-    # 🔥 Modo dirigidoo: matar un contenedor aleatorio de TARGET_CONTAINERS
+    # 🔥 Modo dirigido: matar un contenedor aleatorio de TARGET_CONTAINERS
     valid_targets=()
     for c in "${TARGET_CONTAINERS[@]}"; do
       if ! [[ "${IMMUNE_CONTAINERS[*]}" =~ "$c" ]]; then
@@ -72,13 +72,13 @@ kill_nodes() {
 
 echo "🚀 Iniciando fault injector. Presioná Ctrl+C para frenar."
 
-# En la primera ronda, matar 4 contenedores
-for i in {1..4}; do
-  kill_nodes
-done
+# # En la primera ronda, matar 4 contenedores
+# for i in {1..4}; do
+#   kill_nodes
+# done
 
 # Luego, continuar con el ciclo infinito matando 1 contenedor por vez
 while true; do
   kill_nodes
-  sleep 15
+  sleep 20
 done
