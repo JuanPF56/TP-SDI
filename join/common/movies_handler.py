@@ -87,9 +87,16 @@ class MoviesHandler(multiprocessing.Process):
                         return
                     logger.info("EOS received for node %s in queue %s for client %s, eos flags: %s",
                                 node_id, queue_name, current_client_id, self.year_eos_flags.get(current_client_id, {}))
-                    if current_client_id not in self.year_eos_flags:
+                    if current_client_id not in self.year_eos_flags.keys():
+                        logger.info("Creating new EOS flags for client %s", current_client_id)
                         self.year_eos_flags[current_client_id] = self.manager.dict()
-                    if node_id not in self.year_eos_flags[current_client_id]:
+                    if node_id in self.year_eos_flags[current_client_id].keys():
+                        logger.warning(
+                            "Duplicate EOS from node %s for client %s. Ignored.",
+                            node_id,
+                            current_client_id,
+                        )
+                    else:
                         self.year_eos_flags[current_client_id][node_id] = True
                         self.write_storage("moveos", self.year_eos_flags[current_client_id], current_client_id, self.node_id)
                         logger.debug("EOS received for node %s.", node_id)

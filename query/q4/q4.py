@@ -40,11 +40,15 @@ class ArgProdActorsQuery(QueryBase):
 
         else:
             # Sort actors by participation count in descending order and get the top 10
-            sorted_actors = sorted(
+            all_sorted_actors = sorted(
                 self.actor_participations[key].values(),
                 key=lambda x: x["count"],
                 reverse=True,
-            )[:10]
+            )
+
+            logger.info("Top actors: %s", all_sorted_actors)
+
+            sorted_actors = all_sorted_actors[:10]
 
             results_msg = {
                 "client_id": client_id,
