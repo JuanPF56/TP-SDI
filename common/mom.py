@@ -144,6 +144,11 @@ class RabbitMQProcessor:
 
         logger.error("Failed to connect to RabbitMQ after %d attempts.", RETRIES)
         return False
+    
+    def reject(self, method, requeue=True):
+        """Reject a message, optionally requeuing it"""
+        if self.channel and not self.channel.is_closed:
+            self.channel.basic_reject(delivery_tag=method.delivery_tag, requeue=requeue)
 
     def consume(self, callback):
         """

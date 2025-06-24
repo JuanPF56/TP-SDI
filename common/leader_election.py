@@ -189,7 +189,6 @@ class LeaderElector:
         logger.info(
             f"[Node {self.node_id}] Marking alive_received=True, waiting for higher node to become leader"
         )
-
     def handle_coordinator_message(self, sender_id):
         logger.info(
             f"[Node {self.node_id}] Received COORDINATOR: New leader is {sender_id}"
@@ -202,8 +201,8 @@ class LeaderElector:
             self.election_in_progress = False
             self.highest_seen_id = max(self.highest_seen_id, sender_id)
 
-            # If election logic is provided, call it with the new leader ID
-            if self.election_logic:
+            # If the leader has changed, call the election logic with the new leader ID
+            if old_leader != sender_id and self.election_logic:
                 logger.info(
                     f"[Node {self.node_id}] Calling election logic with leader ID {self.leader_id}"
                 )
