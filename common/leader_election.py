@@ -2,7 +2,6 @@ import socket
 import threading
 import time
 import random
-
 from common.logger import get_logger
 
 logger = get_logger("LeaderElector")
@@ -29,6 +28,7 @@ class LeaderElector:
         )  # track highest ID seen in election messages
         self.leader_id = None
         self.alive_received = False  # Track if we received ALIVE responses
+        self.coordinator_announced = False  # Prevent duplicate announcements
 
         # Heartbeat mechanism
         self.heartbeat_interval = 3  # Send heartbeat every 3 seconds
@@ -137,6 +137,13 @@ class LeaderElector:
                 logger.info(
                     f"[Node {self.node_id}] Not starting election - current leader is {self.leader_id}"
                 )
+                if self.leader_id == self.node_id:
+                    logger.info(
+                        f"[Node {self.node_id}] I am the leader, notifying {sender_id} as coordinator"
+                    )
+                    for i in range(3):  # Repeat 3 times
+                        self.send_message("COORDINATOR", sender_id)
+                        time.sleep(2)  # Wait before sending again
             return
 
         # If sender has higher ID, step back and let them handle it
@@ -408,6 +415,7 @@ class LeaderElector:
         self.election_in_progress = True
         self.alive_received = False
         self.highest_seen_id = self.node_id
+        self.coordinator_announced = False
 
         # FIXED: Only consider reachable higher peers (exclude failed nodes)
         higher_peers = []
@@ -516,6 +524,8 @@ class LeaderElector:
         self.leader_id = self.node_id
         self.election_in_progress = False
         self.highest_seen_id = self.node_id
+        self.coordinator_announced = True
+        self.election_backoff_attempts = 0
 
         all_peers = list(self.peers.keys())
 
