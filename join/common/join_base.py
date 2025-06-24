@@ -207,9 +207,10 @@ class JoinBase:
                 if not self.movies_handler.client_ready(current_client_id):
                     # If the movies table is not ready, we cannot handle EOS yet
                     self.log_info(f"EOS received but movies table not ready for client {current_client_id}. Publishing to input queue {input_queue}.")
+                    data = json.loads(body)
                     self.rabbitmq_processor.publish(
                         target=input_queue,
-                        message=body,
+                        message=data,
                         msg_type=msg_type,
                         headers=headers,
                         priority=1,
