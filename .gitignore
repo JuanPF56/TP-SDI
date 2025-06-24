@@ -29,3 +29,4 @@ docker-compose.system.yml
 
 # Ignore the Python cache files
 /common/__pycache__/
+/__pycache__/
