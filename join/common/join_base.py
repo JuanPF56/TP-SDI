@@ -67,6 +67,7 @@ class JoinBase:
             node_id=self.node_id,
             node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
+            movies_handler_ready_event=self.movies_handler_ready,
         )
 
         shard_mapping_str = os.getenv("SHARD_MAPPING", "")
@@ -125,6 +126,9 @@ class JoinBase:
     def process(self):
         # Start the process to receive the movies table
         self.movies_handler.start()
+
+        # Wait for the movies handler to be ready
+        self.movies_handler_ready.wait()
 
         if self.recovery_mode:
             recover_node(self, self.clean_batch_queue)
