@@ -97,6 +97,7 @@ class ResultPresenter:
             "-" * 70,
             "Top 10 de actores con mayor participación en películas de producción",
             "Argentina con fecha de estreno posterior al 2000.",
+            "Nota: En caso de empate, se ordena alfabéticamente.",
             "-" * 70,
         ]
 

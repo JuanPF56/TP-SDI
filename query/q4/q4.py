@@ -17,7 +17,9 @@ class ArgProdActorsQuery(QueryBase):
     """
 
     def __init__(self, config):
-        self.source_queue = config["DEFAULT"].get("movies_credits_queue", "movies_credits")
+        self.source_queue = config["DEFAULT"].get(
+            "movies_credits_queue", "movies_credits"
+        )
         super().__init__(config, self.source_queue, logger_name="q4")
 
         self.duplicate_handler = DuplicateHandler()
@@ -39,13 +41,12 @@ class ArgProdActorsQuery(QueryBase):
             }
 
         else:
-            # Sort actors by participation count in descending order and get the top 10
+            # Sort actors by participation count in descending order of participations and then alfabetical
+            # and get the top 10
             all_sorted_actors = sorted(
                 self.actor_participations[key].values(),
-                key=lambda x: x["count"],
-                reverse=True,
+                key=lambda x: (-x["count"], x["name"]),
             )
-
             logger.info("Top actors: %s", all_sorted_actors)
 
             sorted_actors = all_sorted_actors[:10]
@@ -60,8 +61,11 @@ class ArgProdActorsQuery(QueryBase):
         self.rabbitmq_processor.publish(
             target=self.config["DEFAULT"]["results_queue"], message=results_msg
         )
-        logger.debug("LRU: Results published for client %s, %s", client_id, 
-                    self.duplicate_handler.get_cache(client_id, self.source_queue))
+        logger.debug(
+            "LRU: Results published for client %s, %s",
+            client_id,
+            self.duplicate_handler.get_cache(client_id, self.source_queue),
+        )
 
     def callback(self, ch, method, properties, body, input_queue):
         msg_type = properties.type if properties else "UNKNOWN"
@@ -72,7 +76,6 @@ class ArgProdActorsQuery(QueryBase):
         sub_id = headers.get("sub_id")
         expected = headers.get("expected")
         message_key = f"{message_id}:{sub_id}/{expected}"
-
 
         if client_id is None:
             logger.warning("❌ Missing client_id in headers. Skipping.")
@@ -88,7 +91,9 @@ class ArgProdActorsQuery(QueryBase):
                 logger.error("Failed to decode EOS message")
                 self.rabbitmq_processor.acknowledge(method)
                 return
-            if not self.client_manager.has_queue_received_eos_from_node(client_id, input_queue, node_id):
+            if not self.client_manager.has_queue_received_eos_from_node(
+                client_id, input_queue, node_id
+            ):
                 self.client_manager.mark_eos(client_id, input_queue, node_id)
                 if self.client_manager.has_received_all_eos(client_id, input_queue):
                     logger.info("All nodes have sent EOS. Calculating results...")
@@ -100,14 +105,17 @@ class ArgProdActorsQuery(QueryBase):
                 )
             self.rabbitmq_processor.acknowledge(method)
             return
-        
+
         if message_key is None:
             logger.error("Missing message_key in headers")
             self.rabbitmq_processor.acknowledge(method)
             return
 
         if self.duplicate_handler.is_duplicate(client_id, input_queue, message_key):
-            logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_key)
+            logger.info(
+                "Duplicate message detected: %s. Acknowledging without processing.",
+                message_key,
+            )
             self.rabbitmq_processor.acknowledge(method)
             return
 
