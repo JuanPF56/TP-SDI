@@ -7,19 +7,14 @@ import threading
 import logging
 from dataclasses import asdict, is_dataclass
 
-from protocol_gateway_client import ProtocolGateway
 from batch_message import BatchMessage
-from result_message import ResultMessage
 from storage import (
     save_batch_to_disk,
     safe_delete_batch_file,
     load_batches_from_disk,
-    load_results_from_disk,
-    save_result_to_disk,
-    delete_result_file,
 )
 
-
+from common.decoder import Decoder
 from common.protocol import IS_LAST_BATCH_FLAG, TIPO_MENSAJE
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
@@ -39,24 +34,19 @@ class ConnectedClient(threading.Thread):
     def __init__(
         self,
         client_id: str,
-        gateway_socket: socket.socket,
         config,
-        shared_socket_lock: threading.Lock,
     ):
         """
         Initialize the ConnectedClient instance.
 
-        :param protocol_gateway: The ProtocolGateway instance associated with this client.
         :param client_id: The unique identifier for this client.
+        :param config: Configuration settings of the gateway.
         """
         super().__init__()
         self.config = config
         self._client_id = client_id
-        self._gateway_socket = gateway_socket
-        self._protocol_gateway = ProtocolGateway(
-            gateway_socket, client_id, shared_socket_lock
-        )
-        self.was_closed = False
+        self._decoder = Decoder()
+        self._was_closed = False
 
         self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
         self.accumulated_batches = 0
@@ -75,8 +65,7 @@ class ConnectedClient(threading.Thread):
 
         self._processed_datasets_from_request = 0
 
-        self.sent_results = load_results_from_disk(self._client_id)
-        self._sent_answers = len(self.sent_results)
+        self._sent_answers = 0
 
         self._sent_answers_lock = threading.Lock()
 
@@ -169,10 +158,10 @@ class ConnectedClient(threading.Thread):
         """
         Close the client socket
         """
-        if self.was_closed:
-            return
-
         logger.info("Stopping client %s", self._client_id)
+
+        self._was_closed = True
+
         self._stop_flag.set()
         self._running = False
 
@@ -182,15 +171,13 @@ class ConnectedClient(threading.Thread):
             except Exception as e:
                 logger.warning("Error al cerrar broker: %s", e)
 
-        self.was_closed = True
-
     def run(self):
         """
         Run the connected client thread.
         """
         try:
             while (
-                self._running and not self._stop_flag.is_set() and not self.was_closed
+                self._running and not self._stop_flag.is_set() and not self._was_closed
             ):
                 # Wait for all responses to be sent
                 with self._condition:
@@ -212,9 +199,7 @@ class ConnectedClient(threading.Thread):
         self, message_id, message_code, current_batch, is_last_batch, payload
     ) -> bool:
         try:
-            processed_data = self._protocol_gateway.process_payload(
-                message_code, payload
-            )
+            processed_data = self.process_payload(message_code, payload)
             if processed_data is None:
                 if message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
                     # May be a partial batch
@@ -488,25 +473,43 @@ class ConnectedClient(threading.Thread):
             return "BATCH_RATINGS"
         return None
 
-    def send_result(self, result_message: ResultMessage):
+    def process_payload(self, message_code: str, payload: bytes) -> list | None:
         """
-        Send the result data to the client.
+        Process the payload
         """
-        try:
-            logger.info(
-                "Sending result to client %s: %s", self._client_id, result_message
-            )
+        decoded_payload = payload.decode("utf-8")
+        if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
+            movies_from_batch = self._decoder.decode_movies(decoded_payload)
+            if not movies_from_batch:
+                logger.error("No movies received or invalid format")
+                return None
 
-            # Guardar en disco antes de intentar enviar
-            save_result_to_disk(result_message, self._client_id)
+            for movie in movies_from_batch:
+                movie.log_movie_info()
+            return movies_from_batch
 
-            self._protocol_gateway.send_result(result_message.to_dict())
+        elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
+            credits_from_batch = self._decoder.decode_credits(decoded_payload)
+            if not credits_from_batch:
+                # logger.error("No credits received or incomplete data")
+                return None
+            else:
+                logger.debug("Amount of received credits: %d", len(credits_from_batch))
+                for credit in credits_from_batch:
+                    credit.log_credit_info()
+            return credits_from_batch
 
-            self.add_sent_answer()
+        elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
+            ratings_from_batch = self._decoder.decode_ratings(decoded_payload)
+            if not ratings_from_batch:
+                logger.error("No ratings received or incomplete data")
+                return None
+            else:
+                logger.debug("Amount of received ratings: %d", len(ratings_from_batch))
+                for rating in ratings_from_batch:
+                    rating.log_rating_info()
+            return ratings_from_batch
 
-            # Si se envió bien, eliminar archivo
-            delete_result_file(self._client_id, result_message.query)
-
-        except Exception as e:
-            logger.error("Error sending result to client %s: %s", self._client_id, e)
-            self._stop_client()
+        else:
+            logger.error("Unknown message code: %s", message_code)
+            return None

@@ -6,9 +6,9 @@ import time
 import fcntl
 from pathlib import Path
 from dataclasses import asdict
-from common.logger import get_logger
+
 from batch_message import BatchMessage
-from result_message import ResultMessage
+from common.logger import get_logger
 
 logger = get_logger("Storage")
 
@@ -63,7 +63,7 @@ def save_batch_to_disk(batch: BatchMessage):
             os.fsync(tmp_file.fileno())
         temp_path.rename(final_path)
         logger.debug("Saved batch to disk: %s", final_path)
-    except Exception as e:
+    except Exception:
         if temp_path.exists():
             temp_path.unlink(missing_ok=True)
         raise
@@ -151,52 +151,3 @@ def validate_batch_data(data):
         "is_last_batch",
     ]
     return all(field in data for field in required)
-
-
-def save_result_to_disk(result_message: ResultMessage, client_id: str):
-    client_dir = Path("results_storage") / client_id
-    client_dir.mkdir(parents=True, exist_ok=True)
-    final_path = client_dir / f"result_{result_message.query}.json"
-    temp_path = (
-        client_dir
-        / f".tmp_result_{result_message.query}_{int(time.time() * 1000)}.json"
-    )
-    try:
-        with open(temp_path, "w", encoding="utf-8") as tmp_file:
-            fcntl.flock(tmp_file.fileno(), fcntl.LOCK_EX)
-            json.dump(result_message.to_dict(), tmp_file, ensure_ascii=False, indent=2)
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
-        temp_path.rename(final_path)
-        logger.debug("Saved result to disk: %s", final_path)
-    except Exception as e:
-        if temp_path.exists():
-            temp_path.unlink(missing_ok=True)
-        logger.error("Error saving result to disk: %s", e)
-        raise
-
-
-def load_results_from_disk(client_id):
-    client_dir = Path("results_storage") / client_id
-    if not client_dir.is_dir():
-        return []
-    results = []
-    for file_path in sorted(client_dir.glob("result_*.json")):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
-                data = json.load(f)
-                results.append(ResultMessage.from_json_with_casting(data))
-        except Exception as e:
-            logger.error("Error loading result file %s: %s", file_path, e)
-    return results
-
-
-def delete_result_file(client_id: str, query_id):
-    path = Path("results_storage") / client_id / f"result_{query_id}.json"
-    if path.exists():
-        try:
-            path.unlink()
-            logger.debug("Deleted result file: %s", path)
-        except Exception as e:
-            logger.error("Failed to delete result file %s: %s", path, e)

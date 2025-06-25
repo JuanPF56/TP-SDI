@@ -56,6 +56,23 @@ class Gateway:
             with open(f"/tmp/{self.node_name}_ready", "w", encoding="utf-8") as f:
                 f.write("ready")
             logger.info("Gateway is ready. Healthcheck file created.")
+
+            # Log recovery status
+            queued_messages = self._message_queue.qsize()
+            queued_results = (
+                self._result_dispatcher.get_queued_results_count()
+                if self._result_dispatcher
+                else 0
+            )
+            if queued_messages > 0 or queued_results > 0:
+                logger.info(
+                    "Recovery status: %d queued messages, %d queued results",
+                    queued_messages,
+                    queued_results,
+                )
+            else:
+                logger.info("No pending messages or results to recover")
+
         except Exception as e:
             logger.error("Failed to create healthcheck file: %s", e)
 
@@ -102,9 +119,7 @@ class Gateway:
             try:
                 restored_client = ConnectedClient(
                     client_id=client_id,
-                    gateway_socket=self._gateway_socket,
                     config=self.config,
-                    shared_socket_lock=self._socket_lock,
                 )
                 self._clients_connected.add(restored_client)
                 logger.info("New client connected: %s", client_id)
@@ -120,7 +135,9 @@ class Gateway:
 
     def _setup_result_dispatcher(self):
         self._result_dispatcher = ResultDispatcher(
-            self.config, clients_connected=self._clients_connected
+            self.config,
+            clients_connected=self._clients_connected,
+            gateway_protocol=self._protocol,
         )
         self._result_dispatcher.start()
 
@@ -208,9 +225,7 @@ class Gateway:
             else:
                 new_connected_client = ConnectedClient(
                     client_id=client_id,
-                    gateway_socket=self._gateway_socket,
                     config=self.config,
-                    shared_socket_lock=self._socket_lock,
                 )
                 self._clients_connected.add(new_connected_client)
                 logger.info("New client connected: %s", client_id)
@@ -229,9 +244,7 @@ class Gateway:
             logger.info("Creating new client from batch message")
             client = ConnectedClient(
                 client_id=client_id_from_message,
-                gateway_socket=self._gateway_socket,
                 config=self.config,
-                shared_socket_lock=self._socket_lock,
             )
             self._clients_connected.add(client)
 
@@ -250,6 +263,9 @@ class Gateway:
 
         while not self._was_closed:
             try:
+                gateway_status = self.get_status()
+                logger.info("Gateway status: %s", gateway_status)
+
                 if self._gateway_socket.fileno() == -1:
                     logger.info("Socket already closed, stopping gateway loop.")
                     break
@@ -304,6 +320,7 @@ class Gateway:
             if self._processing_thread.is_alive():
                 logger.warning("Message processor did not finish within timeout")
 
+        # Stop result dispatcher (this will also stop the result sender thread)
         if self._result_dispatcher:
             try:
                 self._result_dispatcher.stop()
@@ -350,3 +367,21 @@ class Gateway:
             self._clients_connected.clear()
         except Exception as e:
             logger.error("Error closing client socket: %s", e)
+
+    def get_status(self) -> dict:
+        """Get gateway status including queue information"""
+        return {
+            "gateway_connected": self.gateway_is_connected(),
+            "clients_connected": (
+                self._clients_connected.count() if self._clients_connected else 0
+            ),
+            "queued_messages": (
+                self._message_queue.qsize() if self._message_queue else 0
+            ),
+            "queued_results": (
+                self._result_dispatcher.get_queued_results_count()
+                if self._result_dispatcher
+                else 0
+            ),
+            "was_closed": self._was_closed,
+        }

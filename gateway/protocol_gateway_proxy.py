@@ -4,7 +4,7 @@ This module implements the ProtocolGatewayProxy class, which handles communicati
 """
 
 import socket
-import threading
+import json
 
 from raw_message import RawMessage
 
@@ -13,6 +13,8 @@ import common.sender as sender
 from common.protocol import (
     SIZE_OF_HEADER,
     TIPO_MENSAJE,
+    SIZE_OF_HEADER_RESULTS,
+    pack_result_header,
 )
 from common.logger import get_logger
 
@@ -89,7 +91,7 @@ class ProtocolGatewayProxy:
 
             raw_message.add_payload(payload)
 
-            logger.info(
+            logger.debug(
                 "Received message type: %s with size: %d",
                 TIPO_MENSAJE_INVERSO[raw_message.tipo_mensaje],
                 raw_message.payload_length,
@@ -107,3 +109,66 @@ class ProtocolGatewayProxy:
         except Exception as e:
             logger.error("Unexpected error while receiving message: %s", e)
             return None
+
+    def _build_result_message(self, result_data) -> tuple:
+        tipo_mensaje = TIPO_MENSAJE["RESULTS"]
+
+        query_id_str = result_data.get("query", "Q0")  # fallback for missing query
+        # Extract number from query_id_str (Q1 -> 1)
+        query_id = int(query_id_str[1:])
+
+        # Serialize payload
+        payload = json.dumps(result_data).encode()
+        payload_len = len(payload)
+
+        # Header: tipo(1 byte), query_id(1 byte), payload_len(4 bytes)
+        header = pack_result_header(tipo_mensaje, query_id, payload_len)
+        if len(header) != SIZE_OF_HEADER_RESULTS:
+            logger.error(
+                "Header length is not %d bytes, got %d bytes",
+                SIZE_OF_HEADER_RESULTS,
+                len(header),
+            )
+            raise ValueError("Header length mismatch")
+
+        return header, payload
+
+    def send_result(self, result_data: dict) -> bool:
+        """
+        Send the result message to the client.
+        result_data should be a dictionary with the following structure:
+        {
+            "client_id": "uuid-del-cliente",
+            "query": "Q4",
+            "results": { ... }
+        }
+        """
+        try:
+            header, payload = self._build_result_message(result_data)
+            if len(header) != SIZE_OF_HEADER_RESULTS:
+                logger.error(
+                    "Header length is not %d bytes, got %d bytes",
+                    SIZE_OF_HEADER_RESULTS,
+                    len(header),
+                )
+                return False
+
+            logger.debug(
+                "Sending result message:\t Header: %s\t Payload: %s", header, payload
+            )
+            sender.send(self._gateway_socket, header)
+            sender.send(self._gateway_socket, payload)
+
+            return True
+
+        except sender.SenderConnectionLostError as e:
+            logger.error("Connection error while sending result: %s", e)
+            return False
+
+        except sender.SenderError as e:
+            logger.error("Connection error while sending result: %s", e)
+            return False
+
+        except Exception as e:
+            logger.error("Unexpected error while sending result: %s", e)
+            return False
