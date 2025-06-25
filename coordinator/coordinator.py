@@ -20,11 +20,15 @@ def crear_flag_recovery(nombre):
     try:
         if "gateway" in nombre.lower():
             return # No crear flag de recuperación para gateways
-        node_type = nombre.split("_")[0]
-        node_suffix = nombre.split("_")[1] if len(nombre.split("_")) > 1 else ""
-        node_number = nombre.split("_")[-1] if len(nombre.split("_")) > 2 else ""
-        dir = f"./storage/{node_type}_{node_suffix}/"
-        file = f"recovery_mode_{node_number}.flag"
+        if len(nombre) == 2 and nombre.startswith('q'):
+            dir = f"./storage/{nombre}/"
+            file = "recovery_mode.flag"
+        else:
+            node_type = nombre.split("_")[0]
+            node_suffix = nombre.split("_")[1] if len(nombre.split("_")) > 1 else ""
+            node_number = nombre.split("_")[-1] if len(nombre.split("_")) > 2 else ""
+            dir = f"./storage/{node_type}_{node_suffix}/"
+            file = f"recovery_mode_{node_number}.flag"
         with open(os.path.join(dir, file), "w") as f:
             # Write a simple message to indicate recovery mode
             f.write("Recovery mode activated for node: " + nombre)

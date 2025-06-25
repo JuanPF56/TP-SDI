@@ -218,4 +218,20 @@ class ClientManager:
         else:
             logger.debug(f"{indent}Reached leaf at level {level}: {d} (type: {type(d)})")
             return d
+        
+    def update_eos_state(self, client_id, data):
+        """
+        Update the EOS state for a client based on the provided data.
+        This method is used to update the EOS flags for a specific client.
+        """
+        if client_id not in self.clients:
+            self.add_client(client_id)
+        for queue_name, node_ids in data.items():
+            if queue_name not in self.clients[client_id]:
+                self.clients[client_id][queue_name] = self.manager.dict()
+            for node_id in node_ids:
+                self.clients[client_id][queue_name][node_id] = True
+        logger.info(
+            "EOS state updated for client %s, dict: %s", client_id, self._unwrap_dictproxy(self.clients[client_id])
+        )
 

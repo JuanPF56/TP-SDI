@@ -19,8 +19,6 @@ class SoloCountryBudgetQuery(QueryBase):
         self.source_queue = config["DEFAULT"].get("movies_solo_queue", "movies_solo")
         super().__init__(config, self.source_queue, logger_name="q2")
 
-        self.duplicate_handler = DuplicateHandler()
-
         self.budget_by_country_by_request = defaultdict(lambda: defaultdict(int))
 
     def _calculate_and_publish_results(self, client_id):
@@ -106,6 +104,7 @@ class SoloCountryBudgetQuery(QueryBase):
 
             if not self.client_manager.has_queue_received_eos_from_node(client_id, input_queue, node_id):
                 self.client_manager.mark_eos(client_id, input_queue, node_id)
+                self.write_eos_to_file(client_id)
                 logger.info("EOS received from node %s for request %s.", node_id, client_id)
                 if self.client_manager.has_received_all_eos(client_id, input_queue):
                     logger.info("All EOS received for request %s.", client_id)
@@ -143,6 +142,8 @@ class SoloCountryBudgetQuery(QueryBase):
 
             for single_movie in movie:
                 self.process_movie(single_movie, client_id)
+                
+            self._write_data_to_file(client_id, self.budget_by_country_by_request[client_id], "partial_results")
 
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
@@ -151,8 +152,21 @@ class SoloCountryBudgetQuery(QueryBase):
 
         self.duplicate_handler.add(client_id, input_queue, message_id)
         self.rabbitmq_processor.acknowledge(method)
-
-
+        
+    def update_data(self, client_id, key, data):
+        if key == "partial_results":
+            if client_id not in self.budget_by_country_by_request:
+                self.budget_by_country_by_request[client_id] = defaultdict(int)
+            for country, budget in data.items():
+                self.budget_by_country_by_request[client_id][country] += budget
+            logger.info(
+                "Updated partial results for client %s: %s",
+                client_id,
+                self.budget_by_country_by_request[client_id],
+            )
+        else:
+            logger.warning("Unknown key for update_data: %s", key)
+        
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")

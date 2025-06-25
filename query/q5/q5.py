@@ -21,8 +21,6 @@ class SentimentStats(QueryBase):
         ]
         super().__init__(config, self.source_queues, logger_name="q5")
 
-        self.duplicate_handler = DuplicateHandler()
-
         self.positive_rates = defaultdict(list)
         self.negative_rates = defaultdict(list)
 
@@ -110,6 +108,7 @@ class SentimentStats(QueryBase):
                 
                 if not self.client_manager.has_queue_received_eos_from_node(client_id, input_queue, node_id):
                     self.client_manager.mark_eos(client_id, input_queue, node_id)
+                    self.write_eos_to_file(client_id)
                     logger.info("EOS received for node %s in %s queue.", node_id, sentiment)
                     if self.client_manager.has_received_all_eos(client_id, self.source_queues):
                         logger.info("All nodes have sent EOS.")
@@ -147,6 +146,9 @@ class SentimentStats(QueryBase):
             for single_movie in movie:
                 self.process_movie(single_movie, client_id, sentiment)
 
+            self._write_data_to_file(client_id, self.positive_rates[client_id], key="partial_results_positive")
+            self._write_data_to_file(client_id, self.negative_rates[client_id], key="partial_results_negative")
+
             self.duplicate_handler.add(client_id, input_queue, message_id)
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
@@ -160,6 +162,18 @@ class SentimentStats(QueryBase):
         
         self.rabbitmq_processor.acknowledge(method)
 
+    def update_data(self, client_id, key, data):
+        if key == "partial_results_positive":
+            if client_id not in self.positive_rates:
+                self.positive_rates[client_id] = []
+            self.positive_rates[client_id].extend(data)
+        elif key == "partial_results_negative":
+            if client_id not in self.negative_rates:
+                self.negative_rates[client_id] = []
+            self.negative_rates[client_id].extend(data)
+        else:
+            logger.warning("Unknown key for update_data: %s", key)
+        logger.info("Updated data for client %s with key %s", client_id, key)
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

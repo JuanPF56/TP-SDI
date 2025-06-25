@@ -1,6 +1,7 @@
 import configparser
 import json
 from collections import defaultdict
+import os
 
 from common.duplicate_handler import DuplicateHandler
 from common.query_base import QueryBase, EOS_TYPE
@@ -20,8 +21,6 @@ class ArgSpainGenreQuery(QueryBase):
             "movies_arg_spain_2000s_queue", "movies_arg_spain_2000s"
         )
         super().__init__(config, self.source_queue, logger_name="q1")
-
-        self.duplicate_handler = DuplicateHandler()
 
         self.results_by_request = defaultdict(list)
 
@@ -91,6 +90,7 @@ class ArgSpainGenreQuery(QueryBase):
 
             if not self.client_manager.has_queue_received_eos_from_node(client_id, input_queue, node_id):
                 self.client_manager.mark_eos(client_id, input_queue, node_id)
+                self.write_eos_to_file(client_id)
                 logger.info("EOS received from node %s for client %s", node_id, client_id)
                 if self.client_manager.has_received_all_eos(client_id, input_queue):
                     logger.info("All EOS received for client %s", client_id)
@@ -128,6 +128,8 @@ class ArgSpainGenreQuery(QueryBase):
             for single_movie in movie:
                 self.process_movie(single_movie, client_id)
 
+            self._write_data_to_file(client_id, self.results_by_request[client_id], "partial_results")
+
         except json.JSONDecodeError:
             logger.warning("❌ Skipping invalid JSON")
             self.rabbitmq_processor.acknowledge(method)
@@ -135,6 +137,15 @@ class ArgSpainGenreQuery(QueryBase):
 
         self.duplicate_handler.add(client_id, input_queue, message_id)
         self.rabbitmq_processor.acknowledge(method)
+
+    def update_data(self, client_id, key, data):
+        if key == "partial_results":
+            if client_id not in self.results_by_request:
+                self.results_by_request[client_id] = []
+            self.results_by_request[client_id].extend(data)
+            logger.info("Data updated for client %s, key %s", client_id, key)
+        else:
+            logger.warning("Unknown key for update_data: %s", key)
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()
