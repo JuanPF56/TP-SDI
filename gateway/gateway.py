@@ -3,9 +3,11 @@ import signal
 import os
 import time
 import threading
+import queue
 
 from protocol_gateway_proxy import ProtocolGatewayProxy
 from raw_message import RawMessage
+from message_queue import MessageQueue
 from client_registry import ClientRegistry
 from connected_client import ConnectedClient
 from result_dispatcher import ResultDispatcher
@@ -19,6 +21,7 @@ MAX_RETRIES = 5
 DELAY_BETWEEN_RETRIES = 5
 DELAY_RETRY_RECEIVE_MESSAGE = 2
 MAX_DELAY_RECEIVE_MESSAGE = 60
+PROCESSING_THREAD_TIMEOUT = 30
 
 
 class Gateway:
@@ -37,10 +40,15 @@ class Gateway:
         self._was_closed = False
 
         self._clients_connected = ClientRegistry()
+        self._result_dispatcher = None
         self._setup_result_dispatcher()
 
         self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
-        self._result_dispatcher = None
+
+        # Initialize message queue and processing thread
+        self._message_queue = MessageQueue(f"/tmp/gateway_{self.node_name}_messages")
+        self._processing_thread = None
+        self._start_message_processor()
 
         self.restore_connected_clients()
 
@@ -116,6 +124,76 @@ class Gateway:
         )
         self._result_dispatcher.start()
 
+    def _start_message_processor(self):
+        """Start the message processing thread"""
+        self._processing_thread = threading.Thread(
+            target=self._process_messages, name="MessageProcessor", daemon=True
+        )
+        self._processing_thread.start()
+        logger.info("Message processor thread started")
+
+    def _process_messages(self):
+        """Process messages from queue in separate thread"""
+        logger.info("Message processor started")
+
+        while not self._was_closed:
+            try:
+                # Get message from queue with timeout
+                message_id, raw_message = self._message_queue.get(timeout=1.0)
+
+                logger.debug(
+                    "Processing message %s (type: %s)",
+                    message_id,
+                    raw_message.tipo_mensaje,
+                )
+
+                # Process the message
+                success = self._process_raw_message(raw_message)
+
+                if success:
+                    # Mark as done and remove from disk
+                    self._message_queue.task_done(message_id)
+                else:
+                    logger.error("Failed to process message %s", message_id)
+                    # You could implement retry logic here
+                    self._message_queue.task_done(message_id)  # Remove even if failed
+
+            except queue.Empty:
+                # Timeout waiting for message, continue loop
+                continue
+            except Exception as e:
+                logger.error("Error in message processor: %s", e)
+                # Continue processing other messages
+                continue
+
+        logger.info("Message processor stopped")
+
+    def _process_raw_message(self, raw_message: RawMessage) -> bool:
+        """Process a single raw message. Returns True if successful."""
+        try:
+            if raw_message.tipo_mensaje == TIPO_MENSAJE["NEW_CLIENT"]:
+                self._handle_new_client(raw_message.encoded_id)
+                return True
+
+            elif (
+                raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_MOVIES"]
+                or raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_CREDITS"]
+                or raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_RATINGS"]
+            ):
+                return self._handle_batch_messages(raw_message)
+
+            else:
+                logger.warning(
+                    "Unknown message type received: %s", raw_message.tipo_mensaje
+                )
+                return False
+
+        except Exception as e:
+            logger.error(
+                "Error processing message (type: %s): %s", raw_message.tipo_mensaje, e
+            )
+            return False
+
     def _handle_new_client(self, encoded_id):
         try:
             client_id = encoded_id.decode("utf-8").rstrip("\x00")
@@ -169,6 +247,7 @@ class Gateway:
     def run(self):
         delay = DELAY_RETRY_RECEIVE_MESSAGE
         logger.info("Gateway running...")
+
         while not self._was_closed:
             try:
                 if self._gateway_socket.fileno() == -1:
@@ -186,40 +265,27 @@ class Gateway:
                     delay *= 2
                     continue
 
-                if raw_message.tipo_mensaje == TIPO_MENSAJE["NEW_CLIENT"]:
-                    self._handle_new_client(raw_message.encoded_id)
+                # Reset delay on successful message reception
+                delay = DELAY_RETRY_RECEIVE_MESSAGE
 
-                elif (
-                    raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_MOVIES"]
-                    or raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_CREDITS"]
-                    or raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_RATINGS"]
-                ):
-                    try:
-                        self._handle_batch_messages(raw_message)
-                    except Exception as e:
-                        logger.error(
-                            "Error in batch with: message_id=%s, tipo_mensaje=%s, batch_number=%s: %s",
-                            raw_message.message_id,
-                            raw_message.tipo_mensaje,
-                            raw_message.batch_number,
-                            e,
-                        )
-                        continue
-
-                else:
-                    logger.warning(
-                        "Unknown message type received: %s", raw_message.tipo_mensaje
-                    )
+                # Queue the message for processing
+                message_id = self._message_queue.put(raw_message)
+                logger.debug(
+                    "Message %s queued (queue size: %d)",
+                    message_id,
+                    self._message_queue.qsize(),
+                )
 
             except OSError as e:
                 if self._was_closed:
                     break
-                logger.error("Error accepting new connection: %s", e)
-                return
+                logger.error("Error receiving message: %s", e)
+                # You might want to reconnect here
+                break
 
             except Exception as e:
-                logger.error("Unexpected error: %s", e)
-                return
+                logger.error("Unexpected error in main loop: %s", e)
+                break
 
     def _signal_handler(self, signum, frame):
         logger.info("Signal received, stopping server...")
@@ -227,6 +293,16 @@ class Gateway:
 
     def _stop_server(self):
         logger.info("Stopping server...")
+
+        # Stop accepting new messages
+        self._was_closed = True
+
+        # Wait for processing thread to finish current messages
+        if self._processing_thread and self._processing_thread.is_alive():
+            logger.info("Waiting for message processor to finish...")
+            self._processing_thread.join(timeout=PROCESSING_THREAD_TIMEOUT)
+            if self._processing_thread.is_alive():
+                logger.warning("Message processor did not finish within timeout")
 
         if self._result_dispatcher:
             try:
