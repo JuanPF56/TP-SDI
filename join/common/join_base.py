@@ -95,7 +95,7 @@ class JoinBase:
         )
         self.master_logic.start()
 
-        self.duplicate_handler = DuplicateHandler()
+        self.duplicate_handler = DuplicateHandler(self.node_id)
 
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
@@ -133,6 +133,7 @@ class JoinBase:
         self.movies_handler_ready.wait()
 
         if self.recovery_mode:
+            self.duplicate_handler.read_storage()
             recover_node(self, self.clean_batch_queue)
         else:
             self.elector = LeaderElector(self.node_id, self.peers, self.election_port, 

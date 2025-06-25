@@ -36,7 +36,7 @@ class FilterBase:
         self.master_logic = None
         self.master_logic_started_event = self.manager.Event()
 
-        self.duplicate_handler = DuplicateHandler()
+        self.duplicate_handler = DuplicateHandler(self.node_id)
 
         self.rabbitmq_processor = None
         self.client_manager = None

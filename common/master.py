@@ -43,7 +43,7 @@ class MasterLogic(multiprocessing.Process):
         self.sharded = sharded
         self.shard_mapping = shard_mapping or {}  # {node_name: (start_range, end_range)}
 
-        self.duplicate_handler = DuplicateHandler()
+        self.duplicate_handler = DuplicateHandler(self.node_id, no_storage=True)
 
         if not self.rabbitmq_processor.connect():
             logger.error("Error connecting to RabbitMQ. Exiting...")

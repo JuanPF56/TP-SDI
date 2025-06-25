@@ -206,6 +206,7 @@ class CleanupFilter(FilterBase):
         """
         logger.info("CleanupFilter is starting up")
         if self.recovery_mode:
+            self.duplicate_handler.read_storage()
             recover_node(self, self.main_source_queues)
         else:
             self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)

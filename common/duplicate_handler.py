@@ -1,4 +1,10 @@
 from collections import OrderedDict
+import fcntl
+import json
+import os
+from common.logger import get_logger
+
+logger = get_logger("Duplicate-Handler")
 
 class DuplicateHandler:
     """
@@ -7,8 +13,10 @@ class DuplicateHandler:
     Structure:
         self.cache[client_id][queue_name] = OrderedDict of message_ids
     """
-    def __init__(self, cache_size=1000):
+    def __init__(self, node_id=0, cache_size=100, no_storage=False):
         self.cache_size = cache_size
+        self.node_id = node_id
+        self.no_storage = no_storage
         self.cache = {}
 
     def add(self, client_id, queue_name, message_id):
@@ -23,6 +31,9 @@ class DuplicateHandler:
             if len(queue_cache) >= self.cache_size:
                 queue_cache.popitem(last=False)
             queue_cache[message_id] = None
+
+        if not self.no_storage:
+            self.write_storage(self.node_id)
 
     def is_duplicate(self, client_id, queue_name, message_id):
         """
@@ -47,3 +58,62 @@ class DuplicateHandler:
         Returns a dictionary of client_id -> queue_name -> OrderedDict of message IDs.
         """
         return self.cache
+    
+    def write_storage(self):
+        """
+        Write the current cache to a storage system.
+        """
+        if not os.path.exists(storage_dir):
+            os.makedirs(storage_dir)
+            logger.info("Created storage directory: %s", storage_dir)
+        storage_dir = os.path.join(storage_dir, str(self.node_id))
+        if not os.path.exists(storage_dir):
+            os.makedirs(storage_dir)
+            logger.info("Created storage directory for node %s: %s", self.node_id, storage_dir)
+        
+        file_path = os.path.join(storage_dir, f"duplicate_cache_{self.node_id}.json")
+        tmp_file = os.path.join(storage_dir, f".tmp_duplicate_cache_{self.node_id}.json")
+
+        try:
+            with open(tmp_file, 'w') as tf:
+                fcntl.flock(tf.fileno(), fcntl.LOCK_EX)
+                json.dump(self.cache, tf, indent=4)
+                tf.flush()
+                os.fsync(tf.fileno())
+            os.replace(tmp_file, file_path)
+            logger.debug("Successfully wrote duplicate cache to %s", file_path)
+        except Exception as e:
+            logger.error("Failed to write duplicate cache: %s", e)
+            if tmp_file and os.path.exists(tmp_file):
+                os.remove(tmp_file)
+                logger.debug("Removed temporary file: %s", tmp_file)
+
+    def read_storage(self):
+        """
+        Read the cache from a storage system.
+        """
+        storage_dir = os.path.join(storage_dir, str(self.node_id))
+        file_path = os.path.join(storage_dir, f"duplicate_cache_{self.node_id}.json")
+
+        if not os.path.exists(file_path):
+            logger.warning("Duplicate cache file does not exist: %s", file_path)
+            return
+
+        try:
+            with open(file_path, 'r') as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+                data = json.load(f)
+                self.cache = data
+            logger.info("Successfully read duplicate cache from %s. Cache size: %d", file_path, len(self.cache))
+        except Exception as e:
+            logger.error("Failed to read duplicate cache: %s", e)
+            self.cache = {}
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.error("Removed corrupted duplicate cache file: %s", file_path)
+
+        
+
+
+
+        

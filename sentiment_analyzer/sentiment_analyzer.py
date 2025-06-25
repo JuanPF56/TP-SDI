@@ -69,7 +69,7 @@ class SentimentAnalyzer:
             started_event=self.master_logic_started_event
         )
         
-        self.duplicate_handler = DuplicateHandler()
+        self.duplicate_handler = DuplicateHandler(self.node_id)
 
         self.election_port = int(os.getenv("ELECTION_PORT", 9001))
         self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
@@ -244,6 +244,7 @@ class SentimentAnalyzer:
             self.master_logic.start()
 
             if self.recovery_mode:
+                self.duplicate_handler.read_storage()
                 recover_node(self, self.clean_batch_queue)
             else:
                 self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
