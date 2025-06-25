@@ -6,6 +6,8 @@ resultados/
 
 # Ignore the stored batches
 gateway/storage/
+# Ignore the results from the gateway
+gateway/results/
 
 # Ignore recovery storage
 filter/cleanup/storage/

@@ -41,7 +41,9 @@ class ResultDispatcher(threading.Thread):
         self.gateway_protocol = gateway_protocol
 
         # Initialize persistent result queue
-        self._result_queue = ResultQueue(f"/tmp/gateway_{self.node_name}_results")
+        self._result_queue = ResultQueue(
+            f"/app/results/gateway_{self.node_name}_results"
+        )
 
         # Start result sender thread
         self._result_sender_thread = None

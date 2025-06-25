@@ -1,3 +1,4 @@
+import time
 import os
 import pickle
 import threading
@@ -126,6 +127,3 @@ class ResultQueue:
     def empty(self) -> bool:
         """Check if the queue is empty"""
         return self._memory_queue.empty()
-
-
-import time

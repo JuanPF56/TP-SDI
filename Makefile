@@ -76,6 +76,7 @@ down:
 	sudo rm -rf ./query/q5/storage/*
 	sudo rm -rf ./resultados/*
 	sudo rm -rf ./gateway/storage/*
+	sudo rm -rf ./gateway/results/*
 
 # Muestra los contenedores activos relacionados
 ps:
@@ -99,6 +100,7 @@ clean:
 	sudo rm -rf ./query/q5/storage/*
 	sudo rm -rf ./resultados/*
 	sudo rm -rf ./gateway/storage/*
+	sudo rm -rf ./gateway/results/*
 	docker network rm $(NETWORK) 2>/dev/null || true
 
 # Detiene solo los contenedores definidos en el sistema

@@ -272,6 +272,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "/var/run/docker.sock:/var/run/docker.sock",
                 "./gateway/config.ini:/app/config.ini",
                 "./gateway/storage:/app/storage",
+                "./gateway/results:/app/results",
             ],
             "environment": {
                 "SYSTEM_NODES": ",".join(full_dependencies),
