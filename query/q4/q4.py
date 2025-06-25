@@ -154,6 +154,7 @@ class ArgProdActorsQuery(QueryBase):
     def update_data(self, client_id, key, data):
         if key == "partial_results":
             for actor, actor_data in data.items():
+                actor = str(actor)
                 if actor not in self.actor_participations[client_id]:
                     self.actor_participations[client_id][actor] = {
                         "name": actor_data.get("name", "Unknown"),

@@ -132,7 +132,7 @@ class ArgProdRatingsQuery(QueryBase):
             return
 
         for movie in movies:
-            movie_id = movie.get("id")
+            movie_id = str(movie.get("id"))
             if movie_id is None:
                 continue
 
@@ -158,6 +158,7 @@ class ArgProdRatingsQuery(QueryBase):
     def update_data(self, client_id, key, data):
         if key == "partial_results":
             for movie_id, movie_data in data.items():
+                movie_id = str(movie_id)
                 if movie_id not in self.movie_ratings[client_id]:
                     self.movie_ratings[client_id][movie_id] = {
                         "original_title": movie_data.get("original_title", "Unknown"),

@@ -27,7 +27,7 @@ class QueryBase:
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
         self.recovery_mode = os.path.exists(f"./storage/recovery_mode.flag")
-        self.q_id = int(self.node_name)[-1] if self.node_name.isdigit() else 0
+        self.q_id = int(self.node_name[-1]) if (self.node_name[-1]).isdigit() else 0
 
         self.duplicate_handler = DuplicateHandler(self.q_id)
 
@@ -114,7 +114,7 @@ class QueryBase:
         """
         Write the EOS state of a client to a file.
         """
-        client_eos = self.client_manager.get_client_eos(client_id)
+        client_eos = self.client_manager.get_eos_flags(client_id)
         if not client_eos:
             self.logger.warning("No EOS data found for client %s", client_id)
             return
@@ -127,24 +127,24 @@ class QueryBase:
             return
         self.logger.info("Recovering state for query %s from %s", self.q_id, storage_dir)
 
-        for filename in os.listdir(storage_dir):
-            if "tmp" in filename:
+        for file_name in os.listdir(storage_dir):
+            if "tmp" in file_name:
                 continue
-            if filename.endswith(".json"):
-                parts = filename.split[:-5].split("_")
+            if file_name.endswith(".json"):
+                parts = file_name[:-5].split("_")
                 client_id = parts[-1]
                 key = "_".join(parts[:-1])
 
                 try:
-                    with open(os.path.join(storage_dir, filename), "r") as f:
+                    with open(os.path.join(storage_dir, file_name), "r") as f:
                         data = json.load(f)
                         if key == "eos":
                             self.update_eos_state(client_id, data)
                         else:
                             self.update_data(client_id, key, data)
-                    self.logger.info("Recovered state for client %s from %s", client_id, filename)
+                    self.logger.info("Recovered state for client %s from %s", client_id, file_name)
                 except Exception as e:
-                    self.logger.error("Failed to recover state from %s: %s", filename, e)
+                    self.logger.error("Failed to recover state from %s: %s", file_name, e)
     
     def update_eos_state(self, client_id, data):
         """

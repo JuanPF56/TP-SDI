@@ -14,7 +14,7 @@ EOS_TYPE = "EOS"
 
 class MoviesHandler(multiprocessing.Process):
     def __init__(self, config, manager, node_id, node_name, year_nodes_to_await,
-                 movies_handler_ready_event, clients_ready_events):
+                 movies_handler_ready_event, client_ready_event):
         """
         Initialize the MoviesHandler class with the given configuration and manager.
         """
@@ -39,7 +39,8 @@ class MoviesHandler(multiprocessing.Process):
         self.manager = manager
         self.movies = self.manager.dict()
         self.movies_handler_ready_event = movies_handler_ready_event
-        self.clients_ready_events = clients_ready_events
+        self.client_ready_event = client_ready_event
+        self.client_to_await = self.manager.Value("u", "")
 
         self.year_eos_flags = self.manager.dict()
         self.year_nodes_to_await = year_nodes_to_await
@@ -108,10 +109,9 @@ class MoviesHandler(multiprocessing.Process):
                         if not self.movies_handler_ready_event.is_set():
                             self.movies_handler_ready_event.set()
                             logger.info("MoviesHandler is now ready for client %s", current_client_id)
-                        if current_client_id not in self.clients_ready_events:
-                            self.clients_ready_events[current_client_id] = multiprocessing.Event()
-                        self.clients_ready_events[current_client_id].set()
-                        logger.info("Client %s is now ready and event set.", current_client_id)
+                        if current_client_id == self.client_to_await.get():
+                            self.client_ready_event.set()
+                            logger.info("Client %s is ready and event set.", current_client_id)
                 else:
                     try:
                         decoded = json.loads(body)
@@ -230,11 +230,13 @@ class MoviesHandler(multiprocessing.Process):
         """
         Wait for the client to be ready by checking the EOS flags.
         """
-        if client_id not in self.clients_ready_events:
-            self.clients_ready_events[client_id] = multiprocessing.Event()
-        
-        self.clients_ready_events[client_id].wait()
-        logger.info("Client %s is ready", client_id)
+        self.client_to_await.set(client_id)
+        self.client_ready_event.clear()
+        logger.info("Waiting for client %s table to be ready...", client_id)
+        while not self.client_ready(client_id):
+            self.client_ready_event.wait(timeout=60)
+        logger.info("Client %s is ready with EOS flags: %s", client_id, self.year_eos_flags.get(client_id, {}))
+        self.client_ready_event.set()
 
     def write_storage(self, key, data, client_id, node_id):
         # Get the "./storage/{node_id}" directory
@@ -281,7 +283,7 @@ class MoviesHandler(multiprocessing.Process):
         """
         storage_dir = "./storage" + os.path.sep + str(self.node_id)
         if not os.path.exists(storage_dir):
-            logger.error("Storage directory for node %s does not exist: %s", self.node_id, storage_dir)
+            logger.warning("Storage directory for node %s does not exist: %s", self.node_id, storage_dir)
             return
     
         logger.info("Loading persisted data from storage directory: %s", storage_dir)

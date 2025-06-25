@@ -33,7 +33,7 @@ class DuplicateHandler:
             queue_cache[message_id] = None
 
         if not self.no_storage:
-            self.write_storage(self.node_id)
+            self.write_storage()
 
     def is_duplicate(self, client_id, queue_name, message_id):
         """
@@ -63,6 +63,7 @@ class DuplicateHandler:
         """
         Write the current cache to a storage system.
         """
+        storage_dir = "./storage"
         if not os.path.exists(storage_dir):
             os.makedirs(storage_dir)
             logger.info("Created storage directory: %s", storage_dir)
@@ -88,11 +89,9 @@ class DuplicateHandler:
                 os.remove(tmp_file)
                 logger.debug("Removed temporary file: %s", tmp_file)
 
+
     def read_storage(self):
-        """
-        Read the cache from a storage system.
-        """
-        storage_dir = os.path.join(storage_dir, str(self.node_id))
+        storage_dir = os.path.join("./storage", str(self.node_id))
         file_path = os.path.join(storage_dir, f"duplicate_cache_{self.node_id}.json")
 
         if not os.path.exists(file_path):
@@ -103,7 +102,12 @@ class DuplicateHandler:
             with open(file_path, 'r') as f:
                 fcntl.flock(f.fileno(), fcntl.LOCK_SH)
                 data = json.load(f)
+                for client_id in data:
+                    for queue in data[client_id]:
+                        ordered = OrderedDict((k, None) for k in data[client_id][queue])
+                        data[client_id][queue] = ordered
                 self.cache = data
+
             logger.info("Successfully read duplicate cache from %s. Cache size: %d", file_path, len(self.cache))
         except Exception as e:
             logger.error("Failed to read duplicate cache: %s", e)
