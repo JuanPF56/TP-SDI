@@ -25,7 +25,7 @@ from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
 logger = get_logger("ConnectedClient")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 DATASETS_PER_REQUEST = 3
 QUERYS_PER_REQUEST = 5
