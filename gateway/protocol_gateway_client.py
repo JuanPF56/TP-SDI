@@ -6,15 +6,12 @@ This module implements the ProtocolGateway class, which handles communication wi
 import socket
 import json
 import threading
-import common.receiver as receiver
 import common.sender as sender
 from common.decoder import Decoder
 from common.protocol import (
-    SIZE_OF_HEADER,
     TIPO_MENSAJE,
     SIZE_OF_HEADER_RESULTS,
     pack_result_header,
-    unpack_header,
 )
 from common.logger import get_logger
 

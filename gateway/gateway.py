@@ -17,6 +17,8 @@ logger = get_logger("Gateway")
 
 MAX_RETRIES = 5
 DELAY_BETWEEN_RETRIES = 5
+DELAY_RETRY_RECEIVE_MESSAGE = 2
+MAX_DELAY_RECEIVE_MESSAGE = 60
 
 
 class Gateway:
@@ -28,7 +30,9 @@ class Gateway:
 
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._protocol = None
-        self._socket_lock = threading.Lock()
+        self._socket_lock = (
+            threading.Lock()
+        )  # Shared lock for send operation for clients
         self._connect_to_proxy()
         self._was_closed = False
 
@@ -58,7 +62,6 @@ class Gateway:
                 logger.info("Connected to proxy at %s:%s", self.host, self.port)
                 self._protocol = ProtocolGatewayProxy(
                     gateway_socket=self._gateway_socket,
-                    shared_socket_lock=self._socket_lock,
                 )
                 return self.send_gateway_number()
             except Exception as e:
@@ -164,6 +167,7 @@ class Gateway:
         )
 
     def run(self):
+        delay = DELAY_RETRY_RECEIVE_MESSAGE
         logger.info("Gateway running...")
         while not self._was_closed:
             try:
@@ -172,6 +176,15 @@ class Gateway:
                     break
 
                 raw_message = self._protocol.receive_message()
+                if raw_message is None:
+                    delay = min(delay, MAX_DELAY_RECEIVE_MESSAGE)
+                    logger.info(
+                        "No messages received, retrying in %s seconds...", delay
+                    )
+                    # exponential backoff for retries
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
 
                 if raw_message.tipo_mensaje == TIPO_MENSAJE["NEW_CLIENT"]:
                     self._handle_new_client(raw_message.encoded_id)
