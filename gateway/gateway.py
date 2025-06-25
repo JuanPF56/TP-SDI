@@ -264,7 +264,7 @@ class Gateway:
         while not self._was_closed:
             try:
                 gateway_status = self.get_status()
-                logger.info("Gateway status: %s", gateway_status)
+                logger.debug("Gateway status: %s", gateway_status)
 
                 if self._gateway_socket.fileno() == -1:
                     logger.info("Socket already closed, stopping gateway loop.")
