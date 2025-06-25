@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import signal
 
@@ -29,8 +30,11 @@ class QueryBase:
             target_queues=self.target_queue,
         )
 
+        self.manager = multiprocessing.Manager()
+
         self.client_manager = ClientManager(
-            expected_queues=self.source_queues,
+            self.source_queues,
+            manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
 

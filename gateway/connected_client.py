@@ -4,16 +4,23 @@ This module defines the ConnectedClient class, which represents a client connect
 
 import socket
 import threading
-from dataclasses import asdict
+import logging
+from dataclasses import asdict, is_dataclass
 
-from protocol_gateway_client import ProtocolGateway
+from batch_message import BatchMessage
+from storage import (
+    save_batch_to_disk,
+    safe_delete_batch_file,
+    load_batches_from_disk,
+)
 
-from common.protocol import TIPO_MENSAJE, IS_LAST_BATCH_FLAG
+from common.decoder import Decoder
+from common.protocol import IS_LAST_BATCH_FLAG, TIPO_MENSAJE
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
 logger = get_logger("ConnectedClient")
-
+logger.setLevel(logging.INFO)
 
 DATASETS_PER_REQUEST = 3
 QUERYS_PER_REQUEST = 5
@@ -25,21 +32,31 @@ class ConnectedClient(threading.Thread):
     """
 
     def __init__(
-        self, client_id: str, client_socket: socket.socket, client_addr, config
+        self,
+        client_id: str,
+        config,
     ):
         """
         Initialize the ConnectedClient instance.
 
-        :param protocol_gateway: The ProtocolGateway instance associated with this client.
         :param client_id: The unique identifier for this client.
+        :param config: Configuration settings of the gateway.
         """
         super().__init__()
         self.config = config
         self._client_id = client_id
-        self._client_socket = client_socket
-        self._client_addr = client_addr
-        self._protocol_gateway = ProtocolGateway(client_socket, client_id)
-        self.was_closed = False
+        self._decoder = Decoder()
+        self._was_closed = False
+
+        self.store_limit = int(self.config["DEFAULT"].get("STORE_LIMIT", 1))
+        self.accumulated_batches = 0
+        self.batches_stored = []
+
+        self._last_message_id_published = -1
+
+        self.recovery_mode = self.config.getboolean(
+            "DEFAULT", "RECOVERY_MODE", fallback=True
+        )
 
         self._expected_datasets_to_receive_per_request = DATASETS_PER_REQUEST
         self._received_datasets = 0
@@ -49,6 +66,7 @@ class ConnectedClient(threading.Thread):
         self._processed_datasets_from_request = 0
 
         self._sent_answers = 0
+
         self._sent_answers_lock = threading.Lock()
 
         self.broker = None
@@ -57,6 +75,55 @@ class ConnectedClient(threading.Thread):
         self._stop_flag = threading.Event()
 
         self._condition = threading.Condition()
+
+        self.broker = RabbitMQProcessor(
+            config=self.config,
+            source_queues=[],  # Connected client does not consume messages, so empty list
+            target_queues=[
+                self.config["DEFAULT"]["movies_raw_queue"],
+                self.config["DEFAULT"]["credits_raw_queue"],
+                self.config["DEFAULT"]["ratings_raw_queue"],
+            ],
+            rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"],
+        )
+        connected = self.broker.connect()
+        if not connected:
+            raise RuntimeError("Failed to connect to RabbitMQ.")
+
+        if self.recovery_mode:
+            logger.info("Recovery mode is enabled for client %s", self._client_id)
+            saved_batches = load_batches_from_disk(self._client_id)
+
+            self.batches_stored = saved_batches
+            self.accumulated_batches = len(saved_batches)
+
+            logger.info(
+                "Loaded %d batches from disk for client %s",
+                len(saved_batches),
+                self._client_id,
+            )
+
+            # Try to publish any saved batches immediately
+            if saved_batches:
+                self._republish_saved_batches()
+        else:
+            logger.info("Recovery mode is disabled for client %s", self._client_id)
+
+    def all_answers_sent(self) -> bool:
+        """
+        Check if all expected answers have been sent.
+
+        :return: True if all expected answers have been sent, False otherwise.
+        """
+        with self._sent_answers_lock:
+            all_sent = self._sent_answers == self._expected_answers_to_send_per_request
+            logger.debug(
+                "All answers sent: %s (Sent: %d, Expected: %d)",
+                all_sent,
+                self._sent_answers,
+                self._expected_answers_to_send_per_request,
+            )
+            return all_sent
 
     def add_sent_answer(self):
         """
@@ -87,20 +154,14 @@ class ConnectedClient(threading.Thread):
         """
         return self._client_id
 
-    def client_is_connected(self) -> bool:
-        """
-        Check if the client is connected
-        """
-        return self._protocol_gateway.client_is_connected()
-
     def _stop_client(self) -> None:
         """
         Close the client socket
         """
-        if self.was_closed:
-            return
-
         logger.info("Stopping client %s", self._client_id)
+
+        self._was_closed = True
+
         self._stop_flag.set()
         self._running = False
 
@@ -110,47 +171,14 @@ class ConnectedClient(threading.Thread):
             except Exception as e:
                 logger.warning("Error al cerrar broker: %s", e)
 
-        try:
-            self._protocol_gateway.stop_client()
-        except Exception as e:
-            logger.warning("Error al detener protocolo gateway: %s", e)
-
-        self.was_closed = True
-
     def run(self):
         """
         Run the connected client thread.
         """
-        logger.info("Connected client %s started.", self._client_id)
         try:
-            self._protocol_gateway.send_client_id(self._client_id)
-
-            self.broker = RabbitMQProcessor(
-                config=self.config,
-                source_queues=[],  # Connected client does not consume messages, so empty list
-                target_queues=[
-                    self.config["DEFAULT"]["movies_raw_queue"],
-                    self.config["DEFAULT"]["credits_raw_queue"],
-                    self.config["DEFAULT"]["ratings_raw_queue"],
-                ],
-                rabbitmq_host=self.config["DEFAULT"]["rabbitmq_host"],
-            )
-            connected = self.broker.connect()
-            if not connected:
-                raise RuntimeError("Failed to connect to RabbitMQ.")
-
             while (
-                self._running and not self._stop_flag.is_set() and not self.was_closed
+                self._running and not self._stop_flag.is_set() and not self._was_closed
             ):
-                while (
-                    self._processed_datasets_from_request
-                    < self._expected_datasets_to_receive_per_request
-                ):
-                    if self._process_request() is False:
-                        logger.error("Failed to process request")
-                        self._protocol_gateway.stop_client()
-                        return
-
                 # Wait for all responses to be sent
                 with self._condition:
                     while (
@@ -163,82 +191,85 @@ class ConnectedClient(threading.Thread):
                 logger.info("All answers have been sent, closing client.")
                 self._stop_client()
 
-        except OSError as e:
-            if not self._protocol_gateway.client_is_connected():
-                logger.info("Client %s disconnected: %s", self._client_id, e)
-                return
-
         except Exception as e:
             logger.error("Unexpected error in client %s: %s", self._client_id, e)
-            self._protocol_gateway.stop_client()
             return
 
-    def _process_request(self) -> bool:
+    def process_batch(
+        self, message_id, message_code, current_batch, is_last_batch, payload
+    ) -> bool:
         try:
-            header = self._protocol_gateway.receive_header()
-            if header is None:
-                logger.error("Header is None")
-                self._protocol_gateway.stop_client()
-                return False
-
-            (
-                message_code,
-                encoded_id,
-                current_batch,
-                is_last_batch,
-                payload_len,
-            ) = header
-            logger.debug("Message code: %s", message_code)
-
-            if message_code not in TIPO_MENSAJE:
-                logger.error("Invalid message code: %s", message_code)
-                self._protocol_gateway.stop_client()
-                return False
-
-            if message_code == "DISCONNECT":
-                logger.info("Client requested disconnection.")
-                self._protocol_gateway.stop_client()
-                return True
-
-            client_id = encoded_id.decode("utf-8")
-            logger.debug(
-                "client %s - %s - Receiving batch %s",
-                client_id,
-                message_code,
-                current_batch,
-            )
-
-            payload = self._protocol_gateway.receive_payload(payload_len)
-            if not payload or len(payload) != payload_len:
-                logger.error("Failed to receive full payload")
-                self._protocol_gateway.stop_client()
-                return False
-
-            logger.debug("Received payload of length %d", len(payload))
-
-            processed_data = self._protocol_gateway.process_payload(
-                message_code, payload
-            )
+            processed_data = self.process_payload(message_code, payload)
             if processed_data is None:
-                if message_code == "BATCH_CREDITS":
+                if message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
                     # May be a partial batch
+                    logger.warning(
+                        "Received partial batch for credits, skipping processing."
+                    )
                     return True
                 else:
                     logger.error("Failed to process payload")
                     return False
 
-            self._publish_message(
-                message_code,
-                client_id,
-                current_batch,
-                is_last_batch,
-                processed_data,
-            )
+            if self.recovery_mode:
+                new_batch = BatchMessage(
+                    message_id=message_id,
+                    message_code=message_code,
+                    client_id=self._client_id,
+                    current_batch=current_batch,
+                    is_last_batch=is_last_batch,
+                    processed_data=processed_data,
+                )
+                self.batches_stored.append(new_batch)
+                save_batch_to_disk(new_batch)
+                self.accumulated_batches += 1
+
+                if (
+                    self.accumulated_batches >= self.store_limit
+                    or is_last_batch == IS_LAST_BATCH_FLAG
+                ):
+                    logger.debug(
+                        "Accumulated %d batches, publishing to queue",
+                        self.accumulated_batches,
+                    )
+                    # Only clear after ALL batches are successfully published
+                    successfully_published = []
+                    for batch in self.batches_stored:
+                        if self._publish_batch_safe(batch):
+                            successfully_published.append(batch)
+                            self._last_message_id_published = batch.message_id
+                            logger.debug(
+                                "Successfully published batch %s",
+                                batch.message_id,
+                            )
+                        else:
+                            logger.error(
+                                "Failed to publish batch %s, keeping for retry",
+                                batch.message_id,
+                            )
+                            break  # Stop processing on first failure
+
+                    # Only remove successfully published batches
+                    for batch in successfully_published:
+                        if batch in self.batches_stored:
+                            self.batches_stored.remove(batch)
+                            self.accumulated_batches -= 1
+
+            else:
+                self._publish_message(
+                    message_id,
+                    message_code,
+                    self._client_id,
+                    current_batch,
+                    is_last_batch,
+                    processed_data,
+                )
+
             return True
 
         except (socket.error, socket.timeout) as e:
             logger.error("Socket error raised: %s, from client %s", e, self._client_id)
-            self._protocol_gateway.stop_client()
+            self._stop_client()
             return False
 
         except Exception as e:
@@ -247,11 +278,137 @@ class ConnectedClient(threading.Thread):
                 e,
                 self._client_id,
             )
-            self._protocol_gateway.stop_client()
+            self._stop_client()
             return False
+
+    def _publish_batch_safe(self, batch_message: BatchMessage) -> bool:
+        """
+        Safely publish a batch with proper error handling.
+        Returns True if successfully published and can be removed from storage.
+        """
+        try:
+
+            logger.debug(
+                "Attempting to publish batch %s for client %s",
+                batch_message.message_id,
+                batch_message.client_id,
+            )
+            if (
+                int(batch_message.message_id)
+                != int(self._last_message_id_published) + 1
+                and self._last_message_id_published != -1
+            ):
+                logger.warning(
+                    "Batch %s is NOT the next expected batch after %s",
+                    batch_message.message_id,
+                    self._last_message_id_published,
+                )
+
+            queue_key = self._get_queue_key(batch_message.message_code)
+            message_type = self._get_message_type(batch_message.message_code)
+
+            if not queue_key:
+                logger.error(
+                    "No queue key for message code %s", batch_message.message_code
+                )
+                return False
+
+            headers = {
+                "client_id": batch_message.client_id,
+                "message_id": batch_message.message_id,
+            }
+
+            # Prepare payload
+            batch_payload = []
+            for i, item in enumerate(batch_message.processed_data):
+                if not is_dataclass(item):
+                    logger.warning(
+                        "Item #%d is not a dataclass. Type: %s", i, type(item)
+                    )
+                batch_payload.append(asdict(item) if is_dataclass(item) else item)
+
+            # Publish main batch
+            success = self.broker.publish(
+                target=queue_key,
+                message=batch_payload,
+                msg_type=message_type,
+                headers=headers,
+            )
+
+            if not success:
+                logger.error(
+                    "Failed to publish batch %s to queue %s",
+                    batch_message.message_id,
+                    queue_key,
+                )
+                return False
+
+            # Publish EOS if last batch
+            if batch_message.is_last_batch == IS_LAST_BATCH_FLAG:
+                eos_success = self.broker.publish(
+                    target=queue_key,
+                    message={},
+                    msg_type="EOS",
+                    headers=headers,
+                    priority=1,
+                )
+                if not eos_success:
+                    logger.error(
+                        "Failed to publish EOS for batch %s", batch_message.message_id
+                    )
+                    return False
+                self._processed_datasets_from_request += 1
+
+            # Only delete from disk if everything succeeded
+            safe_delete_batch_file(batch_message)
+            logger.debug(
+                "Successfully published and cleaned up batch %s",
+                batch_message.message_id,
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                "Exception in _publish_batch_safe for batch %s: %s",
+                batch_message.message_id,
+                e,
+            )
+            return False
+
+    def _republish_saved_batches(self):
+        """
+        Attempt to republish all saved batches from previous sessions.
+        """
+        logger.info(
+            "Attempting to republish %d saved batches", len(self.batches_stored)
+        )
+
+        successfully_published = []
+        for batch in self.batches_stored[
+            :
+        ]:  # Copy to avoid modification during iteration
+            if self._publish_batch_safe(batch):
+                successfully_published.append(batch)
+            else:
+                logger.warning(
+                    "Failed to republish batch %s, will retry later", batch.message_id
+                )
+
+        # Remove successfully published batches
+        for batch in successfully_published:
+            if batch in self.batches_stored:
+                self.batches_stored.remove(batch)
+                self.accumulated_batches -= 1
+
+        logger.info(
+            "Successfully republished %d batches, %d remaining",
+            len(successfully_published),
+            len(self.batches_stored),
+        )
 
     def _publish_message(
         self,
+        message_id,
         message_code,
         client_id,
         current_batch,
@@ -262,9 +419,7 @@ class ConnectedClient(threading.Thread):
             queue_key = self._get_queue_key(message_code)
 
             if queue_key:
-                headers = {
-                    "client_id": client_id,
-                }
+                headers = {"client_id": client_id, "message_id": message_id}
                 batch_payload = [asdict(item) for item in processed_data]
                 success = self.broker.publish(
                     target=queue_key,
@@ -297,29 +452,64 @@ class ConnectedClient(threading.Thread):
                 e,
                 self._client_id,
             )
-            self._protocol_gateway.stop_client()
+            self._stop_client()
             return
 
     def _get_queue_key(self, message_code):
-        if message_code == "BATCH_MOVIES":
+        if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
             return self.config["DEFAULT"]["movies_raw_queue"]
-        elif message_code == "BATCH_CREDITS":
+        elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
             return self.config["DEFAULT"]["credits_raw_queue"]
-        elif message_code == "BATCH_RATINGS":
+        elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
             return self.config["DEFAULT"]["ratings_raw_queue"]
         return None
 
-    def send_result(self, result_data):
-        """
-        Send the result data to the client.
-        """
-        try:
-            logger.debug(
-                "Sending result to client %s: %s", self._client_id, result_data
-            )
-            self._protocol_gateway.send_result(result_data)
-            self.add_sent_answer()
+    def _get_message_type(self, message_code) -> str | None:
+        if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
+            return "BATCH_MOVIES"
+        elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
+            return "BATCH_CREDITS"
+        elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
+            return "BATCH_RATINGS"
+        return None
 
-        except Exception as e:
-            logger.error("Error sending result to client %s: %s", self._client_id, e)
-            self._protocol_gateway.stop_client()
+    def process_payload(self, message_code: str, payload: bytes) -> list | None:
+        """
+        Process the payload
+        """
+        decoded_payload = payload.decode("utf-8")
+        if message_code == TIPO_MENSAJE["BATCH_MOVIES"]:
+            movies_from_batch = self._decoder.decode_movies(decoded_payload)
+            if not movies_from_batch:
+                logger.error("No movies received or invalid format")
+                return None
+
+            for movie in movies_from_batch:
+                movie.log_movie_info()
+            return movies_from_batch
+
+        elif message_code == TIPO_MENSAJE["BATCH_CREDITS"]:
+            credits_from_batch = self._decoder.decode_credits(decoded_payload)
+            if not credits_from_batch:
+                # logger.error("No credits received or incomplete data")
+                return None
+            else:
+                logger.debug("Amount of received credits: %d", len(credits_from_batch))
+                for credit in credits_from_batch:
+                    credit.log_credit_info()
+            return credits_from_batch
+
+        elif message_code == TIPO_MENSAJE["BATCH_RATINGS"]:
+            ratings_from_batch = self._decoder.decode_ratings(decoded_payload)
+            if not ratings_from_batch:
+                logger.error("No ratings received or incomplete data")
+                return None
+            else:
+                logger.debug("Amount of received ratings: %d", len(ratings_from_batch))
+                for rating in ratings_from_batch:
+                    rating.log_rating_info()
+            return ratings_from_batch
+
+        else:
+            logger.error("Unknown message code: %s", message_code)
+            return None

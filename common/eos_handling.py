@@ -1,7 +1,6 @@
 import json
 from typing import Dict, Any
 from common.client_state import ClientState
-from common.client_state_manager import ClientManager
 from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
@@ -16,8 +15,8 @@ have sent EOS, and propagate the EOS to output queues and exchanges.
 """
 
 def handle_eos(body, node_id, input_queue, source_queues, headers,
-                      nodes_of_type, rabbitmq_processor: RabbitMQProcessor, 
-                      client_state: ClientState, target_queues=None, target_exchanges=None):
+                      rabbitmq_processor: RabbitMQProcessor, client_state: ClientState,
+                      is_leader=False, target_queues=None, target_exchanges=None):
     """
     Mark the end of stream (EOS) for the given input queue for the given node 
     if it hasn't been marked yet. 
@@ -29,7 +28,6 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
     - input_queue: The input queue from which the EOS message was received.
     - source_queues: The list of source queues to check for EOS.
     - headers: The headers of the message.
-    - nodes_of_type: The number of nodes of this type.
     - rabbitmq_processor: The RabbitMQ processor instance.
     - client_state: The client state instance.
     - target_queues: The target queues to send the EOS message to.
@@ -38,37 +36,33 @@ def handle_eos(body, node_id, input_queue, source_queues, headers,
     try:
         data = json.loads(body)
         n_id = data.get("node_id", 1) # ID of the node that sent the EOS message
-        count = data.get("count", 0) # Count of nodes that have acknowledged EOS message
-        logger.debug(f"Count received: {count}")
     except json.JSONDecodeError:
         logger.error("Failed to decode EOS message")
         return
 
     if client_state and not client_state.has_queue_received_eos_from_node(input_queue, n_id):
-        count += 1
-        logger.debug("COUNT INCREMENTED " + str(count))
-        logger.debug(f"EOS count for node {n_id}: {count}")
         client_state.mark_eos(input_queue, n_id)
+        #if is_leader:
+            #done_reading.wait()
+            #client_state.write_storage()
         check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                         client_state, target_queues, target_exchanges)
 
-    logger.debug(f"EOS received for node {n_id} from input queue {input_queue}")
-    logger.debug(f"Count of EOS: {count} < {nodes_of_type}")
-    # If this isn't the last node, send the EOS message back to the input queue
-    if count < nodes_of_type: 
-        # Send EOS back to input queue for other nodes
-        rabbitmq_processor.publish(
-            target=input_queue,
-            message={"node_id": n_id, "count": count},
-            msg_type=EOS_TYPE,
-            headers=headers,
-            priority=1
-        )
-        
+    logger.info(f"EOS received for node {n_id} from input queue {input_queue}")
+
 def check_eos_flags(headers, node_id, source_queues, rabbitmq_processor, 
                     client_state: ClientState, target_queues=None, target_exchanges=None):
     """
     Check if all nodes have sent EOS and propagate to output queues.
+
+    Parameters:
+    - headers: The headers of the message.
+    - node_id: The ID of the current node.
+    - source_queues: The list of source queues to check for EOS.
+    - rabbitmq_processor: The RabbitMQ processor instance.
+    - client_state: The client state instance.
+    - target_queues: The target queues to send the EOS message to.
+    - target_exchanges: The target exchanges to send the EOS message to.
     """
     if client_state.has_received_all_eos(source_queues):
         logger.info("All nodes have sent EOS. Sending EOS to output queues.")
@@ -90,7 +84,7 @@ def send_eos(headers, node_id, rabbitmq_processor: RabbitMQProcessor,
         for target_queue in targets:
             rabbitmq_processor.publish(
                 target=target_queue,
-                message={"node_id": node_id, "count": 0},
+                message={"node_id": node_id},
                 msg_type=EOS_TYPE,
                 headers=headers,
                 priority=1
@@ -104,7 +98,7 @@ def send_eos(headers, node_id, rabbitmq_processor: RabbitMQProcessor,
         for target_exchange in targets:
             rabbitmq_processor.publish(
                 target=target_exchange,
-                message={"node_id": node_id, "count": 0},
+                message={"node_id": node_id},
                 msg_type=EOS_TYPE,
                 exchange=True,
                 headers=headers,

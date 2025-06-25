@@ -21,11 +21,12 @@ Trabajo Práctico Grupo 3 - Materia Sistemas Distribuidos I - FIUBA
      - [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)  
 4. [▶️ Correr el sistema](#️-correr-el-sistema)  
 5. [🧱 Comandos disponibles (`Makefile`)](#-comandos-disponibles-makefile)  
-6. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
-7. [💯 Respuestas esperadas](#-respuestas-esperadas)  
-8. [🛠️ Construido con](#️-construido-con)  
-9. [✒️ Autores](#️-autores)  
-10. [📑 Documentación](#-documentación)
+6. [💀 Introducción de fallas)](#-introducción-de-fallas)
+7. [📊 Monitoreo de las colas (RabbitMQ)](#-monitoreo-de-las-colas-rabbitmq)
+8. [💯 Respuestas esperadas](#-respuestas-esperadas)  
+9. [🛠️ Construido con](#️-construido-con)  
+10. [✒️ Autores](#️-autores)  
+11. [📑 Documentación](#-documentación)
 
 ---
 
@@ -74,12 +75,13 @@ Antes de generar el archivo `docker-compose.system.yml`, podés editar el archiv
 
 ```ini
 [DEFAULT]
-cleanup_filter_nodes = 2
-production_filter_nodes = 2
-year_filter_nodes = 2
+gateway_nodes = 5
+cleanup_filter_nodes = 6
+production_filter_nodes = 4
+year_filter_nodes = 4
 sentiment_analyzer_nodes = 5
-join_credits_nodes = 2
-join_ratings_nodes = 3
+join_credits_nodes = 5
+join_ratings_nodes = 5
 ```
 
 ---
@@ -111,7 +113,7 @@ pip install -r requirements.txt
 #### 📌 Parámetros
 
 - `<output_file.yml>`: Opcional. Nombre base del archivo de salida. En caso de no pasarse, será: `docker-compose.system.yaml` para el sistema y `docker-compose.clients.yml` para los clientes.
-- `-test <test_config.yaml>`: Opcional. Monta datasets reducidos para pruebas rápidas (`./datasets_for_test:/datasets`) y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en:`test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)). En caso de no pasarse, se descargaran los datasets completos.
+- `-test <test_config.yaml>`: Opcional. Monta datasets reducidos para pruebas rápidas y ejecuta automáticamente `download_datasets.py -test <test_config.yaml>`, con la configuración seteada en:`test_config.yaml` (para más información sobre como configurar el set de pruebas vaya a [📋 Preparar datasets de prueba](#-preparar-datasets-de-prueba)). En caso de no pasarse, se descargaran los datasets completos.
 - `-cant_clientes N`: Opcional. Define cantidad de clientes (client_X) que se generan. En caso de no pasarse se generará 1 solo cliente.
 
 ---
@@ -141,10 +143,16 @@ pip install -r requirements.txt
 - Combinar ambos:
 
 ```bash
-./generate-compose.sh -test test_config.yaml -cant_clientes 2
+./generate-compose.sh -test test_config.yaml -cant_clientes 10
 ```
 
 ![expected_output_test_and_multiclient](resources/expected_output_test_and_multiclient.png)
+
+> Nota: Si ya tienes desacrgados los datasets, puedes correr el flag `-skip_download`para saltear la descarga de los datasets
+>
+>```bash
+> sudo ./generate-compose.sh -skip_download -cant_clientes 4
+>```
 
 ---
 
@@ -158,7 +166,7 @@ python3 download_datasets.py [-test <test_config.yaml>]
 
 - Por defecto descarga el dataset completo desde Kaggle.
 - Si se pasa el flag `-test`, los archivos se recortan según los porcentajes definidos en el YAML.
-- Los archivos se guardan en la carpeta `./datasets_for_test`.
+- Los archivos se guardan en la carpeta `./data`.
 
 **Ejemplo de `test_config.yaml` con todos los datasets al 20%:**
 
@@ -181,12 +189,18 @@ ratings.csv: 20
 
 Para facilitar el desarrollo y la depuración, se recomienda levantar los servicios en **dos consolas separadas**:
 
-- Una consola para todo lo relacionado con el **sistema** (gateway, filtros, joins, querys, etc.).
+- Una consola para todo lo relacionado con el **sistema** (gateway, coordinator, filtros, joins, querys, etc.).
 - Otra consola para levantar y monitorear a los **clientes**.
 
 ---
 
 ### 🧱 Comandos disponibles (`Makefile`)
+
+#### 🧹 Limpiar resultados anteriores
+
+```bash
+sudo rm -rf ./resultados/*./gateway/storage/*
+```
 
 #### ⚙️ Build de imágenes
 
@@ -207,7 +221,7 @@ make up-clients       # Levanta solo los servicios de los clientes
 #### 📜 Ver logs
 
 ```bash
-make logs-system      # Muestra logs del sistema (gateway, servidor, consultas, etc.)
+make logs-system      # Muestra logs del sistema (gateway, coordinator, filters, joiners, querys, etc.)
 make logs-clients     # Muestra logs de los clientes
 make logs-all         # Muestra todos los logs combinados (sistema + clientes)
 ```
@@ -233,6 +247,16 @@ make docker-kill-clients  # Detiene solo los contenedores de los clientes con SI
 
 ---
 
+## 💀 Introducción de fallas
+
+Para probar la tolerancia a fallos, se cuenta con un script para testear la resiliencia del sistema a la caída de los nodos: gateway, filter_cleanup, filter_year, filter_production, sentiment_analyzer, join_credits y join_ratings.
+
+```bash
+./fault_injector.sh
+```
+
+---
+
 ## 📊 Monitoreo de las colas (RabbitMQ)
 
 Podés visualizar el estado de las **queues** y monitorear la actividad del sistema accediendo al panel de administración de **RabbitMQ** desde tu navegador:
@@ -248,11 +272,69 @@ Desde este panel vas a poder inspeccionar los mensajes en las colas, ver estadí
 
 ## 💯 Respuestas esperadas
 
-![query_1](resources/query_1.png)
-![query_2](resources/query_2.png)
-![query_3](resources/query_3.png)
-![query_4](resources/query_4.png)
-![query_5](resources/query_5.png)
+### 🔍 Comparación de resultados de los clientes
+
+El proyecto incluye un **script de comparación** que permite verificar que los resultados obtenidos por los clientes coincidan con los resultados esperados para los datasets del 20% o del 100%.
+
+#### 🚀 Cómo ejecutarlo
+
+El script permite comparar los resultados de los clientes contra los resultados correctos de referencia. Se debe indicar mediante un flag qué conjunto de respuestas se desea usar como referencia:
+
+| Flag  | Referencia utilizada |
+|--------|---------------------|
+| `-20`  | Respuestas correctas para el dataset recortado al 20% |
+| `-100` | Respuestas correctas para el dataset completo (100%) |
+
+Además, se puede especificar la carpeta que contiene los resultados generados por los clientes (por defecto es `resultados`).
+
+#### 📌 Ejemplos de uso
+
+✅ Comparar contra los resultados esperados del 20%:
+
+```bash
+python comparar_resultados.py -20 --folder resultados_20
+```
+
+✅ Comparar contra los resultados esperados del 100%:
+
+```bash
+python comparar_resultados.py -100 --folder resultados_100
+```
+
+✅ Comparar contra el 20% usando la carpeta default (`resultados`):
+
+```bash
+python comparar_resultados.py -20
+```
+
+#### ⚠️ Importante
+
+- El script espera que los archivos de resultados de los clientes estén en formato `.txt` y que contengan objetos JSON (uno o más por archivo).
+- Los archivos de referencia se encuentran en:
+  - `resources/answers_datasets_20/resultados.txt`
+  - `resources/answers_datasets_100/resultados.txt`
+
+#### 💡 Salida
+
+El script informa por consola si los resultados son consistentes o muestra las discrepancias encontradas (queries faltantes o con datos diferentes).
+
+### Datasets al 100 %
+
+![query_1](resources/answers_datasets_100/query_1.png)
+![query_2](resources/answers_datasets_100/query_2.png)
+![query_3](resources/answers_datasets_100/query_3.png)
+![query_4](resources/answers_datasets_100/query_4.png)
+![query_5](resources/answers_datasets_100/query_5.png)
+
+---
+
+### Datasets al 20 %
+
+![query_1](resources/answers_datasets_20/query_1.png)
+![query_2](resources/answers_datasets_20/query_2.png)
+![query_3](resources/answers_datasets_20/query_3.png)
+![query_4](resources/answers_datasets_20/query_4.png)
+![query_5](resources/answers_datasets_20/query_5.png)
 
 ---
 

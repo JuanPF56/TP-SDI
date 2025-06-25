@@ -9,7 +9,7 @@ class JoinCredits(JoinBase):
         joined_data = []
         for movie in data:
             movie_id = movie.get("id")
-            if str(movie_id) in movies_by_id:
+            if movie_id in movies_by_id:
                 joined_data.append(movie)
         return joined_data
 

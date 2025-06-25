@@ -4,9 +4,31 @@ data/
 # Ignore the results directory (results are stored here)
 resultados/
 
+# Ignore the stored batches
+gateway/storage/
+# Ignore the results from the gateway
+gateway/results/
+
+# Ignore recovery storage
+filter/cleanup/storage/
+filter/production/storage/
+filter/year/storage/
+join/credits/storage/
+join/ratings/storage/
+query/q1/storage/
+query/q2/storage/
+query/q3/storage/
+query/q4/storage/
+query/q5/storage/
+sentiment_analyzer/storage/
+
 # Ignore all logs
 *.log
 
 # Ignore the docker-compose files
 docker-compose.clients.yml
 docker-compose.system.yml
+
+# Ignore the Python cache files
+/common/__pycache__/
+/__pycache__/

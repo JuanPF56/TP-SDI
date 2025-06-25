@@ -9,7 +9,6 @@ import socket
 import os
 import csv
 
-import struct
 import json
 
 import common.receiver as receiver
@@ -20,6 +19,8 @@ from common.protocol import (
     SIZE_OF_HEADER,
     SIZE_OF_HEADER_RESULTS,
     ProtocolError,
+    pack_header,
+    unpack_result_header,
 )
 
 from common.logger import get_logger
@@ -38,6 +39,7 @@ class ProtocolClient:
         self._socket = socket
         self._max_batch_size = max_batch_size
         self._connected = True
+        self.message_id = 0
 
     def get_client_id(self):
         """
@@ -112,8 +114,9 @@ class ProtocolClient:
                     for line in lines:
                         line_bytes = line.encode("utf-8")
                         if len(line_bytes) > max_payload_size:
-                            logger.debug(
-                                "Fragmenting oversized line (size=%d)", len(line_bytes)
+                            logger.warning(
+                                "Fragmenting oversized line (size=%d)",
+                                len(line_bytes),
                             )
                             start = 0
                             while start < len(line_bytes):
@@ -253,8 +256,8 @@ class ProtocolClient:
 
         is_last_batch = 1 if is_last else 0
 
-        header = struct.pack(
-            ">B36sIBI",
+        header = pack_header(
+            self.message_id,
             tipo_de_mensaje,
             encoded_id,
             batch_number,
@@ -271,6 +274,7 @@ class ProtocolClient:
 
         try:
             self.send_batch(header, payload)
+            self.message_id += 1
 
         except ServerNotConnectedError:
             logger.error("Connection closed by server while sending batch")
@@ -345,10 +349,16 @@ class ProtocolClient:
         if not header_bytes or len(header_bytes) != SIZE_OF_HEADER_RESULTS:
             return None
 
-        tipo_mensaje, query_id, payload_len = struct.unpack(">BBI", header_bytes)
+        tipo_mensaje, query_id, payload_len = unpack_result_header(header_bytes)
+        logger.debug(
+            "Received header: tipo_mensaje=%s, query_id=%d, payload_len=%d",
+            tipo_mensaje,
+            query_id,
+            payload_len,
+        )
 
         if tipo_mensaje != TIPO_MENSAJE["RESULTS"]:
-            logger.error("Unexpected message type: %s", tipo_mensaje)
+            # logger.error("Unexpected message type: %s", tipo_mensaje)
             return None
 
         # Recibir payload
@@ -381,6 +391,7 @@ class ProtocolClient:
 
         try:
             result_of_query = json.loads(payload_bytes.decode())
+            results = result_of_query.get("results", {})
             logger.debug("Received JSON response: %s", result_of_query)
 
             # Armar la estructura respuesta:
@@ -390,7 +401,7 @@ class ProtocolClient:
             # }
             return {
                 "query_id": f"Q{query_id}",
-                "results": result_of_query,
+                "results": results,
             }
 
         except json.JSONDecodeError:

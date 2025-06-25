@@ -1,20 +1,24 @@
 import json
+import multiprocessing
 import signal
 import pika
 import os
 from configparser import ConfigParser
 from textblob import TextBlob
-from collections import defaultdict
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from collections import defaultdict
+from common.duplicate_handler import DuplicateHandler
+from common.leader_election import LeaderElector
 
+from common.election_logic import election_logic, recover_node
 from common.eos_handling import handle_eos
 from common.logger import get_logger
+from common.master import REC_TYPE, MasterLogic
+from common.mom import RabbitMQProcessor
+from common.client_state_manager import ClientManager
 
 logger = get_logger("SentimentAnalyzer")
-from common.mom import RabbitMQProcessor
-from common.client_state_manager import ClientState
-from common.client_state_manager import ClientManager
 
 EOS_TYPE = "EOS"
 SECONDS_TO_HEARTBEAT = 600
@@ -23,22 +27,22 @@ MAX_WORKERS = os.cpu_count() or 4
 
 class SentimentAnalyzer:
     def __init__(self, config_path: str = "config.ini"):
-        self.batch_negative = defaultdict(list)
-        self.batch_positive = defaultdict(list)
         self.lock = threading.Lock()
         self.eos_to_await = int(os.getenv("NODES_TO_AWAIT", "1"))
         self.node_id = int(os.getenv("NODE_ID", "1"))
         self.nodes_of_type = int(os.getenv("NODES_OF_TYPE", "1"))
         self.node_name = os.getenv("NODE_NAME", "unknown")
+        self.recovery_mode = os.path.exists(f"./storage/recovery_mode_{self.node_id}.flag")
+        self.first_run = True
 
         self.config = ConfigParser()
         self.config.read(config_path)
-        self.source_queue = self.config["QUEUES"]["movies_clean_queue"]
+        self.clean_batch_queue = self.config["QUEUES"]["movies_clean_queue"]
+        self.source_queue = self.clean_batch_queue + "_node_" + str(self.node_id)
         self.target_queues = [
             self.config["QUEUES"]["positive_movies_queue"],
             self.config["QUEUES"]["negative_movies_queue"],
         ]
-        self.batch_size = int(self.config["DEFAULT"].get("batch_size", 200))
 
         self.rabbitmq_processor = RabbitMQProcessor(
             config=self.config,
@@ -46,10 +50,31 @@ class SentimentAnalyzer:
             target_queues=self.target_queues,
         )
 
+        self.manager = multiprocessing.Manager()
+        self.master_logic_started_event = self.manager.Event()
+
         self.client_manager = ClientManager(
-            expected_queues=self.source_queue,
+            self.source_queue,
+            manager=self.manager,
             nodes_to_await=self.eos_to_await,
         )
+        
+        self.master_logic = MasterLogic(
+            config=self.config,
+            manager=self.manager,
+            node_id=self.node_id,
+            nodes_of_type=self.nodes_of_type,
+            clean_queues=self.clean_batch_queue,
+            client_manager=self.client_manager,
+            started_event=self.master_logic_started_event
+        )
+        
+        self.duplicate_handler = DuplicateHandler()
+
+        self.election_port = int(os.getenv("ELECTION_PORT", 9001))
+        self.peers = os.getenv("PEERS", "")  # del estilo: "filter_cleanup_1:9001,filter_cleanup_2:9002"
+        self.node_name = os.getenv("NODE_NAME")
+        self.elector = None
 
         signal.signal(signal.SIGTERM, self.__handleSigterm)
 
@@ -61,8 +86,17 @@ class SentimentAnalyzer:
                 self.rabbitmq_processor.stop_consuming()
                 logger.info("Closing RabbitMQ connection...")
                 self.rabbitmq_processor.close()
+            os.kill(self.master_logic.pid, signal.SIGINT)
+            self.master_logic.join()
+            #self.manager.shutdown()            
         except Exception as e:
             logger.error("Error closing connection: %s", e)
+    
+    def _election_logic(self, leader_id):
+        election_logic(
+            self,
+            leader_id=leader_id,
+        )
 
     def analyze_sentiment(self, text: str) -> str:
         if not text or not text.strip():
@@ -88,152 +122,93 @@ class SentimentAnalyzer:
             return "neutral"
 
     def _handle_eos(
-        self, input_queue, body, method, headers, client_state: ClientState
+        self, input_queue, body, method, headers
     ):
-        if client_state:
-            key = client_state.client_id
-            with self.lock:
-                if len(self.batch_positive[key]) > 0:
-                    self.rabbitmq_processor.publish(
-                        target=self.target_queues[0],
-                        message=self.batch_positive[key],
-                        headers=headers,
-                    )
-                    logger.debug(
-                        "Sent %d positive movies to %s",
-                        len(self.batch_positive[key]),
-                        self.target_queues[0],
-                    )
-                    self.batch_positive[key] = []
-
-                if len(self.batch_negative[key]) > 0:
-                    self.rabbitmq_processor.publish(
-                        target=self.target_queues[1],
-                        message=self.batch_negative[key],
-                        headers=headers,
-                    )
-                    logger.debug(
-                        "Sent %d negative movies to %s",
-                        len(self.batch_negative[key]),
-                        self.target_queues[1],
-                    )
-                    self.batch_negative[key] = []
-        handle_eos(
+        queue = input_queue.split("_node_")[0]
+        self.client_manager.handle_eos(
             body,
             self.node_id,
-            input_queue,
-            self.source_queue,
+            queue,
+            queue,
             headers,
-            self.nodes_of_type,
             self.rabbitmq_processor,
-            client_state,
             target_queues=self.target_queues,
         )
-        self._free_resources(client_state)
 
-    def _free_resources(self, client_state: ClientState):
-        if client_state and client_state.has_received_all_eos(self.source_queue):
-            self.client_manager.remove_client(client_state.client_id)
+    def _free_resources(self, client_id):
+        if self.client_manager.has_received_all_eos(client_id, self.clean_batch_queue):
+            self.client_manager.remove_client(client_id)
 
     def callback(self, ch, method, properties, body, input_queue):
         try:
             msg_type = properties.type if properties and properties.type else "UNKNOWN"
             headers = getattr(properties, "headers", {}) or {}
             client_id = headers.get("client_id")
-
-            if not client_id:
-                logger.error("Missing client_id in headers")
-                self.rabbitmq_processor.acknowledge(method)
-                return
-
-            key = client_id
-            client_state = self.client_manager.add_client(
-                client_id, msg_type == EOS_TYPE
-            )
+            message_id = headers.get("message_id")
 
             if msg_type == EOS_TYPE:
-                self._handle_eos(input_queue, body, method, headers, client_state)
+                self._handle_eos(input_queue, body, method, headers)
+                return
+            
+            if msg_type == REC_TYPE:
+                if self.elector is None:
+                    self.elector = LeaderElector(self.node_id, self.peers, 
+                                                 self.election_port, self._election_logic)
+                    self.elector.start_election()
+                return
+            
+            if client_id is None:
+                logger.error("Missing client_id in headers")
+                return
+            
+            if message_id is None:
+                logger.error("Missing message_id in headers")
+                return
+            
+            if self.duplicate_handler.is_duplicate(client_id, input_queue, message_id):
+                logger.info("Duplicate message detected: %s. Acknowledging without processing.", message_id)
                 return
 
-            movies_batch = json.loads(body)
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                future_to_movie = {
-                    executor.submit(
-                        self.analyze_sentiment, movie.get("overview")
-                    ): movie
-                    for movie in movies_batch
-                }
+            movies = json.loads(body)
 
-                for future in as_completed(future_to_movie):
-                    movie = future_to_movie[future]
-                    try:
-                        sentiment = future.result()
-                        logger.debug(
-                            "[Worker] Analyzed '%s' → %s",
-                            movie.get("original_title"),
-                            sentiment,
-                        )
+            # Normalize to list
+            if isinstance(movies, dict):
+                movies = [movies]
+            elif not isinstance(movies, list):
+                logger.warning("❌ Unexpected movie format: %s, skipping.", type(movies))
+                return
 
-                        if sentiment == "neutral":
-                            logger.debug(
-                                "[Worker] Movie '%s' is neutral, skipping.",
-                                movie.get("original_title"),
-                            )
-                            continue
-                        elif sentiment == "positive":
-                            logger.debug(
-                                "[Worker] Movie '%s' is positive.",
-                                movie.get("original_title"),
-                            )
-                            with self.lock:
-                                self.batch_positive[key].append(movie)
-                        elif sentiment == "negative":
-                            logger.debug(
-                                "[Worker] Movie '%s' is negative.",
-                                movie.get("original_title"),
-                            )
-                            with self.lock:
-                                self.batch_negative[key].append(movie)
+            sentiment_batches = {
+                "positive": [],
+                "negative": [],
+            }
 
-                    except Exception as e:
-                        logger.error(
-                            "[Worker] Error analyzing sentiment for movie '%s': %s",
-                            movie.get("original_title"),
-                            e,
-                        )
-                        logger.error(
-                            "[Worker] Error analyzing sentiment for movie '%s': %s",
-                            movie.get("original_title"),
-                            e,
-                        )
+            for movie in movies:
+                try:
+                    sentiment = self.analyze_sentiment(movie.get("overview", ""))
+                    title = movie.get("original_title")
+                    logger.debug("[Worker] Analyzed '%s' → %s", title, sentiment)
 
-            with self.lock:
-                if len(self.batch_positive[key]) >= self.batch_size:
+                    if sentiment == "neutral":
+                        logger.debug("[Worker] Movie '%s' is neutral, skipping.", title)
+                    elif sentiment in ("positive", "negative"):
+                        sentiment_batches[sentiment].append(movie)
+                    else:
+                        logger.warning("[Worker] Unknown sentiment '%s' for movie '%s'", sentiment, title)
+
+                except Exception as e:
+                    logger.error("[Worker] Error analyzing sentiment for movie '%s': %s", movie.get("original_title"), e)
+
+            for sentiment, movies_batch in sentiment_batches.items():
+                if movies_batch:
+                    target_queue = self.target_queues[0] if sentiment == "positive" else self.target_queues[1]
                     self.rabbitmq_processor.publish(
-                        target=self.target_queues[0],
-                        message=self.batch_positive[key],
+                        target=target_queue,
+                        message=movies_batch,
                         headers=headers,
                     )
-                    logger.debug(
-                        "Sent batch of %d positive movies to %s",
-                        len(self.batch_positive[key]),
-                        self.target_queues[0],
-                    )
-                    self.batch_positive[key] = []
 
-                if len(self.batch_negative[key]) >= self.batch_size:
-                    self.rabbitmq_processor.publish(
-                        target=self.target_queues[1],
-                        message=self.batch_negative[key],
-                        headers=headers,
-                    )
-                    logger.debug(
-                        "Sent batch of %d negative movies to %s",
-                        len(self.batch_negative[key]),
-                        self.target_queues[1],
-                    )
-                    self.batch_negative[key] = []
-
+            self.duplicate_handler.add(client_id, input_queue, message_id)
         except pika.exceptions.StreamLostError as e:
             logger.error("Stream lost, reconnecting: %s", e)
             self.rabbitmq_processor.reconnect_and_restart(self.callback)
@@ -256,7 +231,7 @@ class SentimentAnalyzer:
         - title
         - genres (list of names)
 
-        Publishes the results after processing a batch.
+        Publishes the results immediately after processing each movie.
         """
         logger.info("Node is online")
 
@@ -265,6 +240,15 @@ class SentimentAnalyzer:
             return
 
         try:
+            # Start the master logic process
+            self.master_logic.start()
+
+            if self.recovery_mode:
+                recover_node(self, self.clean_batch_queue)
+            else:
+                self.elector = LeaderElector(self.node_id, self.peers, self.election_port, self._election_logic)
+                self.elector.start_election()
+            
             logger.info("Starting message consumption...")
             self.rabbitmq_processor.consume(self.callback)
         except KeyboardInterrupt:

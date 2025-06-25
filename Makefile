@@ -12,8 +12,10 @@ CLIENTS_FILE=docker-compose.clients.yml
 
 # Construye las imágenes del sistema
 build-system:
+	docker build -f ./coordinator/Dockerfile -t coordinator:latest .
 	docker build -f ./base_node/Dockerfile -t base_node:latest .
 	docker build -f ./gateway/Dockerfile -t gateway:latest .
+	docker build -f ./proxy/Dockerfile -t proxy:latest .
 	docker build -f ./join/credits/Dockerfile -t join_credits:latest .
 	docker build -f ./join/ratings/Dockerfile -t join_ratings:latest .
 	docker build -f ./filter/cleanup/Dockerfile -t filter_cleanup:latest .
@@ -61,6 +63,20 @@ logs-all:
 down:
 	docker compose -f $(SYSTEM_FILE) -p sistema down
 	docker compose -f $(CLIENTS_FILE) -p clientes down
+	sudo rm -rf ./join/ratings/storage/*
+	sudo rm -rf ./join/credits/storage/*
+	sudo rm -rf ./filter/cleanup/storage/*
+	sudo rm -rf ./filter/year/storage/*
+	sudo rm -rf ./filter/production/storage/*
+	sudo rm -rf ./sentiment_analyzer/storage/*
+	sudo rm -rf ./query/q1/storage/*
+	sudo rm -rf ./query/q2/storage/*
+	sudo rm -rf ./query/q3/storage/*
+	sudo rm -rf ./query/q4/storage/*
+	sudo rm -rf ./query/q5/storage/*
+	sudo rm -rf ./resultados/*
+	sudo rm -rf ./gateway/storage/*
+	sudo rm -rf ./gateway/results/*
 
 # Muestra los contenedores activos relacionados
 ps:
@@ -71,6 +87,20 @@ ps:
 clean:
 	docker compose -f $(SYSTEM_FILE) -p sistema down -v
 	docker compose -f $(CLIENTS_FILE) -p clientes down -v
+	sudo rm -rf ./join/ratings/storage/*
+	sudo rm -rf ./join/credits/storage/*
+	sudo rm -rf ./filter/cleanup/storage/*
+	sudo rm -rf ./filter/year/storage/*
+	sudo rm -rf ./filter/production/storage/*
+	sudo rm -rf ./sentiment_analyzer/storage/*
+	sudo rm -rf ./query/q1/storage/*
+	sudo rm -rf ./query/q2/storage/*
+	sudo rm -rf ./query/q3/storage/*
+	sudo rm -rf ./query/q4/storage/*
+	sudo rm -rf ./query/q5/storage/*
+	sudo rm -rf ./resultados/*
+	sudo rm -rf ./gateway/storage/*
+	sudo rm -rf ./gateway/results/*
 	docker network rm $(NETWORK) 2>/dev/null || true
 
 # Detiene solo los contenedores definidos en el sistema

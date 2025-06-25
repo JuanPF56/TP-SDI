@@ -1,9 +1,13 @@
-"Generates a Docker Compose file for a distributed system with multiple nodes."
+"""Generates a Docker Compose file for a distributed system with multiple nodes."""
 
+import os
+import shutil
 import sys
 import configparser
 from copy import deepcopy
 import yaml
+
+from shard_ranges import calculate_shard_ranges
 
 
 def generate_system_compose(filename="docker-compose.system.yml"):
@@ -19,6 +23,12 @@ def generate_system_compose(filename="docker-compose.system.yml"):
     except FileNotFoundError:
         print("Error: global_config.ini not found.")
         sys.exit(1)
+
+    gateway_nodes = config["DEFAULT"].getint("gateway_nodes", 1)
+    gateway_node_names = [f"gateway_{i}" for i in range(1, gateway_nodes + 1)]
+    gateway_depends = {
+        name: {"condition": "service_healthy"} for name in gateway_node_names
+    }
 
     cleanup = config["DEFAULT"].getint("cleanup_filter_nodes", 1)
     year = config["DEFAULT"].getint("year_filter_nodes", 1)
@@ -54,6 +64,9 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         f"join_ratings_{i}" for i in range(1, j_ratings + 1)
     ]
 
+    election_port_start = 9000
+
+    # Filter nodes
     for subtype, count, await_count in [
         ("cleanup", cleanup, 1),
         ("year", year, production),
@@ -61,11 +74,17 @@ def generate_system_compose(filename="docker-compose.system.yml"):
     ]:
         depends = {
             "rabbitmq": {"condition": "service_healthy"},
-            "gateway": {"condition": "service_healthy"},
+            **gateway_depends,
         }
         if subtype == "year":
             for node in j_nodes:
                 depends[node] = {"condition": "service_started"}
+
+        peer_list = [
+            f"filter_{subtype}_{j}:{election_port_start + j}"
+            for j in range(1, count + 1)
+        ]
+        peers_str = ",".join(peer_list)
 
         for i in range(1, count + 1):
             name = f"filter_{subtype}_{i}"
@@ -74,20 +93,36 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "container_name": name,
                 "image": f"filter_{subtype}:latest",
                 "entrypoint": "python3 /app/filter.py",
-                "volumes": [f"./filter/{subtype}/config.ini:/app/config.ini"],
+                "volumes": [
+                    "/var/run/docker.sock:/var/run/docker.sock",
+                    f"./filter/{subtype}/config.ini:/app/config.ini",
+                    f"./filter/{subtype}/storage:/app/storage",
+                ],
                 "environment": {
                     "NODE_ID": str(i),
                     "NODE_TYPE": subtype,
                     "NODES_TO_AWAIT": str(await_count),
                     "NODES_OF_TYPE": count,
                     "NODE_NAME": name,
+                    "ELECTION_PORT": str(election_port_start + i),
+                    "PEERS": peers_str,
+                    "JOIN_RATING_NODES": str(j_ratings),
+                    "JOIN_CREDIT_NODES": str(j_credits),
                 },
                 "depends_on": deepcopy(depends),
                 "networks": ["testing_net"],
             }
 
-    # Sentiment analyzer node
+        election_port_start += count  # 🔧 Avoid port overlap
+
+    # Sentiment analyzer nodes
     sentiment_node_names = []
+    peer_list = [
+        f"sentiment_analyzer_{j}:{election_port_start + j}"
+        for j in range(1, sentiment_analyzer + 1)
+    ]
+    peers_str = ",".join(peer_list)
+
     for i in range(1, sentiment_analyzer + 1):
         name = f"sentiment_analyzer_{i}"
         sentiment_node_names.append(name)
@@ -95,32 +130,64 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "container_name": name,
             "image": "sentiment_analyzer:latest",
             "entrypoint": "python3 /app/sentiment_analyzer.py",
-            "volumes": ["./sentiment_analyzer/config.ini:/app/config.ini"],
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock",
+                "./sentiment_analyzer/config.ini:/app/config.ini",
+                "./sentiment_analyzer/storage:/app/storage",
+            ],
             "environment": {
                 "NODE_ID": str(i),
                 "NODE_TYPE": "sentiment_analyzer",
                 "NODES_TO_AWAIT": str(cleanup),
                 "NODES_OF_TYPE": sentiment_analyzer,
                 "NODE_NAME": name,
+                "ELECTION_PORT": str(election_port_start + i),
+                "PEERS": peers_str,
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"},
+                **gateway_depends,
             },
             "networks": ["testing_net"],
         }
 
+    election_port_start += sentiment_analyzer
+
     # Join nodes
     join_node_names = []
     for typ, count in [("credits", j_credits), ("ratings", j_ratings)]:
+        peer_list = [
+            f"join_{typ}_{j}:{election_port_start + j}" for j in range(1, count + 1)
+        ]
+        peers_str = ",".join(peer_list)
+        shard_ranges = calculate_shard_ranges(count, typ == "ratings")
+
+        # Create shard mapping for this type
+        shard_map = {}
+        for i in range(1, count + 1):
+            node_name = f"join_{typ}_{i}"
+            start_range, end_range = shard_ranges[i - 1]
+            shard_map[node_name] = f"{start_range}-{end_range}"
+
+        # Convert shard map to string (similar to peers_str)
+        shard_mapping_str = ",".join(
+            [f"{name}:{range_str}" for name, range_str in shard_map.items()]
+        )
+
         for i in range(1, count + 1):
             name = f"join_{typ}_{i}"
             join_node_names.append(name)
+            start_range, end_range = shard_ranges[i - 1]
+
             services[name] = {
                 "container_name": name,
                 "image": f"join_{typ}:latest",
                 "entrypoint": "python3 /app/join.py",
-                "volumes": [f"./join/{typ}/config.ini:/app/config.ini"],
+                "volumes": [
+                    "/var/run/docker.sock:/var/run/docker.sock",
+                    f"./join/{typ}/config.ini:/app/config.ini",
+                    f"./join/{typ}/storage:/app/storage",
+                ],
                 "environment": {
                     "NODE_ID": str(i),
                     "NODE_TYPE": f"join_{typ}",
@@ -128,14 +195,20 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                     "NODES_OF_TYPE": count,
                     "YEAR_NODES_TO_AWAIT": str(year),
                     "NODE_NAME": name,
+                    "ELECTION_PORT": str(election_port_start + i),
+                    "PEERS": peers_str,
+                    "SHARD_MAPPING": shard_mapping_str,  # New: complete shard mapping
+                    "SHARD_RANGE_START": str(
+                        start_range
+                    ),  # Keep individual range for convenience
+                    "SHARD_RANGE_END": str(end_range),
                 },
                 "depends_on": {
                     "rabbitmq": {"condition": "service_healthy"},
-                    "gateway": {"condition": "service_healthy"},
+                    **gateway_depends,
                 },
                 "networks": ["testing_net"],
             }
-
     # Nodes to await by query
     query_node_names = []
     nodes_to_await = {
@@ -154,7 +227,11 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             "container_name": qname,
             "image": f"query_{qname}:latest",
             "entrypoint": f"python3 /app/{qname}.py",
-            "volumes": [f"./query/{qname}/config.ini:/app/config.ini"],
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock",
+                f"./query/{qname}/config.ini:/app/config.ini",
+                f"./query/{qname}/storage:/app/storage",
+            ],
             "environment": {
                 "NODE_TYPE": qname,
                 "NODES_TO_AWAIT": str(nodes_to_await[qname]),
@@ -162,36 +239,91 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             },
             "depends_on": {
                 "rabbitmq": {"condition": "service_healthy"},
-                "gateway": {"condition": "service_healthy"},
+                **gateway_depends,
             },
             "networks": ["testing_net"],
         }
 
-    # Gateway node
+    # proxy node for gateways
+    services["proxy"] = {
+        "container_name": "proxy",
+        "image": "proxy:latest",
+        "volumes": [
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "./proxy/config.ini:/app/config.ini",
+        ],
+        "environment": {
+            "NODE_NAME": "proxy",
+        },
+        "networks": ["testing_net"],
+        "ports": ["8000:8000", "9000:9000"],
+    }
+
+    # Gateway nodes
     full_dependencies = (
         filter_node_names + sentiment_node_names + join_node_names + query_node_names
     )
-    services["gateway"] = {
-        "container_name": "gateway",
-        "image": "gateway:latest",
-        "entrypoint": "python3 /app/main.py",
+    for i, name in enumerate(gateway_node_names, start=1):
+        services[name] = {
+            "container_name": name,
+            "image": "gateway:latest",
+            "entrypoint": "python3 /app/main.py",
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock",
+                "./gateway/config.ini:/app/config.ini",
+                "./gateway/storage:/app/storage",
+                "./gateway/results:/app/results",
+            ],
+            "environment": {
+                "SYSTEM_NODES": ",".join(full_dependencies),
+                "NODE_NAME": name,
+                "GATEWAY_PORT": f"{9000+i}",
+            },
+            "depends_on": {
+                "rabbitmq": {"condition": "service_healthy"},
+                "proxy": {"condition": "service_started"},
+            },
+            "networks": ["testing_net"],
+            "ports": [f"{9000+i}:{9000+i}"],
+            "healthcheck": {
+                "test": ["CMD", "test", "-f", f"/tmp/{name}_ready"],
+                "interval": "5s",
+                "timeout": "5s",
+                "retries": 10,
+            },
+        }
+
+    # Coordinator node
+    monitored_nodes = (
+        filter_node_names
+        + sentiment_node_names
+        + join_node_names
+        + query_node_names
+        + gateway_node_names
+        + ["proxy"]
+    )
+    depends_coordinator = {
+        node: {"condition": "service_started"} for node in monitored_nodes
+    }
+    services["coordinator"] = {
+        "container_name": "coordinator",
+        "image": "coordinator:latest",
+        "entrypoint": "python3 /app/coordinator.py",
         "volumes": [
-            "./gateway/config.ini:/app/config.ini",
-            "./resultados:/app/resultados",
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "./coordinator/coordinator.py:/app/coordinator.py",
+            "./filter/cleanup/storage:/app/storage/filter_cleanup",
+            "./filter/year/storage:/app/storage/filter_year",
+            "./filter/production/storage:/app/storage/filter_production",
+            "./sentiment_analyzer/storage:/app/storage/sentiment_analyzer",
+            "./join/credits/storage:/app/storage/join_credits",
+            "./join/ratings/storage:/app/storage/join_ratings",
         ],
         "environment": {
-            "SYSTEM_NODES": ",".join(full_dependencies),
+            "MONITORED_NODES": ",".join(monitored_nodes),
         },
-        "depends_on": {
-            "rabbitmq": {"condition": "service_healthy"},
-        },
+        "depends_on": {**gateway_depends, **depends_coordinator},
         "networks": ["testing_net"],
-        "healthcheck": {
-            "test": ["CMD", "test", "-f", "/tmp/gateway_ready"],
-            "interval": "5s",
-            "timeout": "5s",
-            "retries": 10,
-        },
     }
 
     compose = {
@@ -249,6 +381,46 @@ def generate_clients_compose(
         yaml.dump(compose, f, sort_keys=False)
 
 
+def clean_resultados_folder():
+    """
+    Deletes all files and directories in the resultados directory.
+    """
+    resultados_path = "./resultados"
+    if os.path.exists(resultados_path):
+        for filename in os.listdir(resultados_path):
+            file_path = os.path.join(resultados_path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)  # eliminar archivo o link
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)  # eliminar carpeta
+                print(f"Deleted: {file_path}")
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")
+    else:
+        print(f"Result directory does not exist: {resultados_path}")
+
+
+def clean_storage_folder():
+    """
+    Deletes all files and directories in the storage directory.
+    """
+    storage_path = "./gateway/storage"
+    if os.path.exists(storage_path):
+        for filename in os.listdir(storage_path):
+            file_path = os.path.join(storage_path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)  # eliminar archivo o link
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)  # eliminar carpeta
+                print(f"Deleted: {file_path}")
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")
+    else:
+        print(f"Result directory does not exist: {storage_path}")
+
+
 def main():
     """
     Main function to handle command line arguments and generate the appropriate Docker Compose file.
@@ -261,6 +433,10 @@ def main():
             "  python3 compose_generator.py clients <filename> [-test] [-cant_clientes N]"
         )
         sys.exit(1)
+
+    # Clean old resultados and storage folders before generating compose files
+    clean_resultados_folder()
+    clean_storage_folder()
 
     mode = args[0]
     if mode == "system":

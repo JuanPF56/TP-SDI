@@ -3,7 +3,9 @@ from typing import Dict, Optional
 from connected_client import ConnectedClient
 
 from common.logger import get_logger
+
 logger = get_logger("ClientRegistry")
+
 
 class ClientRegistry:
     def __init__(self):
@@ -40,3 +42,8 @@ class ClientRegistry:
                 except Exception as e:
                     logger.warning(f"Error al detener cliente: {e}")
             self._clients.clear()
+
+    def has_any(self) -> bool:
+        """Returns True if at least one ConnectedClient is registered."""
+        with self._lock:
+            return bool(self._clients)

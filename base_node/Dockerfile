@@ -4,3 +4,4 @@ WORKDIR /app
 
 # Install shared Python packages
 RUN pip install pika
+RUN pip install colorlog

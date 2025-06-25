@@ -1,0 +1,113 @@
+{
+  "query_id": "Q1",
+  "results": {
+    "La Ciénaga": [
+      "Comedy",
+      "Drama"
+    ],
+    "Plata quemada": [
+      "Crime"
+    ],
+    "En la ciudad sin límites": [
+      "Thriller",
+      "Drama"
+    ]
+  }
+}
+
+{
+  "query_id": "Q5",
+  "results": {
+    "average_positive_rate": 19525.07412078657,
+    "average_negative_rate": 5.853391855883913
+  }
+}
+
+{
+  "query_id": "Q2",
+  "results": [
+    [
+      "United States of America",
+      51939622921
+    ],
+    [
+      "United Kingdom",
+      525497538
+    ],
+    [
+      "France",
+      332045078
+    ],
+    [
+      "Germany",
+      135498000
+    ],
+    [
+      "Australia",
+      125952337
+    ]
+  ]
+}
+
+{
+  "query_id": "Q4",
+  "results": {
+    "actors": [
+      {
+        "name": "Jean Pierre Noher",
+        "count": 2
+      },
+      {
+        "name": "Marina Glezer",
+        "count": 2
+      },
+      {
+        "name": "Mercedes Morán",
+        "count": 2
+      },
+      {
+        "name": "Natalia Lobo",
+        "count": 2
+      },
+      {
+        "name": "Sofia Bertolotto",
+        "count": 2
+      },
+      {
+        "name": "Adrián Blanco",
+        "count": 1
+      },
+      {
+        "name": "Adrián Fondari",
+        "count": 1
+      },
+      {
+        "name": "Adrián Suar",
+        "count": 1
+      },
+      {
+        "name": "Alejandro Agresti",
+        "count": 1
+      },
+      {
+        "name": "Alfredo Alcón",
+        "count": 1
+      }
+    ]
+  }
+}
+
+{
+  "query_id": "Q3",
+  "results": {
+    "highest": {
+      "title": "Gerry",
+      "rating": 3.8731656184486374
+    },
+    "lowest": {
+      "title": "Diarios de motocicleta",
+      "rating": 3.783813027483229
+    }
+  }
+}
+

@@ -1,3 +1,5 @@
 kagglehub
 pandas
 pyyaml
+colorlog
+docker
