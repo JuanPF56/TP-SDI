@@ -4,6 +4,7 @@ This module defines the ConnectedClient class, which represents a client connect
 
 import socket
 import threading
+import logging
 from dataclasses import asdict, is_dataclass
 
 from protocol_gateway_client import ProtocolGateway
@@ -24,7 +25,7 @@ from common.mom import RabbitMQProcessor
 from common.logger import get_logger
 
 logger = get_logger("ConnectedClient")
-
+logger.setLevel(logging.DEBUG)
 
 DATASETS_PER_REQUEST = 3
 QUERYS_PER_REQUEST = 5
@@ -61,14 +62,11 @@ class ConnectedClient(threading.Thread):
         self.accumulated_batches = 0
         self.batches_stored = []
 
+        self._last_message_id_published = -1
+
         self.recovery_mode = self.config.getboolean(
             "DEFAULT", "RECOVERY_MODE", fallback=True
         )
-        if self.recovery_mode:
-            logger.info("Recovery mode is enabled for client %s", self._client_id)
-            load_batches_from_disk(self._client_id)
-        else:
-            logger.info("Recovery mode is disabled for client %s", self._client_id)
 
         self._expected_datasets_to_receive_per_request = DATASETS_PER_REQUEST
         self._received_datasets = 0
@@ -102,6 +100,25 @@ class ConnectedClient(threading.Thread):
         connected = self.broker.connect()
         if not connected:
             raise RuntimeError("Failed to connect to RabbitMQ.")
+
+        if self.recovery_mode:
+            logger.info("Recovery mode is enabled for client %s", self._client_id)
+            saved_batches = load_batches_from_disk(self._client_id)
+
+            self.batches_stored = saved_batches
+            self.accumulated_batches = len(saved_batches)
+
+            logger.info(
+                "Loaded %d batches from disk for client %s",
+                len(saved_batches),
+                self._client_id,
+            )
+
+            # Try to publish any saved batches immediately
+            if saved_batches:
+                self._republish_saved_batches()
+        else:
+            logger.info("Recovery mode is disabled for client %s", self._client_id)
 
     def all_answers_sent(self) -> bool:
         """
@@ -192,17 +209,9 @@ class ConnectedClient(threading.Thread):
             return
 
     def process_batch(
-        self, message_id, message_code, current_batch, is_last_batch, payload_len
+        self, message_id, message_code, current_batch, is_last_batch, payload
     ) -> bool:
         try:
-            payload = self._protocol_gateway.receive_payload(payload_len)
-            if not payload or len(payload) != payload_len:
-                logger.error("Failed to receive full payload")
-                self._stop_client()
-                return False
-
-            logger.debug("Received payload of length %d", len(payload))
-
             processed_data = self._protocol_gateway.process_payload(
                 message_code, payload
             )
@@ -238,10 +247,28 @@ class ConnectedClient(threading.Thread):
                         "Accumulated %d batches, publishing to queue",
                         self.accumulated_batches,
                     )
-                    for i, batch in enumerate(self.batches_stored):
-                        self._publish_batch(batch)
-                    self.batches_stored = []
-                    self.accumulated_batches = 0
+                    # Only clear after ALL batches are successfully published
+                    successfully_published = []
+                    for batch in self.batches_stored:
+                        if self._publish_batch_safe(batch):
+                            successfully_published.append(batch)
+                            self._last_message_id_published = batch.message_id
+                            logger.debug(
+                                "Successfully published batch %s",
+                                batch.message_id,
+                            )
+                        else:
+                            logger.error(
+                                "Failed to publish batch %s, keeping for retry",
+                                batch.message_id,
+                            )
+                            break  # Stop processing on first failure
+
+                    # Only remove successfully published batches
+                    for batch in successfully_published:
+                        if batch in self.batches_stored:
+                            self.batches_stored.remove(batch)
+                            self.accumulated_batches -= 1
 
             else:
                 self._publish_message(
@@ -269,64 +296,130 @@ class ConnectedClient(threading.Thread):
             self._stop_client()
             return False
 
-    def _publish_batch(self, batch_message: BatchMessage):
+    def _publish_batch_safe(self, batch_message: BatchMessage) -> bool:
+        """
+        Safely publish a batch with proper error handling.
+        Returns True if successfully published and can be removed from storage.
+        """
         try:
+
+            logger.debug(
+                "Attempting to publish batch %s for client %s",
+                batch_message.message_id,
+                batch_message.client_id,
+            )
+            if (
+                int(batch_message.message_id)
+                != int(self._last_message_id_published) + 1
+                and self._last_message_id_published != -1
+            ):
+                logger.warning(
+                    "Batch %s is NOT the next expected batch after %s",
+                    batch_message.message_id,
+                    self._last_message_id_published,
+                )
+
             queue_key = self._get_queue_key(batch_message.message_code)
             message_type = self._get_message_type(batch_message.message_code)
 
-            if queue_key:
-                headers = {
-                    "client_id": batch_message.client_id,
-                    "message_id": batch_message.message_id,
-                }
-                for i, item in enumerate(batch_message.processed_data):
-                    if not is_dataclass(item):
-                        logger.warning(
-                            "Item #%d in processed_data is not a dataclass. Type: %s, Value: %s",
-                            i,
-                            type(item),
-                            item,
-                        )
-                batch_payload = [
-                    asdict(item) if is_dataclass(item) else item
-                    for item in batch_message.processed_data
-                ]
-                success = self.broker.publish(
-                    target=queue_key,
-                    message=batch_payload,
-                    msg_type=message_type,
-                    headers=headers,
+            if not queue_key:
+                logger.error(
+                    "No queue key for message code %s", batch_message.message_code
                 )
+                return False
 
-                if success:
-                    safe_delete_batch_file(batch_message)
+            headers = {
+                "client_id": batch_message.client_id,
+                "message_id": batch_message.message_id,
+            }
 
-                if batch_message.is_last_batch == IS_LAST_BATCH_FLAG:
-                    success = self.broker.publish(
-                        target=queue_key,
-                        message={},  # Empty message to indicate end of batch
-                        msg_type="EOS",
-                        headers=headers,
-                        priority=1,
+            # Prepare payload
+            batch_payload = []
+            for i, item in enumerate(batch_message.processed_data):
+                if not is_dataclass(item):
+                    logger.warning(
+                        "Item #%d is not a dataclass. Type: %s", i, type(item)
                     )
-                    self._processed_datasets_from_request += 1
+                batch_payload.append(asdict(item) if is_dataclass(item) else item)
 
-                if not success:
-                    logger.error("Failed to publish batch to queue %s", queue_key)
-                    raise Exception("Failed to publish batch to queue")
+            # Publish main batch
+            success = self.broker.publish(
+                target=queue_key,
+                message=batch_payload,
+                msg_type=message_type,
+                headers=headers,
+            )
 
-        except (TypeError, ValueError) as e:
-            logger.error("Error serializing data to JSON: %s", e)
-            logger.error(batch_message.processed_data)
+            if not success:
+                logger.error(
+                    "Failed to publish batch %s to queue %s",
+                    batch_message.message_id,
+                    queue_key,
+                )
+                return False
+
+            # Publish EOS if last batch
+            if batch_message.is_last_batch == IS_LAST_BATCH_FLAG:
+                eos_success = self.broker.publish(
+                    target=queue_key,
+                    message={},
+                    msg_type="EOS",
+                    headers=headers,
+                    priority=1,
+                )
+                if not eos_success:
+                    logger.error(
+                        "Failed to publish EOS for batch %s", batch_message.message_id
+                    )
+                    return False
+                self._processed_datasets_from_request += 1
+
+            # Only delete from disk if everything succeeded
+            safe_delete_batch_file(batch_message)
+            logger.debug(
+                "Successfully published and cleaned up batch %s",
+                batch_message.message_id,
+            )
+            return True
 
         except Exception as e:
             logger.error(
-                "Unexpected error in _publish_batch: %s, from client %s",
+                "Exception in _publish_batch_safe for batch %s: %s",
+                batch_message.message_id,
                 e,
-                self._client_id,
             )
-            self._stop_client()
-            return
+            return False
+
+    def _republish_saved_batches(self):
+        """
+        Attempt to republish all saved batches from previous sessions.
+        """
+        logger.info(
+            "Attempting to republish %d saved batches", len(self.batches_stored)
+        )
+
+        successfully_published = []
+        for batch in self.batches_stored[
+            :
+        ]:  # Copy to avoid modification during iteration
+            if self._publish_batch_safe(batch):
+                successfully_published.append(batch)
+            else:
+                logger.warning(
+                    "Failed to republish batch %s, will retry later", batch.message_id
+                )
+
+        # Remove successfully published batches
+        for batch in successfully_published:
+            if batch in self.batches_stored:
+                self.batches_stored.remove(batch)
+                self.accumulated_batches -= 1
+
+        logger.info(
+            "Successfully republished %d batches, %d remaining",
+            len(successfully_published),
+            len(self.batches_stored),
+        )
 
     def _publish_message(
         self,
@@ -417,18 +510,3 @@ class ConnectedClient(threading.Thread):
         except Exception as e:
             logger.error("Error sending result to client %s: %s", self._client_id, e)
             self._stop_client()
-
-    def send_all_stored_results(self):
-        """
-        Resend all stored results to the client.
-        This is useful for recovery mode to ensure all results are sent.
-        """
-        logger.info("Resending all stored results for client %s", self._client_id)
-        for saved_result in self.sent_results:
-            try:
-                self._protocol_gateway.send_result(saved_result.to_dict())
-                self.add_sent_answer()
-                delete_result_file(self._client_id, saved_result.query)
-            except Exception as e:
-                logger.error("Error resending saved result: %s", e)
-                break

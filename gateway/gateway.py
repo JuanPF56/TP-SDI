@@ -4,20 +4,19 @@ import os
 import time
 import threading
 
+from protocol_gateway_proxy import ProtocolGatewayProxy
+from raw_message import RawMessage
 from client_registry import ClientRegistry
 from connected_client import ConnectedClient
 from result_dispatcher import ResultDispatcher
-from common.protocol import unpack_header, TIPO_MENSAJE, SIZE_OF_UUID, SIZE_OF_HEADER
-import common.sender as sender
-import common.receiver as receiver
+from storage import load_clients_from_disk
+from common.protocol import TIPO_MENSAJE
 from common.logger import get_logger
 
 logger = get_logger("Gateway")
 
 MAX_RETRIES = 5
-DELAY_BETWEEN_RETRIES = 50
-
-TIMEOUT_PROXY = 3600
+DELAY_BETWEEN_RETRIES = 5
 
 
 class Gateway:
@@ -28,16 +27,18 @@ class Gateway:
         self.port = int(os.getenv("PROXY_PORT", config["DEFAULT"]["PROXY_PORT"]))
 
         self._gateway_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._protocol = None
         self._socket_lock = threading.Lock()
         self._connect_to_proxy()
-
         self._was_closed = False
 
         self._clients_connected = ClientRegistry()
-        self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
-
-        self._result_dispatcher = None
         self._setup_result_dispatcher()
+
+        self._datasets_expected = int(config["DEFAULT"]["DATASETS_EXPECTED"])
+        self._result_dispatcher = None
+
+        self.restore_connected_clients()
 
         try:
             with open(f"/tmp/{self.node_name}_ready", "w", encoding="utf-8") as f:
@@ -55,12 +56,11 @@ class Gateway:
             try:
                 self._gateway_socket.connect((self.host, self.port))
                 logger.info("Connected to proxy at %s:%s", self.host, self.port)
-                gateway_number = int(self.node_name.split("_")[-1])
-                sender.send(
-                    self._gateway_socket,
-                    gateway_number.to_bytes(1, byteorder="big"),
+                self._protocol = ProtocolGatewayProxy(
+                    gateway_socket=self._gateway_socket,
+                    shared_socket_lock=self._socket_lock,
                 )
-                return
+                return self.send_gateway_number()
             except Exception as e:
                 attempt += 1
                 logger.warning("Connection attempt %d failed: %s", attempt, e)
@@ -71,6 +71,35 @@ class Gateway:
                     logger.error(
                         "Max connection attempts reached. Check if server is up."
                     )
+
+    def send_gateway_number(self) -> bool:
+        gateway_number = int(self.node_name.split("_")[-1])
+        return self._protocol.send_gateway_number(gateway_number)
+
+    def restore_connected_clients(self):
+        """
+        Restore connected clients from the registry.
+        This is called when the gateway is restarted to re-establish connections.
+        """
+        logger.info("Restoring connected clients...")
+        clients_to_restore = load_clients_from_disk()
+        if not clients_to_restore:
+            logger.info("No clients to restore.")
+            return
+        for client_id in clients_to_restore:
+            logger.info("Restoring client %s", client_id)
+            try:
+                restored_client = ConnectedClient(
+                    client_id=client_id,
+                    gateway_socket=self._gateway_socket,
+                    config=self.config,
+                    shared_socket_lock=self._socket_lock,
+                )
+                self._clients_connected.add(restored_client)
+                logger.info("New client connected: %s", client_id)
+                restored_client.start()
+            except Exception as e:
+                logger.error("Error restoring client %s: %s", client_id, e)
 
     def gateway_is_connected(self) -> bool:
         """
@@ -90,16 +119,11 @@ class Gateway:
             logger.debug("Received client ID: '%s' (len=%d)", client_id, len(client_id))
 
             existing_client = self._clients_connected.get_by_uuid(client_id)
+            if existing_client:
+                logger.info(
+                    "Client %s already connected, skipping creation.", client_id
+                )
 
-            if existing_client and existing_client.was_closed:
-                logger.info("Reusing existing client object for %s", client_id)
-                # Reabrí el socket en el objeto existente (si es posible)
-                existing_client._gateway_socket = self._gateway_socket
-                existing_client._stop_flag.clear()
-                existing_client._running = True
-                existing_client.was_closed = False
-                existing_client.start()
-                existing_client.send_all_stored_results()
             else:
                 new_connected_client = ConnectedClient(
                     client_id=client_id,
@@ -114,104 +138,65 @@ class Gateway:
         except OSError as e:
             logger.error("Error accepting new connection: %s", e)
 
-    def _handle_disconnect_client(self):
-        try:
-            client_id = receiver.receive_data(
-                self._gateway_socket, SIZE_OF_UUID, timeout=TIMEOUT_PROXY
-            )
-            if not client_id:
-                logger.warning("No UUID received for disconnection.")
-                return
-
-            client_id = client_id.decode("utf-8").rstrip("\x00")
-            logger.debug("Received client ID for disconnection: '%s'", client_id)
-
-            client_to_disconnect = self._clients_connected.get_by_uuid(client_id)
-            if client_to_disconnect:
-                logger.info("Disconnecting client: %s", client_id)
-                client_to_disconnect._stop_client()
-                self._clients_connected.remove(client_to_disconnect)
-            else:
-                logger.warning("Client %s not found for disconnection.", client_id)
-
-        except OSError as e:
-            logger.error("Error handling disconnect request: %s", e)
-
-    def _handle_batch_messages(
-        self,
-        message_id,
-        tipo_mensaje,
-        encoded_id,
-        batch_number,
-        is_last_batch,
-        payload_length,
-    ) -> bool:
-        client = self._clients_connected.get_by_uuid(
-            encoded_id.decode("utf-8").rstrip("\x00")
-        )
+    def _handle_batch_messages(self, raw_message: RawMessage) -> bool:
+        client_id_from_message = raw_message.encoded_id.decode("utf-8").rstrip("\x00")
+        client = self._clients_connected.get_by_uuid(client_id_from_message)
         if not client:
-            logger.warning("Client not found for batch message %s", batch_number)
-            return False
+            logger.warning(
+                "Client not found for batch message %s", raw_message.batch_number
+            )
+            logger.info("Creating new client from batch message")
+            client = ConnectedClient(
+                client_id=client_id_from_message,
+                gateway_socket=self._gateway_socket,
+                config=self.config,
+                shared_socket_lock=self._socket_lock,
+            )
+            self._clients_connected.add(client)
 
         logger.debug("Handling batch message for client %s", client.get_client_id())
         return client.process_batch(
-            message_id, tipo_mensaje, batch_number, is_last_batch, payload_length
+            raw_message.message_id,
+            raw_message.tipo_mensaje,
+            raw_message.batch_number,
+            raw_message.is_last_batch,
+            raw_message.payload,
         )
 
     def run(self):
         logger.info("Gateway running...")
         while not self._was_closed:
             try:
-                # self._reap_completed_clients()
-
                 if self._gateway_socket.fileno() == -1:
                     logger.info("Socket already closed, stopping gateway loop.")
                     break
 
-                new_message = receiver.receive_data(
-                    self._gateway_socket, SIZE_OF_HEADER, timeout=TIMEOUT_PROXY
-                )
-                (
-                    message_id,
-                    tipo_mensaje,
-                    encoded_id,
-                    batch_number,
-                    is_last_batch,
-                    payload_length,
-                ) = unpack_header(new_message)
+                raw_message = self._protocol.receive_message()
 
-                if tipo_mensaje == TIPO_MENSAJE["NEW_CLIENT"]:
-                    self._handle_new_client(encoded_id)
-
-                elif tipo_mensaje == TIPO_MENSAJE["DISCONNECT_CLIENT"]:
-                    self._handle_disconnect_client()
+                if raw_message.tipo_mensaje == TIPO_MENSAJE["NEW_CLIENT"]:
+                    self._handle_new_client(raw_message.encoded_id)
 
                 elif (
-                    tipo_mensaje == TIPO_MENSAJE["BATCH_MOVIES"]
-                    or tipo_mensaje == TIPO_MENSAJE["BATCH_CREDITS"]
-                    or tipo_mensaje == TIPO_MENSAJE["BATCH_RATINGS"]
+                    raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_MOVIES"]
+                    or raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_CREDITS"]
+                    or raw_message.tipo_mensaje == TIPO_MENSAJE["BATCH_RATINGS"]
                 ):
                     try:
-                        self._handle_batch_messages(
-                            message_id,
-                            tipo_mensaje,
-                            encoded_id,
-                            batch_number,
-                            is_last_batch,
-                            payload_length,
-                        )
+                        self._handle_batch_messages(raw_message)
                     except Exception as e:
                         logger.error(
                             "Error in batch with: message_id=%s, tipo_mensaje=%s, batch_number=%s: %s",
-                            message_id,
-                            tipo_mensaje,
-                            batch_number,
+                            raw_message.message_id,
+                            raw_message.tipo_mensaje,
+                            raw_message.batch_number,
                             e,
                         )
                         continue
 
                 else:
-                    logger.warning("Unknown message type received: %s", tipo_mensaje)
+                    logger.warning(
+                        "Unknown message type received: %s", raw_message.tipo_mensaje
+                    )
 
             except OSError as e:
                 if self._was_closed:
@@ -222,20 +207,6 @@ class Gateway:
             except Exception as e:
                 logger.error("Unexpected error: %s", e)
                 return
-
-    def _reap_completed_clients(self):
-        try:
-            logger.info("Checking for any completed clients...")
-            for client in list(self._clients_connected.get_all().values()):
-                if client.all_answers_sent:
-                    logger.info(
-                        "Removing completed client %s",
-                        client.get_client_id(),
-                    )
-                    self._clients_connected.remove(client)
-            logger.info("Done checking.")
-        except Exception as e:
-            logger.error("Error during client cleanup: %s", e)
 
     def _signal_handler(self, signum, frame):
         logger.info("Signal received, stopping server...")
