@@ -54,6 +54,7 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
+        self.clients_ready_events = self.manager.dict()
 
         self.client_manager = ClientManager(
             self.input_queue,
@@ -68,6 +69,7 @@ class JoinBase:
             node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
             movies_handler_ready_event=self.movies_handler_ready,
+            clients_ready_events=self.clients_ready_events,
         )
 
         shard_mapping_str = os.getenv("SHARD_MAPPING", "")
@@ -256,50 +258,43 @@ class JoinBase:
                 return
 
             if not self.movies_handler.client_ready(current_client_id):
-                # Put the message back to the queue for other nodes
-                self.log_debug(
-                    f"Movies table not ready for: client {current_client_id},"
-                    + f"Publishing to input queue {input_queue}."
+                self.log_info(
+                    f"Movies table not ready for client {current_client_id}. Waiting..."
                 )
+                self.movies_handler.wait_for_client(current_client_id)
+
+            self.log_debug(
+                f"Movies table ready for client {current_client_id},"
+                + "Processing batch..."
+            )
+
+            # Get the movies table for the client
+            movies_table = self.movies_handler.get_movies_table(current_client_id)
+            self.log_debug(
+                f"Movies table for client {current_client_id}: {movies_table}"
+            )
+
+            if not movies_table:
+                self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has no movies table.")
+                return
+
+            # Build a set of movie IDs for fast lookup
+            movies_by_id = {movie["id"]: movie for movie in movies_table}
+            
+            joined_data = self.perform_join(data, movies_by_id)
+
+
+            if not joined_data:
+                self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has no joined data.")
+            else:
+                self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has joined data of length {len(joined_data)}.")
                 self.rabbitmq_processor.publish(
-                    target=input_queue,
-                    message=decoded,
+                    target=self.output_queue,
+                    message=joined_data,
                     msg_type=msg_type,
                     headers=headers,
                 )
-            else:
-                self.log_debug(
-                    f"Movies table ready for client {current_client_id},"
-                    + "Processing batch..."
-                )
-
-                # Get the movies table for the client
-                movies_table = self.movies_handler.get_movies_table(current_client_id)
-                self.log_debug(
-                    f"Movies table for client {current_client_id}: {movies_table}"
-                )
-    
-                if not movies_table:
-                    self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has no movies table.")
-                    return
-
-                # Build a set of movie IDs for fast lookup
-                movies_by_id = {movie["id"]: movie for movie in movies_table}
-              
-                joined_data = self.perform_join(data, movies_by_id)
-
-
-                if not joined_data:
-                    self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has no joined data.")
-                else:
-                    self.log_info(f"Message ID: {message_id} with length {len(data)} for client {current_client_id} has joined data of length {len(joined_data)}.")
-                    self.rabbitmq_processor.publish(
-                        target=self.output_queue,
-                        message=joined_data,
-                        msg_type=msg_type,
-                        headers=headers,
-                    )
-                self.duplicate_handler.add(current_client_id, input_queue, message_key)
+            self.duplicate_handler.add(current_client_id, input_queue, message_key)
         except pika.exceptions.StreamLostError as e:
             self.log_info(f"Stream lost, reconnecting: {e}")
             self.rabbitmq_processor.reconnect_and_restart(self.process_batch)

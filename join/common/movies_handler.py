@@ -14,7 +14,7 @@ EOS_TYPE = "EOS"
 
 class MoviesHandler(multiprocessing.Process):
     def __init__(self, config, manager, node_id, node_name, year_nodes_to_await,
-                 movies_handler_ready_event=None):
+                 movies_handler_ready_event, clients_ready_events):
         """
         Initialize the MoviesHandler class with the given configuration and manager.
         """
@@ -39,6 +39,7 @@ class MoviesHandler(multiprocessing.Process):
         self.manager = manager
         self.movies = self.manager.dict()
         self.movies_handler_ready_event = movies_handler_ready_event
+        self.clients_ready_events = clients_ready_events
 
         self.year_eos_flags = self.manager.dict()
         self.year_nodes_to_await = year_nodes_to_await
@@ -101,6 +102,16 @@ class MoviesHandler(multiprocessing.Process):
                         self.write_storage("moveos", self.year_eos_flags[current_client_id], current_client_id, self.node_id)
                         logger.debug("EOS received for node %s.", node_id)
                     logger.info("EOS flags for client %s: %s", current_client_id, self.year_eos_flags[current_client_id])   
+                    if self.client_ready(current_client_id):
+                        logger.info("Client %s is ready with EOS flags: %s",
+                                    current_client_id, self.year_eos_flags[current_client_id])
+                        if not self.movies_handler_ready_event.is_set():
+                            self.movies_handler_ready_event.set()
+                            logger.info("MoviesHandler is now ready for client %s", current_client_id)
+                        if current_client_id not in self.clients_ready_events:
+                            self.clients_ready_events[current_client_id] = multiprocessing.Event()
+                        self.clients_ready_events[current_client_id].set()
+                        logger.info("Client %s is now ready and event set.", current_client_id)
                 else:
                     try:
                         decoded = json.loads(body)
@@ -215,6 +226,15 @@ class MoviesHandler(multiprocessing.Process):
         else:
             logger.error("No movies table found for client %s", client_id)
 
+    def wait_for_client(self, client_id):
+        """
+        Wait for the client to be ready by checking the EOS flags.
+        """
+        if client_id not in self.clients_ready_events:
+            self.clients_ready_events[client_id] = multiprocessing.Event()
+        
+        self.clients_ready_events[client_id].wait()
+        logger.info("Client %s is ready", client_id)
 
     def write_storage(self, key, data, client_id, node_id):
         # Get the "./storage/{node_id}" directory
@@ -261,8 +281,7 @@ class MoviesHandler(multiprocessing.Process):
         """
         storage_dir = "./storage" + os.path.sep + str(self.node_id)
         if not os.path.exists(storage_dir):
-            logger.warning("Storage directory for node %s does not exist: %s", self.node_id, storage_dir)
-            self.movies_handler_ready_event.set()
+            logger.error("Storage directory for node %s does not exist: %s", self.node_id, storage_dir)
             return
     
         logger.info("Loading persisted data from storage directory: %s", storage_dir)
@@ -293,8 +312,22 @@ class MoviesHandler(multiprocessing.Process):
                 logger.info("Loaded %s data for client %s from %s", key_type, client_id, file_path)
             except Exception as e:
                 logger.error(f"Error reading {key_type} data from {file_path}: {e}")
+
+        if self.at_least_one_table_ready():
+            self.movies_handler_ready_event.set()
+            logger.info("MoviesHandler is ready with at least one movies table populated.")
         
-        self.movies_handler_ready_event.set()
+
+    def at_least_one_table_ready(self):
+        """
+        Check if at least one movies table is ready.
+        """
+        for client_id in self.movies.keys():
+            if self.client_ready(client_id):
+                logger.info("At least one movies table is ready for client %s", client_id)
+                return True
+        logger.info("No movies tables are ready yet.")
+        return False
 
     def update(self, key_type, data, client_id, node_id):
         """
