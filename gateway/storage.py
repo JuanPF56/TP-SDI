@@ -13,6 +13,21 @@ from result_message import ResultMessage
 logger = get_logger("Storage")
 
 
+def load_clients_from_disk():
+    """Load client IDs from the storage directory."""
+    storage_dir = Path("storage")
+    if not storage_dir.is_dir():
+        logger.info("No storage directory found")
+        return []
+
+    clients_id = []
+    for client_dir in storage_dir.iterdir():
+        if client_dir.is_dir() and not client_dir.name.startswith("."):
+            clients_id.append(client_dir.name)
+    logger.debug("Loaded clients from disk: %s", clients_id)
+    return clients_id
+
+
 def custom_asdict(obj):
     try:
         if isinstance(obj, list):

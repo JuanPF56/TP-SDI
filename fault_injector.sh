@@ -11,7 +11,7 @@ declare -A NODE_PREFIXES=(
   ["sentiment_analyzer"]="sentiment_analyzer"
   ["join_credits"]="join_credits"
   ["join_ratings"]="join_ratings"
- # ["gateway"]="gateway"
+  # ["gateway"]="gateway"
 )
 
 # # ✅ OPCIONAL: Lista de contenedores específicos para matar (modo dirigido)

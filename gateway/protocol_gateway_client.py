@@ -6,15 +6,12 @@ This module implements the ProtocolGateway class, which handles communication wi
 import socket
 import json
 import threading
-import common.receiver as receiver
 import common.sender as sender
 from common.decoder import Decoder
 from common.protocol import (
-    SIZE_OF_HEADER,
     TIPO_MENSAJE,
     SIZE_OF_HEADER_RESULTS,
     pack_result_header,
-    unpack_header,
 )
 from common.logger import get_logger
 
@@ -43,91 +40,6 @@ class ProtocolGateway:
         Check if the gateway is connected
         """
         return self._gateway_socket is not None and self._gateway_socket.fileno() != -1
-
-    def receive_header(self) -> tuple | None:
-        """
-        Receive and unpack the header from the client.
-        """
-        try:
-            header = receiver.receive_data(
-                self._gateway_socket, SIZE_OF_HEADER, timeout=TIMEOUT_HEADER
-            )
-
-            if not header or len(header) != SIZE_OF_HEADER:
-                logger.error("Invalid or incomplete header received")
-                return None
-
-            (
-                message_id,
-                type_of_batch,
-                encoded_id,
-                current_batch,
-                is_last_batch,
-                payload_len,
-            ) = unpack_header(header)
-            message_code = TIPO_MENSAJE_INVERSO.get(type_of_batch)
-
-            if message_code is None:
-                logger.error("Unknown message code: %s", type_of_batch)
-                return None
-
-            return (
-                message_id,
-                message_code,
-                encoded_id,
-                current_batch,
-                is_last_batch,
-                payload_len,
-            )
-
-        except TimeoutError as e:
-            logger.error("Timeout waiting for receiving header: %s", e)
-            return None
-
-        except receiver.ReceiverError as e:
-            logger.error("Connection error while receiving header: %s", e)
-            return None
-
-        except Exception as e:
-            logger.error("Unexpected error while receiving header: %s", e)
-            return None
-
-    def receive_payload(self, payload_len: int) -> bytes | None:
-        """
-        Receive the payload from the client
-        """
-        if payload_len <= 0:
-            logger.error("Payload length is zero")
-            return None
-
-        try:
-            data = receiver.receive_data(
-                self._gateway_socket, payload_len, timeout=TIMEOUT_PAYLOAD
-            )
-
-            if data is None:
-                logger.error("No data received. Client may have disconnected.")
-                return None
-
-            if len(data) != payload_len:
-                logger.error(
-                    "Expected %d bytes, but received %d bytes", payload_len, len(data)
-                )
-                return None
-
-            return data
-
-        except TimeoutError as e:
-            logger.error("Timeout waiting for receiving payload: %s", e)
-            return None
-
-        except receiver.ReceiverError as e:
-            logger.error("Connection error while receiving payload: %s", e)
-            return None
-
-        except Exception as e:
-            logger.error("Unexpected error while receiving payload: %s", e)
-            return None
 
     def process_payload(self, message_code: str, payload: bytes) -> list | None:
         """

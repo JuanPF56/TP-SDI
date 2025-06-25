@@ -82,7 +82,8 @@ class RabbitMQProcessor:
                 # Handle target_queues being a single item, list, or dict
                 if isinstance(self.target_queues, str):
                     self.channel.queue_declare(
-                        queue=self.target_queues, arguments={"x-max-priority": MAX_PRIORITY}
+                        queue=self.target_queues,
+                        arguments={"x-max-priority": MAX_PRIORITY},
                     )
                 elif isinstance(self.target_queues, list):
                     for queue in self.target_queues:
@@ -94,7 +95,8 @@ class RabbitMQProcessor:
                         if isinstance(target, list):
                             for queue in target:
                                 self.channel.queue_declare(
-                                    queue=queue, arguments={"x-max-priority": MAX_PRIORITY}
+                                    queue=queue,
+                                    arguments={"x-max-priority": MAX_PRIORITY},
                                 )
                         else:
                             self.channel.queue_declare(
@@ -112,7 +114,9 @@ class RabbitMQProcessor:
                     else:
                         queue_name = f"{self.source_exchange}_node"
                     result = self.channel.queue_declare(
-                        queue=queue_name, exclusive=True, arguments={"x-max-priority": MAX_PRIORITY}
+                        queue=queue_name,
+                        exclusive=True,
+                        arguments={"x-max-priority": MAX_PRIORITY},
                     )
                     queue_name = result.method.queue
                     self.channel.queue_bind(
@@ -144,7 +148,7 @@ class RabbitMQProcessor:
 
         logger.error("Failed to connect to RabbitMQ after %d attempts.", RETRIES)
         return False
-    
+
     def reject(self, method, requeue=True):
         """Reject a message, optionally requeuing it"""
         if self.channel and not self.channel.is_closed:
@@ -181,7 +185,13 @@ class RabbitMQProcessor:
             logger.error("Error inesperado al consumir mensajes: %s", e)
 
     def publish(
-        self, target, message, msg_type=None, exchange=False, headers=None, priority=MAX_PRIORITY-1
+        self,
+        target,
+        message,
+        msg_type=None,
+        exchange=False,
+        headers=None,
+        priority=MAX_PRIORITY - 1,
     ):
         if not self.connection or self.connection.is_closed:
             logger.warning("Publish aborted: RabbitMQ connection is closed.")
