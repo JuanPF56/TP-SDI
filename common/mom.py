@@ -249,6 +249,17 @@ class RabbitMQProcessor:
             self.channel.stop_consuming()
             logger.info("Detenido el consumo de mensajes.")
 
+    def sleep(self, seconds):
+        """
+        Pausa la ejecución durante un número de segundos.
+        """
+        if seconds <= 0:
+            logger.warning("Tiempo de espera debe ser mayor que 0. No se realizará la pausa.")
+            return
+        logger.debug("Durmiendo por %d segundos...", seconds)
+        self.connection.sleep(seconds)
+        logger.debug("Despertado después de %d segundos.", seconds)
+                
     def stop_consuming_threadsafe(self):
         if self.channel and self.channel.is_open:
             self.channel.connection.add_callback_threadsafe(self.channel.stop_consuming)

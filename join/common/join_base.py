@@ -54,7 +54,6 @@ class JoinBase:
         self.manager = multiprocessing.Manager()
         self.movies_handler_ready = self.manager.Event()
         self.master_logic_started_event = self.manager.Event()
-        self.client_ready_event = self.manager.Event()
 
         self.client_manager = ClientManager(
             self.input_queue,
@@ -69,7 +68,6 @@ class JoinBase:
             node_name=self.node_name,
             year_nodes_to_await=int(os.getenv("YEAR_NODES_TO_AWAIT", "1")),
             movies_handler_ready_event=self.movies_handler_ready,
-            client_ready_event=self.client_ready_event,
         )
 
         shard_mapping_str = os.getenv("SHARD_MAPPING", "")
@@ -262,7 +260,7 @@ class JoinBase:
                 self.log_info(
                     f"Movies table not ready for client {current_client_id}. Waiting..."
                 )
-                self.movies_handler.wait_for_client(current_client_id)
+                self.movies_handler.wait_for_client(current_client_id, self.rabbitmq_processor)
 
             self.log_debug(
                 f"Movies table ready for client {current_client_id},"
