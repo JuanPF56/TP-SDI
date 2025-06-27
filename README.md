@@ -75,6 +75,7 @@ Antes de generar el archivo `docker-compose.system.yml`, podés editar el archiv
 
 ```ini
 [DEFAULT]
+coordinator_nodes = 3
 gateway_nodes = 5
 cleanup_filter_nodes = 6
 production_filter_nodes = 4
@@ -151,7 +152,7 @@ pip install -r requirements.txt
 > Nota: Si ya tienes desacrgados los datasets, puedes correr el flag `-skip_download`para saltear la descarga de los datasets
 >
 >```bash
-> sudo ./generate-compose.sh -skip_download -cant_clientes 4
+> sudo ./generate-compose.sh -skip_download -cant_clientes 2
 >```
 
 ---
@@ -289,22 +290,22 @@ Además, se puede especificar la carpeta que contiene los resultados generados p
 
 #### 📌 Ejemplos de uso
 
-✅ Comparar contra los resultados esperados del 20%:
-
-```bash
-python comparar_resultados.py -20 --folder resultados_20
-```
-
-✅ Comparar contra los resultados esperados del 100%:
-
-```bash
-python comparar_resultados.py -100 --folder resultados_100
-```
-
 ✅ Comparar contra el 20% usando la carpeta default (`resultados`):
 
 ```bash
 python comparar_resultados.py -20
+```
+
+✅ Comparar contra el 100% usando la carpeta default (`resultados`):
+
+```bash
+python comparar_resultados.py -100
+```
+
+✅ Comparar contra los resultados esperados del 100% en la carpeta específica (`resultados_100`):
+
+```bash
+python comparar_resultados.py -100 --folder resultados_100
 ```
 
 #### ⚠️ Importante
