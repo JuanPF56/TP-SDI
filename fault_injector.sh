@@ -6,7 +6,7 @@ get_timestamp() {
 }
 
 # Contenedores inmunes: no se matan nunca
-IMMUNE_CONTAINERS=("proxy" "q1" "q2" "q3" "q4" "q5" "coordinator" "rabbitmq" "client")
+IMMUNE_CONTAINERS=("proxy" "q1" "q2" "q3" "q4" "q5" "rabbitmq" "client")
 
 # Prefijos por tipo de nodo
 declare -A NODE_PREFIXES=(
@@ -17,6 +17,7 @@ declare -A NODE_PREFIXES=(
     ["join_credits"]="join_credits"
     ["join_ratings"]="join_ratings"
     ["gateway"]="gateway"
+    ["coordinator"]="coordinator"
 )
 
 # ✅ OPCIONAL: Lista de contenedores específicos para matar (modo dirigido)
@@ -31,7 +32,7 @@ declare -A NODE_PREFIXES=(
 # )
 
 # Lista de tipos (orden cíclico)
-NODE_TYPES=("cleanup" "year" "production" "sentiment_analyzer" "join_credits" "join_ratings" "gateway")
+NODE_TYPES=("cleanup" "year" "production" "sentiment_analyzer" "join_credits" "join_ratings" "gateway" "coordinator")
 current_type_index=0
 
 # Archivo de log opcional (descomenta si quieres guardar en archivo)
