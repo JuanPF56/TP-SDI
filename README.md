@@ -359,5 +359,6 @@ El script informa por consola si los resultados son consistentes o muestra las d
 
 ## 📑 Documentación
 
-- [Informe](https://docs.google.com/document/d/18aTTPUsk92PdTrNy6LHbvxGXs0G7jUu8EUrdss36D48/edit?usp=sharing)
-- [Diagramas](https://drive.google.com/file/d/15dcFuXlb_mMzxmrfxLuxFFdnBSae8ah3/view?usp=sharing)
+- [Informe (PDF)](resources/informe.pdf)
+- [Informe (Google Docs)](https://docs.google.com/document/d/18aTTPUsk92PdTrNy6LHbvxGXs0G7jUu8EUrdss36D48/edit?usp=sharing)
+- [Diagramas (Draw.io)](https://drive.google.com/file/d/15dcFuXlb_mMzxmrfxLuxFFdnBSae8ah3/view?usp=sharing)
