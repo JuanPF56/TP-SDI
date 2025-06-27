@@ -20,8 +20,6 @@ class ArgProdRatingsQuery(QueryBase):
         self.source_queue = config["DEFAULT"].get("movies_ratings_queue", "movies_ratings")
         super().__init__(config, self.source_queue, logger_name="q3")
 
-        self.duplicate_handler = DuplicateHandler()
-
         self.movie_ratings = defaultdict(
             lambda: defaultdict(dict)
         )  # ratings[client_id, req_num][movie_id]
@@ -104,6 +102,7 @@ class ArgProdRatingsQuery(QueryBase):
 
             if not self.client_manager.has_queue_received_eos_from_node(client_id, input_queue, node_id):
                 self.client_manager.mark_eos(client_id, input_queue, node_id)
+                self.write_eos_to_file(client_id)
                 logger.info("✅ EOS received from node %s.", node_id)
                 if self.client_manager.has_received_all_eos(client_id, input_queue):
                     logger.info("✅ All EOS received. Proceeding to calculate results.")
@@ -133,7 +132,7 @@ class ArgProdRatingsQuery(QueryBase):
             return
 
         for movie in movies:
-            movie_id = movie.get("id")
+            movie_id = str(movie.get("id"))
             if movie_id is None:
                 continue
 
@@ -149,9 +148,28 @@ class ArgProdRatingsQuery(QueryBase):
             movie_data["rating_sum"] += movie.get("rating", 0)
             movie_data["rating_count"] += 1
 
+        self._write_data_to_file(
+            client_id, self.movie_ratings[client_id], "partial_results"
+        )
+
         self.duplicate_handler.add(client_id, input_queue, message_key)
         self.rabbitmq_processor.acknowledge(method)
 
+    def update_data(self, client_id, key, data):
+        if key == "partial_results":
+            for movie_id, movie_data in data.items():
+                movie_id = str(movie_id)
+                if movie_id not in self.movie_ratings[client_id]:
+                    self.movie_ratings[client_id][movie_id] = {
+                        "original_title": movie_data.get("original_title", "Unknown"),
+                        "rating_sum": 0,
+                        "rating_count": 0,
+                    }
+                self.movie_ratings[client_id][movie_id]["rating_sum"] += movie_data.get("rating_sum", 0)
+                self.movie_ratings[client_id][movie_id]["rating_count"] += movie_data.get("rating_count", 0)
+            logger.info("Updated movie ratings for client %s", client_id)
+        else:
+            logger.warning("Unknown key for update_data: %s", key)
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

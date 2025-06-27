@@ -22,8 +22,6 @@ class ArgProdActorsQuery(QueryBase):
         )
         super().__init__(config, self.source_queue, logger_name="q4")
 
-        self.duplicate_handler = DuplicateHandler()
-
         self.actor_participations = defaultdict(dict)
 
     def _calculate_and_publish_results(self, client_id):
@@ -95,6 +93,7 @@ class ArgProdActorsQuery(QueryBase):
                 client_id, input_queue, node_id
             ):
                 self.client_manager.mark_eos(client_id, input_queue, node_id)
+                self.write_eos_to_file(client_id)
                 if self.client_manager.has_received_all_eos(client_id, input_queue):
                     logger.info("All nodes have sent EOS. Calculating results...")
                     self._calculate_and_publish_results(client_id)
@@ -145,9 +144,32 @@ class ArgProdActorsQuery(QueryBase):
                     self.actor_participations[key][actor] = {"name": actor, "count": 0}
                 self.actor_participations[key][actor]["count"] += 1
 
+        self._write_data_to_file(
+            client_id, self.actor_participations[client_id], "partial_results"
+        )
+
         self.duplicate_handler.add(client_id, input_queue, message_key)
         self.rabbitmq_processor.acknowledge(method)
 
+    def update_data(self, client_id, key, data):
+        if key == "partial_results":
+            for actor, actor_data in data.items():
+                actor = str(actor)
+                if actor not in self.actor_participations[client_id]:
+                    self.actor_participations[client_id][actor] = {
+                        "name": actor_data.get("name", "Unknown"),
+                        "count": 0,
+                    }
+                self.actor_participations[client_id][actor]["count"] += actor_data.get(
+                    "count", 0
+                )
+            logger.info(
+                "Updated actor participations for client %s: %s",
+                client_id,
+                self.actor_participations[client_id],
+            )
+        else:
+            logger.warning("Unknown key for update_data: %s", key)
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

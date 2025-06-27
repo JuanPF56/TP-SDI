@@ -36,6 +36,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
     sentiment_analyzer = config["DEFAULT"].getint("sentiment_analyzer_nodes", 1)
     j_credits = config["DEFAULT"].getint("join_credits_nodes", 1)
     j_ratings = config["DEFAULT"].getint("join_ratings_nodes", 1)
+    coordinator = config["DEFAULT"].getint("coordinator_nodes", 1)
 
     services = {}
 
@@ -209,6 +210,7 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 },
                 "networks": ["testing_net"],
             }
+
     # Nodes to await by query
     query_node_names = []
     nodes_to_await = {
@@ -293,7 +295,9 @@ def generate_system_compose(filename="docker-compose.system.yml"):
             },
         }
 
-    # Coordinator node
+    # Coordinator nodes
+    coordinator_node_names = [f"coordinator_{i}" for i in range(1, coordinator + 1)]
+
     monitored_nodes = (
         filter_node_names
         + sentiment_node_names
@@ -301,31 +305,66 @@ def generate_system_compose(filename="docker-compose.system.yml"):
         + query_node_names
         + gateway_node_names
         + ["proxy"]
+        + coordinator_node_names
     )
+
+    coordinator_nodes_depend_start = (
+        filter_node_names
+        + sentiment_node_names
+        + join_node_names
+        + query_node_names
+        + gateway_node_names
+        + ["proxy"]
+    )
+
     depends_coordinator = {
-        node: {"condition": "service_started"} for node in monitored_nodes
-    }
-    services["coordinator"] = {
-        "container_name": "coordinator",
-        "image": "coordinator:latest",
-        "entrypoint": "python3 /app/coordinator.py",
-        "volumes": [
-            "/var/run/docker.sock:/var/run/docker.sock",
-            "./coordinator/coordinator.py:/app/coordinator.py",
-            "./filter/cleanup/storage:/app/storage/filter_cleanup",
-            "./filter/year/storage:/app/storage/filter_year",
-            "./filter/production/storage:/app/storage/filter_production",
-            "./sentiment_analyzer/storage:/app/storage/sentiment_analyzer",
-            "./join/credits/storage:/app/storage/join_credits",
-            "./join/ratings/storage:/app/storage/join_ratings",
-        ],
-        "environment": {
-            "MONITORED_NODES": ",".join(monitored_nodes),
-        },
-        "depends_on": {**gateway_depends, **depends_coordinator},
-        "networks": ["testing_net"],
+        node: {"condition": "service_started"}
+        for node in coordinator_nodes_depend_start
     }
 
+    # Peer info para elección
+    peer_list = [
+        f"coordinator_{j}:{election_port_start + j}" for j in range(1, coordinator + 1)
+    ]
+    peers_str = ",".join(peer_list)
+
+    for i in range(1, coordinator + 1):
+        name = f"coordinator_{i}"
+        services[name] = {
+            "container_name": name,
+            "image": "coordinator:latest",
+            "entrypoint": "python3 /app/coordinator.py",
+            "volumes": [
+                "/var/run/docker.sock:/var/run/docker.sock",
+                "./coordinator/coordinator.py:/app/coordinator.py",
+                "./filter/cleanup/storage:/app/storage/filter_cleanup",
+                "./filter/year/storage:/app/storage/filter_year",
+                "./filter/production/storage:/app/storage/filter_production",
+                "./sentiment_analyzer/storage:/app/storage/sentiment_analyzer",
+                "./join/credits/storage:/app/storage/join_credits",
+                "./join/ratings/storage:/app/storage/join_ratings",
+                "./query/q1/storage:/app/storage/q1",
+                "./query/q2/storage:/app/storage/q2",
+                "./query/q3/storage:/app/storage/q3",
+                "./query/q4/storage:/app/storage/q4",
+                "./query/q5/storage:/app/storage/q5",
+            ],
+            "environment": {
+                "MONITORED_NODES": ",".join(monitored_nodes),
+                "NODE_TYPE": "coordinator",
+                "NODE_NAME": name,
+                "NODE_ID": str(i),
+                "NODES_OF_TYPE": str(coordinator),
+                "ELECTION_PORT": str(election_port_start + i),
+                "PEERS": peers_str,
+            },
+            "depends_on": {**gateway_depends, **depends_coordinator},
+            "networks": ["testing_net"],
+        }
+
+    election_port_start += coordinator
+
+    # Testing network configuration
     compose = {
         "services": services,
         "networks": {
