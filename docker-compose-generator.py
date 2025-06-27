@@ -343,6 +343,11 @@ def generate_system_compose(filename="docker-compose.system.yml"):
                 "./sentiment_analyzer/storage:/app/storage/sentiment_analyzer",
                 "./join/credits/storage:/app/storage/join_credits",
                 "./join/ratings/storage:/app/storage/join_ratings",
+                "./query/q1/storage:/app/storage/q1",
+                "./query/q2/storage:/app/storage/q2",
+                "./query/q3/storage:/app/storage/q3",
+                "./query/q4/storage:/app/storage/q4",
+                "./query/q5/storage:/app/storage/q5",
             ],
             "environment": {
                 "MONITORED_NODES": ",".join(monitored_nodes),

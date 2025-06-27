@@ -132,12 +132,15 @@ class Coordinator:
         try:
             if "gateway" in nombre.lower():
                 return  
-                
-            node_type = nombre.split("_")[0]
-            node_suffix = nombre.split("_")[1] if len(nombre.split("_")) > 1 else ""
-            node_number = nombre.split("_")[-1] if len(nombre.split("_")) > 2 else ""
-            dir_path = f"./storage/{node_type}_{node_suffix}/"
-            file_path = f"recovery_mode_{node_number}.flag"
+            if len(nombre) == 2 and nombre.startswith('q'):
+                dir_path = f"./storage/{nombre}/"
+                file_path = "recovery_mode.flag"
+            else:
+                node_type = nombre.split("_")[0]
+                node_suffix = nombre.split("_")[1] if len(nombre.split("_")) > 1 else ""
+                node_number = nombre.split("_")[-1] if len(nombre.split("_")) > 2 else ""
+                dir_path = f"./storage/{node_type}_{node_suffix}/"
+                file_path = f"recovery_mode_{node_number}.flag"
             
             os.makedirs(dir_path, exist_ok=True)
             

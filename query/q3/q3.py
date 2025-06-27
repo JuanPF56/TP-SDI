@@ -132,7 +132,7 @@ class ArgProdRatingsQuery(QueryBase):
             return
 
         for movie in movies:
-            movie_id = movie.get("id")
+            movie_id = str(movie.get("id"))
             if movie_id is None:
                 continue
 
@@ -170,7 +170,7 @@ class ArgProdRatingsQuery(QueryBase):
             logger.info("Updated movie ratings for client %s", client_id)
         else:
             logger.warning("Unknown key for update_data: %s", key)
-            
+
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("config.ini")
