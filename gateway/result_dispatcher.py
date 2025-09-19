@@ -129,7 +129,7 @@ class ResultDispatcher(threading.Thread):
             client = self._clients_connected.get_by_uuid(client_id)
             if not client:
                 logger.debug("Client %s not found, ignoring result", client_id)
-                # No ack para que lo reintente otro consumidor
+                # No ACK so other consumer can retry
                 channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                 return
 
@@ -180,8 +180,7 @@ class ResultDispatcher(threading.Thread):
                 if self._clients_connected.has_any():
                     logger.debug("Clients connected. Starting to consume results.")
                     self.broker.consume(self._handle_message)
-                    # Si consume, se queda bloqueado en consume() hasta que se detenga,
-                    # por lo tanto salimos del loop.
+                    # If consume is successful, we can break the loop
                     break
                 else:
                     logger.debug("No clients connected. Waiting before rechecking.")

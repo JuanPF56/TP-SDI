@@ -172,7 +172,6 @@ class Gateway:
                     self._message_queue.task_done(message_id)
                 else:
                     logger.error("Failed to process message %s", message_id)
-                    # You could implement retry logic here
                     self._message_queue.task_done(message_id)  # Remove even if failed
 
             except queue.Empty:
@@ -296,7 +295,6 @@ class Gateway:
                 if self._was_closed:
                     break
                 logger.error("Error receiving message: %s", e)
-                # You might want to reconnect here
                 break
 
             except Exception as e:
